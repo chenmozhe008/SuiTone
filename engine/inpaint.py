@@ -31,7 +31,20 @@ def build_mask(img, classes=None, box=None, mask=None, thr=0.35, grow=None, keep
     W,H=img.size; m=np.zeros((H,W))
     if keep and box is not None:
         l,t,r,b=box; L,T,R,B=int(W*l),int(H*t),int(W*r),int(H*b)
-        sub=np.zeros((H,W)); sub[T:B,L:R]=(seg_classes(img.crop((L,T,R,B)),keep)<0.5)*1.0
+        crop=img.crop((L,T,R,B)); probability=seg_classes(crop,keep)
+        selected=probability<0.5
+        if keep==['sky']:
+            # 语义模型会漏掉细天线；只补入与已识别物体连通的暗细线，不抹平云层。
+            import cv2
+            gray=np.asarray(crop.convert('L'))
+            k=max(5,(min(crop.size)//12)|1)
+            lines=cv2.morphologyEx(gray,cv2.MORPH_BLACKHAT,np.ones((k,k),np.uint8))>10
+            candidates=((probability<.9)|lines).astype(np.uint8)
+            candidates=cv2.dilate(candidates,np.ones((3,3),np.uint8))
+            _,labels=cv2.connectedComponents(candidates,connectivity=8)
+            connected=np.unique(labels[selected]);connected=connected[connected!=0]
+            selected=np.isin(labels,connected)
+        sub=np.zeros((H,W)); sub[T:B,L:R]=selected*1.0
         m=np.maximum(m,sub); classes=classes or None
     if classes:
         if box is not None:   # 细小物体：在框内放大后再识别，比整张图识别准得多

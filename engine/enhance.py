@@ -17,7 +17,7 @@ def denoise(img, strength=1.0):
     B=cv2.fastNlMeansDenoising(B,None,h=int(10*strength),templateWindowSize=7,searchWindowSize=21)
     return Image.fromarray(cv2.cvtColor(cv2.merge([L,A,B]),cv2.COLOR_LAB2RGB))
 _s={}
-def upscale(img, scale=2, tile=256, pad=16):
+def upscale(img, scale=2, tile=256, pad=16, return_array=False):
     import onnxruntime as ort
     f={2:'swin2SR-classical-sr-x2-64.onnx',4:'swin2SR-realworld-sr-x4-64-bsrgan-psnr.onnx'}[scale]
     if f not in _s: _s[f]=ort.InferenceSession(os.path.join(SR,f),providers=['CPUExecutionProvider'])
@@ -31,4 +31,5 @@ def upscale(img, scale=2, tile=256, pad=16):
             r=s.run(None,{'pixel_values':t.transpose(2,0,1)[None]})[0][0].transpose(1,2,0)[:h*scale,:w*scale]
             oy,ox=(y-y0)*scale,(x-x0)*scale; hh,ww=min(tile,H-y)*scale,min(tile,W-x)*scale
             out[y*scale:y*scale+hh,x*scale:x*scale+ww]=r[oy:oy+hh,ox:ox+ww]
-    return Image.fromarray((np.clip(out,0,1)*255+0.5).astype(np.uint8))
+    out=np.clip(out,0,1)
+    return out if return_array else Image.fromarray((out*255+0.5).astype(np.uint8))

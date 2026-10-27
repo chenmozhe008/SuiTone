@@ -6,6 +6,17 @@
 import numpy as np
 from PIL import Image
 from grade import seg_classes, rgb2lab, lab2rgb, blur, _guided
+def adjust_lab(original, lab, mask, protect=False, smooth=0.0, bright=0.0):
+    out=lab.copy()
+    if protect:
+        w=(mask*.85)[...,None]
+        out[...,1:]=out[...,1:]*(1-w)+original[...,1:]*w
+    if smooth or bright:
+        L=out[...,0]/100; base=_guided(L,L,max(L.shape[1]//250,4),eps=2e-3)
+        adjusted=base+(L-base)*(1-.6*smooth)+bright*.04*(1-L)
+        out[...,0]=100*(L*(1-mask)+adjusted*mask)
+    return out
+
 def skin_mask(img):
     a=np.asarray(img.convert('RGB'),np.float64); r,g,b=a[...,0],a[...,1],a[...,2]
     Y=0.299*r+0.587*g+0.114*b; Cr=(r-Y)*0.713+128; Cb=(b-Y)*0.564+128

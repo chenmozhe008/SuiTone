@@ -12,6 +12,18 @@ import numpy as np
 from PIL import Image
 
 N=33
+def base_lut(params):
+    """可精确表达为全局映射的底色；不把分区操作伪装成 LUT。"""
+    from grade import rgb2lab, lab2rgb, _lin, _gam
+    grid=np.stack(np.meshgrid(*[np.linspace(0,1,N)]*3,indexing='ij'),-1)
+    light=params.get('enabled',{}).get('light',True)
+    rgb=_gam(np.clip(_lin(grid)*2**(params.get('exposure',0) if light else 0),0,1))
+    lab=rgb2lab(rgb)
+    if light and params.get('enabled',{}).get('contrast',True):
+        L=lab[...,0]; curve=100*np.interp(L/100,[0,.1,.3,.5,.7,.9,1],[0,.09,.28,.5,.72,.91,1])
+        lab[...,0]=L+(curve-L)*params.get('contrast',1)
+    lab[...,1:]*=params.get('saturation',1) if params.get('enabled',{}).get('color',True) else 1
+    return np.clip(lab2rgb(lab),0,1)
 def _pairs(src,dst,long=1200):
     a=Image.open(src).convert('RGB'); b=Image.open(dst).convert('RGB')
     if a.size!=b.size: a=a.resize(b.size,Image.LANCZOS)
@@ -47,7 +59,8 @@ def write_cube(L,path,title='photo-edit'):
             for g in range(N):
                 for r in range(N): f.write('%.6f %.6f %.6f\n'%tuple(L[r,g,b]))
 def read_cube(path):
-    rows=[l.split() for l in open(path) if l[:1].isdigit() or l[:1]=='-' or (l[:1]=='.' )]
+    with open(path) as handle:
+        rows=[l.split() for l in handle if l[:1].isdigit() or l[:1]=='-' or (l[:1]=='.' )]
     v=np.array([[float(t) for t in r] for r in rows if len(r)==3]); n=round(len(v)**(1/3))
     return v.reshape(n,n,n,3).transpose(2,1,0,3)
 def apply(L,img):

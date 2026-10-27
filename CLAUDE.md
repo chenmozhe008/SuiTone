@@ -8,6 +8,8 @@
 photo-edit/
 ├── CLAUDE.md
 ├── engine/                    ← 修图引擎（Python，入 git）；说明见 engine/README.md
+├── app/                       ← SwiftUI 原生界面（SwiftPM，入 git）
+├── script/                    ← 构建、运行与验收入口（入 git）
 ├── docs/APP_SPEC.md           ← Mac App 开发说明（交给二次开发）
 ├── cases/                     ← 每次修图一个目录：日期_地点/主题
 │   └── 2026-10-27_西吉震湖/
@@ -28,4 +30,4 @@ photo-edit/
 
 - Python：`~/.cache/photo-edit/venv/bin/python`；模型在 `~/.cache/photo-edit/`（不入 git，下载地址见 engine/README.md）。
 - 改了 engine 先跑 `cli.py grade` 冒烟测试，再跑 docs/APP_SPEC.md 第 6 节验收用例里相关的那几条。
-- git 只管 `engine/`、`docs/`、`CLAUDE.md`；`cases/`、`output/`、`tmp/` 体积大，不入库。
+- git 管 `engine/`、`app/`、`script/`、`docs/`、`.codex/` 和项目约定；`cases/`、`output/`、`tmp/`、`dist/`、构建缓存不入库。
