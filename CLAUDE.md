@@ -10,7 +10,9 @@ photo-edit/
 ├── engine/                    ← 修图引擎（Python，入 git）；说明见 engine/README.md
 ├── app/                       ← SwiftUI 原生界面（SwiftPM，入 git）
 ├── script/                    ← 构建、运行与验收入口（入 git）
-├── docs/APP_SPEC.md           ← Mac App 开发说明（交给二次开发）
+├── docs/HANDOFF.md            ← 开发移交（产品方向+开发顺序，接手先读）
+├── docs/APP_SPEC.md           ← 数据边界与验收用例（第 5、6 节有效）
+├── docs/archive/              ← 旧审阅记录，只查历史证据
 ├── cases/                     ← 每次修图一个目录：日期_地点/主题
 │   └── 2026-10-27_西吉震湖/
 │       ├── 原图/              ← 只放照片，视频不放
