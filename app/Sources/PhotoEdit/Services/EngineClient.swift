@@ -92,6 +92,18 @@ actor EngineClient {
         return try JSONDecoder().decode(Health.self, from: data).missing
     }
 
+    func get<T:Decodable>(_ path:String,query:[URLQueryItem]=[]) async throws -> T {
+        try start()
+        var components=URLComponents(url:endpoint!.appendingPathComponent(path),resolvingAgainstBaseURL:false)!
+        if !query.isEmpty {components.queryItems=query}
+        var request=URLRequest(url:components.url!)
+        request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
+        let (data,response)=try await session.data(for:request)
+        guard (response as? HTTPURLResponse)?.statusCode==200 else {throw EngineError(message:"本地引擎请求未完成")}
+        let decoder=JSONDecoder();decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(T.self,from:data)
+    }
+
     func progress() async throws -> (Int, Int, String) {
         guard let endpoint else { return (0,0,"") }
         var request = URLRequest(url: endpoint.appendingPathComponent("progress"))

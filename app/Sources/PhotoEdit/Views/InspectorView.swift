@@ -1,11 +1,11 @@
 import SwiftUI
 
-struct InspectorView: View {
+struct DetailedAdjustmentsView: View {
     @Bindable var store: WorkspaceStore
     var body: some View {
-        ScrollView {
+        Group {
             VStack(alignment:.leading,spacing:18) {
-                HStack {Text("调色").font(.headline);Spacer();Button("快照") {store.snapshot()}.disabled(store.current==nil)}
+                HStack {Text("节点与分区").font(.headline);Spacer();Button("快照") {store.snapshot()}.disabled(store.current==nil)}
                 if let photo=store.current {
                     node("参考匹配",key:"match") {
                         control("强度",key:\.matchStrength,range:0...1)
@@ -29,6 +29,15 @@ struct InspectorView: View {
                     }
                     node("色",key:"color") {
                         control("饱和",key:\.saturation,range:0...2)
+                        control("色温",key:\.temperature,range:-1...1)
+                        control("色调",key:\.tint,range:-1...1)
+                        DisclosureGroup("创作色彩") {
+                            control("阴影色相",key:\.shadowHue,range:-180...180)
+                            control("阴影染色",key:\.shadowChroma,range:0...30)
+                            control("高光色相",key:\.highlightHue,range:-180...180)
+                            control("高光染色",key:\.highlightChroma,range:0...30)
+                            control("褪黑",key:\.fade,range:0...1)
+                        }.font(.caption)
                     }
                     node("水",key:"water") {
                         waterControl("亮度 L",index:0,range:0...100)
@@ -48,32 +57,16 @@ struct InspectorView: View {
                         }
                     }.font(.subheadline)
                     Divider()
-                    DisclosureGroup("查看 AI 选区") {
-                        Picker("选区",selection:$store.overlay) {
-                            Text("关闭").tag("")
-                            ForEach(RegionNames.all+["skin"],id:\.self){Text(RegionNames.title($0)).tag($0)}
-                        }
-                        ForEach(RegionNames.all,id:\.self){name in
-                            if let region=store.analysis?.regions[name] {
-                                HStack {
-                                    Text(RegionNames.title(name))
-                                    Spacer()
-                                    Text(region.available ? String(format:"%.0f%% · 置信 %.0f%%",region.area*100,region.confidence*100):"不足／不确定")
-                                }.font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    repairControls
                     DisclosureGroup("历史与快照") {
                         HStack {Button("撤销"){store.undo()}.disabled(!store.canUndo);Button("重做"){store.redo()}.disabled(!store.canRedo)}
-                        ForEach(Array(photo.history.suffix(8).enumerated()),id:\.offset) {_,snapshot in Text(snapshot.label).font(.caption).foregroundStyle(.secondary)}
+                        ForEach(Array(store.undoChanges.suffix(8).enumerated()),id:\.offset) {_,change in Text(change.label+" · \(change.before.count) 张").font(.caption).foregroundStyle(.secondary)}
                         ForEach(Array(photo.snapshots.enumerated()),id:\.offset) {_,snapshot in Button(snapshot.label){store.restoreSnapshot(snapshot)}.font(.caption)}
                     }
                     Button("重置调色参数") {store.change("重置调色参数"){$0=AdjustmentParameters()}}
                 } else {
                     Text("导入照片后，分区与调色参数会显示在这里。").font(.callout).foregroundStyle(.secondary)
                 }
-            }.padding(16).disabled(store.busy)
+            }.disabled(store.controlsBlocked)
         }.background(Color(white:0.15))
     }
 
@@ -132,32 +125,6 @@ struct InspectorView: View {
         }.font(.caption)
     }
 
-    private var repairControls:some View {
-        DisclosureGroup("去杂物") {
-            Toggle("在照片上框选",isOn:$store.repairEnabled)
-            Picker("模式",selection:$store.repairMode) {
-                Text("框内保留天空").tag("keepSky")
-                Text("按类别").tag("classes")
-                Text("去除整个框内").tag("box")
-            }
-            if store.repairMode=="classes" {
-                Picker("类别",selection:$store.repairClasses) {
-                    Text("栏杆／围栏").tag("railing, fence")
-                    Text("行人").tag("person")
-                    Text("车辆").tag("car, truck, bus")
-                    Text("建筑").tag("building, house")
-                    Text("电杆／路灯").tag("pole, streetlight")
-                }
-            }
-            Text("只改框选区域。大面积修补可能损失纹理，请查看结果后决定保留。").font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button("预览选区") {store.previewRepairMask()}.disabled(store.selectionBox==nil)
-                Button("执行去除") {store.remove()}.disabled(store.selectionBox==nil)
-            }
-        }.font(.subheadline)
-         .onChange(of:store.repairMode){_,_ in store.repairMaskOverlay=nil}
-         .onChange(of:store.repairClasses){_,_ in store.repairMaskOverlay=nil}
-    }
 }
 
 struct ValueSlider:View {

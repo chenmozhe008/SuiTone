@@ -7,11 +7,11 @@ struct PhotoCanvas: View {
         GeometryReader {geometry in
             if let photo=store.current {
                 let ratio=CGFloat(photo.imported.width)/CGFloat(photo.imported.height)
-                let w=min(geometry.size.width-40,(geometry.size.height-50)*ratio)
+                let w=max(1,min(geometry.size.width-48,(geometry.size.height-48)*ratio))
                 let h=w/ratio
                 ZStack {
                     LocalPhoto(path:displayPath(photo)).frame(width:w,height:h)
-                    if let box=store.selectionBox,store.repairEnabled {
+                    if let box=store.selectionBox,store.repairEnabled,store.repairDraft == nil {
                         Rectangle().stroke(.white,lineWidth:1).background(.white.opacity(0.08))
                             .frame(width:w*(box[2]-box[0]),height:h*(box[3]-box[1]))
                             .position(x:w*(box[0]+box[2])/2,y:h*(box[1]+box[3])/2)
@@ -20,7 +20,7 @@ struct PhotoCanvas: View {
                 .frame(width:w,height:h)
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance:2).onChanged {value in
-                    guard store.repairEnabled else {return}
+                    guard store.repairEnabled, !store.busy, store.repairDraft == nil else {return}
                     store.repairMaskOverlay=nil
                     let clamp:(CGFloat)->CGFloat={min(1,max(0,$0))}
                     let x0=clamp(value.startLocation.x/w),y0=clamp(value.startLocation.y/h)
@@ -30,6 +30,7 @@ struct PhotoCanvas: View {
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
                 .overlay(alignment:.bottomLeading) {
                     if store.showOriginal {Text("原图").font(.caption).padding(8).background(Color(white:0.12)).padding(10)}
+                    else if store.repairDraft != nil {Text(store.repairShowingBefore ? "修复前" : "修复预览").font(.caption).padding(8).background(Color(white:0.12)).padding(10)}
                     else if !store.overlay.isEmpty {Text(RegionNames.title(store.overlay)+"选区").font(.caption).padding(8).background(Color(white:0.12)).padding(10)}
                 }
             } else {
@@ -46,6 +47,9 @@ struct PhotoCanvas: View {
 
     private func displayPath(_ photo:PhotoRecord)->String {
         if store.showOriginal {return photo.imported.original}
+        if let draft = store.repairDraft, draft.photoID == photo.id {
+            return store.repairShowingBefore ? draft.beforePath : draft.previewPath
+        }
         if store.repairEnabled,let path=store.repairMaskOverlay {return path}
         if let overlay=store.analysis?.overlays[store.overlay] {return overlay}
         return photo.previewPath ?? photo.imported.original

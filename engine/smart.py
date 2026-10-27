@@ -9,6 +9,16 @@ STYLES = [
     dict(id='warm',title='暖调',detail='温暖中间调，颜色略收敛'),
     dict(id='cool',title='冷调',detail='清冷中间调，保留肤色'),
     dict(id='mono',title='黑白',detail='只留光影与纹理'),
+    dict(id='vivid',title='鲜明',detail='增强色彩与层次'),
+    dict(id='airy',title='轻盈',detail='明亮、柔和与淡彩'),
+    dict(id='cinema',title='青橙电影',detail='冷影与暖光的明显分离'),
+    dict(id='film',title='暖胶片',detail='暖调、褪黑与柔高光'),
+    dict(id='neon',title='霓虹夜色',detail='蓝紫阴影，洋红高光'),
+    dict(id='vintage',title='复古褪色',detail='低反差与偏黄绿底色'),
+    dict(id='editorial',title='低饱和叙事',detail='克制颜色，冷影暖肤'),
+    dict(id='noir',title='高反差黑白',detail='深黑、亮部与强反差'),
+    dict(id='golden',title='金色时刻',detail='琥珀暖光与柔和褪黑'),
+    dict(id='bleach',title='银幕冷调',detail='低饱和、冷色与硬朗光影'),
 ]
 
 
@@ -51,10 +61,20 @@ def suggest(analysis,style='smart'):
     if style=='warm':p.update(temperature=.38,tint=.04,contrast=.42,saturation=.93)
     if style=='cool':p.update(temperature=-.28,tint=-.03,contrast=.6,saturation=.95)
     if style=='mono':p.update(saturation=0.,contrast=1.15,black_white=.3,skin_protect=False)
+    if style=='vivid':p.update(contrast=.95,saturation=1.18,highlights=-.18,shadows=.12)
+    if style=='airy':p.update(exposure=min(.85,p['exposure']+.2),contrast=.08,saturation=.9,highlights=-.35,shadows=.23,fade=.12)
+    if style=='cinema':p.update(contrast=1.45,saturation=.84,shadow_hue=-155.,shadow_chroma=18.,highlight_hue=65.,highlight_chroma=13.,fade=.12)
+    if style=='film':p.update(contrast=.65,saturation=.88,temperature=.48,shadow_hue=-145.,shadow_chroma=6.,highlight_hue=70.,highlight_chroma=11.,fade=.5,highlights=-.45)
+    if style=='neon':p.update(contrast=1.55,saturation=1.18,temperature=-.18,shadow_hue=-85.,shadow_chroma=23.,highlight_hue=-15.,highlight_chroma=18.,black_white=.28)
+    if style=='vintage':p.update(contrast=.18,saturation=.72,temperature=.36,tint=-.17,shadow_hue=95.,shadow_chroma=12.,highlight_hue=72.,highlight_chroma=9.,fade=.72)
+    if style=='editorial':p.update(contrast=1.1,saturation=.66,shadow_hue=-150.,shadow_chroma=9.,highlight_hue=58.,highlight_chroma=5.,fade=.16)
+    if style=='noir':p.update(saturation=0.,contrast=2.,black_white=.7,highlights=.12,shadows=-.28,exposure=p['exposure']-.1,skin_protect=False)
+    if style=='golden':p.update(temperature=.58,tint=.06,contrast=.8,saturation=.91,highlight_hue=75.,highlight_chroma=18.,shadow_hue=40.,shadow_chroma=6.,fade=.22,highlights=-.38)
+    if style=='bleach':p.update(temperature=-.24,contrast=1.8,saturation=.48,black_white=.42,shadows=-.18,highlights=-.12,shadow_hue=-140.,shadow_chroma=8.,fade=.05)
     title=next(s['title'] for s in STYLES if s['id']==style)
     notes=[f'曝光 {p["exposure"]:+.2f} EV',f'对比 {p["contrast"]:.2f}',f'饱和 {p["saturation"]:.2f}']
     if p['dehaze_amt']:notes.append(f'轻去雾 {p["dehaze_amt"]:.2f}')
-    if style=='smart':notes.append('保留原有色相；未启用固定水色、天空或土地色')
+    if style=='smart':notes.append('按画面亮度与反差计算，保留原有色相')
     return dict(params=p,title=title,notes=notes,analysis=stats)
 
 
@@ -65,7 +85,8 @@ def apply_operations(params,operations,analysis):
     labels={'exposure':'曝光','contrast':'对比','saturation':'饱和','temperature':'色温',
             'tint':'色调','highlights':'高光','shadows':'阴影','black_white':'黑白点',
             'dehaze_amt':'去雾','effect_strength':'整体强度','smooth':'磨皮','bright':'肤色提亮',
-            'match_strength':'参考强度','sky_hue':'天空色相','autumn':'土地饱和','water_var':'水色变化'}
+            'match_strength':'参考强度','sky_hue':'天空色相','autumn':'土地饱和','water_var':'水色变化',
+            'shadow_hue':'阴影色相','shadow_chroma':'阴影染色','highlight_hue':'高光色相','highlight_chroma':'高光染色','fade':'褪黑'}
     notes=[]
     if len(operations)>48:raise ValueError('单次调整过多')
     for operation in operations:
@@ -83,14 +104,23 @@ def apply_operations(params,operations,analysis):
             if key=='skin_protect':p[key]=bool(value)
             else:p['enabled'][key.removesuffix('_enabled')]=bool(value)
             notes.append(f'{key} {"开启" if value else "关闭"}')
-        elif key in ['water_l','water_a','water_b']:
-            if not analysis.summary()['water']['available']:continue
-            i=['water_l','water_a','water_b'].index(key)
-            region=p['regions'].get('water')
-            values=region['mean'] if region else p['water']
+        elif key.rsplit('_',1)[0] in ['water','sky','land','person'] and key.rsplit('_',1)[-1] in ['l','a','b']:
+            name,channel=key.rsplit('_',1)
+            if not analysis.summary()[name]['available']:
+                notes.append(name+'：没有可靠区域，保持不变');continue
+            i=['l','a','b'].index(channel)
+            if name not in p['regions']:
+                from grade import grade_array,rgb2lab
+                from match import statistics
+                current=statistics(rgb2lab(grade_array(analysis.image,analysis=analysis,**p)),analysis.region(name))
+                if current is None:continue
+                mean=current['mean'].tolist()
+                p['regions'][name]=dict(mean=mean.copy(),source_mean=mean.copy(),chroma_scale=[1.,1.],
+                    luma_x=[0.,100.],luma_y=[0.,100.],reference_luma_mean=mean[0],strength=1.,reference_count=0)
+            region=p['regions'][name];values=region['mean']
             old=values[i]; result=value if mode=='set' else old+value if mode=='add' else old*value
             values[i]=float(np.clip(result,0 if i==0 else -100,100))
-            if not region:p['enabled']['water']=True
-            notes.append(f'水 {"Lab"[i]} {old:.2f} → {values[i]:.2f}')
+            p['enabled']['match']=True
+            notes.append(f'{name} {"Lab"[i]} {old:.2f} → {values[i]:.2f}')
         else:raise ValueError('AI 请求了尚未支持的参数')
     return parameters(p),notes

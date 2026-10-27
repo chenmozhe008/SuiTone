@@ -1,7 +1,7 @@
 """仅监听 loopback 的常驻服务。照片不离开本机；HTTP 需要本次启动的随机凭证。"""
 import argparse
 from collections import OrderedDict
-from copy import deepcopy
+from copy import copy, deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
 from hashlib import sha256
@@ -18,16 +18,20 @@ from uuid import uuid4
 import numpy as np
 from PIL import Image
 from analysis import Analysis
-from grade import grade, grade_array, quantize
+from grade import grade, grade_array, quantize, rgb2lab
 from image_io import EXTENSIONS, load_image, load_pixels, save_new
 import segmentation
 
 DEFAULTS = dict(water=[54., -17., -7.], water_var=.6, dehaze_amt=1., sky_hue=-100.,
                 autumn=.25, black_white=.5, contrast=1., exposure=0., saturation=1.,
-                skin_protect=True, smooth=0., bright=0., match_strength=1., enabled={}, regions={},auto_dehaze=True)
+                skin_protect=True, smooth=0., bright=0., match_strength=1., enabled={}, regions={},auto_dehaze=True,
+                temperature=0.,tint=0.,highlights=0.,shadows=0.,effect_strength=1.,
+                shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.)
 LIMITS = dict(water_var=(0, 2), dehaze_amt=(0, 1), sky_hue=(-180, 180), autumn=(0, 1),
               black_white=(0, 1), contrast=(0, 2), exposure=(-3, 3), saturation=(0, 2),
-              smooth=(0, 1), bright=(0, 1), match_strength=(0, 1))
+              smooth=(0, 1), bright=(0, 1), match_strength=(0, 1),temperature=(-1,1),tint=(-1,1),
+              highlights=(-1,1),shadows=(-1,1),effect_strength=(0,1),
+              shadow_hue=(-180,180),shadow_chroma=(0,30),highlight_hue=(-180,180),highlight_chroma=(0,30),fade=(0,1))
 
 
 def repair_input(box,classes=None,keep=None):
@@ -37,6 +41,15 @@ def repair_input(box,classes=None,keep=None):
     for names in [classes,keep]:
         if names is not None and (not isinstance(names,list) or not names or not all(isinstance(n,str) and n and len(n)<80 for n in names)):
             raise ValueError('请先选择要识别的类别')
+
+
+def quality_settings(raw=None):
+    raw = {} if raw is None else raw
+    if not isinstance(raw,dict) or set(raw)-{'denoise','scale'}:raise ValueError('画质设置格式不正确')
+    denoise,scale=raw.get('denoise',False),raw.get('scale',1)
+    if not isinstance(denoise,bool) or type(scale) is not int or scale not in [1,2,4]:
+        raise ValueError('画质设置仅支持降噪与 2 倍、4 倍放大')
+    return dict(denoise=denoise,scale=scale)
 
 
 def parameters(raw):
@@ -97,16 +110,27 @@ class Engine:
         self.assets = {}
         self.analyses = OrderedDict()
         self.previews = OrderedDict()
+        self.quality_analyses = OrderedDict()
         self.progress = dict(done=0,total=0,name='')
         self.lock = RLock()
+        from assistant import AssistantBridge
+        self.assistant=AssistantBridge(self)
+        self.import_hashes={}
+
+    def scan_paths(self,paths):
+        candidates=[];errors=[]
+        for raw in paths:
+            try:
+                path=Path(raw).expanduser().resolve(strict=True)
+                candidates.extend(sorted(p for p in path.rglob('*') if p.is_file() and p.suffix.lower() in EXTENSIONS)
+                                  if path.is_dir() else [path])
+            except (OSError,ValueError) as exc:errors.append(f'无法读取：{Path(raw).name}')
+        return dict(paths=list(dict.fromkeys(str(p) for p in candidates if p.suffix.lower() in EXTENSIONS)),errors=errors)
 
     def import_paths(self, paths):
-        candidates = []
-        for raw in paths:
-            path = Path(raw).expanduser().resolve(strict=True)
-            candidates.extend(sorted(p for p in path.rglob('*') if p.is_file() and p.suffix.lower() in EXTENSIONS)
-                              if path.is_dir() else [path])
-        photos, errors, seen = [], [], set()
+        scanned=self.scan_paths(paths)
+        candidates=[Path(p) for p in scanned['paths']]
+        photos, errors, seen = [], scanned['errors'], set()
         for path in candidates:
             if path in seen or path.suffix.lower() not in EXTENSIONS: continue
             seen.add(path)
@@ -118,9 +142,10 @@ class Engine:
                 values = np.asarray(small)
                 bits = values>values.mean()
                 similar = None
-                for previous in photos:
-                    if np.count_nonzero(bits ^ previous['_hash']) < 18:
-                        similar = previous['id']; break
+                for previous,previous_bits in self.import_hashes.items():
+                    if previous!=asset.id and np.count_nonzero(bits ^ previous_bits) < 18:
+                        similar = previous; break
+                self.import_hashes[asset.id]=bits
                 photos.append(dict(id=asset.id, path=str(path), name=path.name,
                                    thumbnail=str(asset.thumbnail), original=str(asset.original_path),
                                    width=size[0], height=size[1], similar_to=similar, _hash=bits))
@@ -177,11 +202,31 @@ class Engine:
         return dict(regions=a.summary(),overlays=overlays,cache_hit=cached,
                     analysis_ms=(perf_counter()-start)*1000,inference_count=segmentation.inference_count)
 
-    def preview(self, key, raw):
+    def quality_analysis(self,key,quality):
+        source,cached=self.analysis(key)
+        if not quality['denoise'] and quality['scale']==1:return source,cached
+        cache_key=(key,quality['denoise'],quality['scale'])
+        if cache_key in self.quality_analyses:
+            self.quality_analyses.move_to_end(cache_key)
+            return self.quality_analyses[cache_key],True
+        from enhance import prepare_quality
+        import cv2
+        _,rgb=prepare_quality(source.image,source.rgb,**quality)
+        if rgb.shape[:2]!=source.rgb.shape[:2]:
+            rgb=cv2.resize(rgb,source.image.size,interpolation=cv2.INTER_AREA)
+        context=copy(source)
+        context.image=quantize(rgb);context.rgb=rgb;context.lab=rgb2lab(rgb)
+        context.dehazed=None
+        self.quality_analyses[cache_key]=context
+        while len(self.quality_analyses)>3:self.quality_analyses.popitem(last=False)
+        return context,False
+
+    def preview(self, key, raw, quality=None):
         start=perf_counter(); p=parameters(raw)
-        a,cached=self.analysis(key)
+        quality=quality_settings(quality)
+        a,cached=self.quality_analysis(key,quality)
         if p['auto_dehaze']:p['dehaze_amt']=a.recommended_dehaze()
-        cache_key=(key,json.dumps(p,sort_keys=True))
+        cache_key=(key,json.dumps(p,sort_keys=True),quality['denoise'],quality['scale'])
         self.asset(key)
         if cache_key in self.previews:
             self.previews.move_to_end(cache_key)
@@ -204,6 +249,31 @@ class Engine:
             raise ValueError('参考图适用区域无效')
         return match(target,refs,parameters(raw),only,
                      [None if scopes.get(k,'all')=='all' else scopes[k] for k in references])
+
+    def smart(self,key,style='smart',quality=None):
+        from smart import suggest
+        context,_=self.analysis(key)
+        result=suggest(context,style)
+        result['preview']=self.preview(key,result['params'],quality)['preview']
+        return result
+
+    def style_tiles(self,key):
+        from smart import STYLES,suggest
+        from grade import rgb2lab
+        import cv2
+        source,_=self.analysis(key)
+        image=source.image.copy();image.thumbnail((320,240))
+        context=Analysis.__new__(Analysis);context.image=image
+        context.rgb=cv2.resize(source.rgb,image.size,interpolation=cv2.INTER_AREA)
+        context.lab=rgb2lab(context.rgb);context.dehazed=None
+        for name in ['water','sky','land','person','skin']:
+            setattr(context,name,cv2.resize(getattr(source,name),image.size,interpolation=cv2.INTER_AREA))
+        tiles={}
+        for style in STYLES:
+            path=self.folder/(key+'-style-'+style['id']+'.png')
+            if not path.exists():save_new(grade(image,analysis=context,**suggest(context,style['id'])['params']),path)
+            tiles[style['id']]=str(path)
+        return dict(tiles=tiles)
 
     def remove(self, key, box, classes=None, keep=None):
         repair_input(box,classes,keep)
@@ -240,13 +310,16 @@ class Engine:
 
     def export(self, items, destination, options):
         if not items: raise ValueError('没有可导出的照片')
+        output_format=options.get('format') or 'jpeg'
+        if output_format not in ['jpeg','png']:raise ValueError('导出格式仅支持 JPEG 和 PNG')
+        qualities=[quality_settings(i.get('quality',dict(denoise=options.get('denoise',False),scale=options.get('scale',1)))) for i in items]
         folder=Path(destination).expanduser().resolve(strict=True)
         if not folder.is_dir(): raise ValueError('请选择导出文件夹')
         batch=folder/('photo-edit-'+datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')+'-'+uuid4().hex[:6])
         batch.mkdir()
         result=[]
         self.progress=dict(done=0,total=len(items),name='准备导出')
-        for item in items:
+        for item,quality in zip(items,qualities):
             asset=self.asset(item['id']); p=parameters(item.get('params',{}))
             self.progress=dict(done=len(result),total=len(items),name=asset.path.name)
             image,pixels=load_pixels(asset.path)
@@ -255,24 +328,18 @@ class Engine:
                 image,repair_mask=remove(image,**op)
                 if pixels is not None: pixels=np.where((np.asarray(repair_mask)>0)[...,None],np.asarray(image,np.float32)/255,pixels)
             # 共用全图统计和缓存选区，在原尺寸逐条带计算颜色，避免 8K 照片占满内存。
-            preview,_=self.analysis(asset.id)
-            if options.get('denoise'):
-                from enhance import denoise
-                image=denoise(image)
-                pixels=None
-            scale=options.get('scale',1)
-            if scale not in [1,2,4]: raise ValueError('放大仅支持 2 倍或 4 倍')
-            if scale!=1:
-                from enhance import upscale
-                pixels=upscale(image,scale=scale,return_array=True)
-                image=Image.fromarray(np.uint8(np.clip(pixels,0,1)*255+.5))
+            preview,_=self.quality_analysis(asset.id,quality)
+            if quality['denoise'] or quality['scale']!=1:
+                from enhance import prepare_quality
+                image,pixels=prepare_quality(image,pixels,**quality)
             from render import render_full
             rendered=render_full(image,p,preview,pixels=pixels)
             if options.get('info_bar'):
                 from info_bar import with_bar,meta
                 rendered=with_bar(rendered,meta(str(asset.path)),options.get('place',''))
-            path=batch/(asset.path.stem+'.jpg')
-            if path.exists(): path=batch/(asset.path.stem+'-'+asset.id[:6]+'.jpg')
+            suffix='.png' if output_format=='png' else '.jpg'
+            path=batch/(asset.path.stem+suffix)
+            if path.exists(): path=batch/(asset.path.stem+'-'+asset.id[:6]+suffix)
             save_new(rendered,path)
             if options.get('lut'):
                 from lut import base_lut,write_cube
@@ -285,7 +352,8 @@ class Engine:
         recipe=batch/'调整记录.photoedit'
         with recipe.open('x') as f:
             json.dump(dict(version=1,photos=[dict(path=str(self.asset(i['id']).path),params=parameters(i.get('params',{})),
-                           operations=self.asset(i['id']).operations) for i in items],options=options),f,ensure_ascii=False,indent=2)
+                           operations=self.asset(i['id']).operations,quality=q) for i,q in zip(items,qualities)],
+                           options={k:v for k,v in options.items() if k not in ['denoise','scale']}),f,ensure_ascii=False,indent=2)
         return dict(directory=str(batch),files=result,
                     lut_note='LUT 只包含全局曝光、对比与饱和；分区、自动黑白点、去雾、修补和人像不包含在内。')
 
@@ -306,6 +374,11 @@ def serve(root, token, watch_stdin=True):
         def do_GET(self):
             if not self.authorized(): return self.response(403,{'error':'当前会话未授权'})
             if self.path=='/progress':return self.response(200,engine.progress)
+            if self.path=='/assistant-providers':return self.response(200,dict(providers=engine.assistant.providers()))
+            if self.path.startswith('/assistant-status?'):
+                from urllib.parse import parse_qs,urlsplit
+                job=parse_qs(urlsplit(self.path).query).get('id',[''])[0]
+                return self.response(200,engine.assistant.status(job))
             if self.path!='/health': return self.response(404,{'error':'未知操作'})
             cache=Path.home()/'.cache/photo-edit'
             return self.response(200,dict(ok=True,missing=[str(cache/p) for p in ['segformer/model.onnx','segformer/config.json','lama/lama_fp32.onnx'] if not (cache/p).is_file()]))
@@ -316,18 +389,24 @@ def serve(root, token, watch_stdin=True):
                 if not 0<length<=1024*1024: raise ValueError('请求大小无效')
                 data=json.loads(self.rfile.read(length))
                 with engine.lock:
-                    if self.path=='/import': result=engine.import_paths(data['paths'])
+                    if self.path=='/scan':result=engine.scan_paths(data['paths'])
+                    elif self.path=='/import': result=engine.import_paths(data['paths'])
                     elif self.path=='/analyze': result=engine.analyze(data['id'])
-                    elif self.path=='/preview': result=engine.preview(data['id'],data.get('params',{}))
+                    elif self.path=='/preview': result=engine.preview(data['id'],data.get('params',{}),data.get('quality'))
                     elif self.path=='/match': result=engine.match(data['id'],data['references'],data.get('params',{}),data.get('only'),data.get('reference_scopes'))
+                    elif self.path=='/smart':result=engine.smart(data['id'],data.get('style','smart'),data.get('quality'))
+                    elif self.path=='/style-tiles':result=engine.style_tiles(data['id'])
+                    elif self.path=='/assistant':result=engine.assistant.start(data)
+                    elif self.path=='/assistant-cancel':result=engine.assistant.cancel(data['id'])
                     elif self.path=='/remove': result=engine.remove(data['id'],data['box'],data.get('classes'),data.get('keep'))
                     elif self.path=='/repair-mask': result=engine.repair_mask(data['id'],data['box'],data.get('classes'),data.get('keep'))
                     elif self.path=='/export': result=engine.export(data['items'],data['destination'],data.get('options',{}))
                     elif self.path=='/restore':
+                        p=parameters(data.get('params',{}))
                         asset=engine.import_one(Path(data['path']).resolve(strict=True))
                         key=asset.id
                         for operation in data.get('operations',[]): key=engine.remove(key,**operation)['id']
-                        result=dict(id=key)
+                        result=dict(id=key,params=p)
                     else: return self.response(404,{'error':'未知操作'})
                 self.response(200,result)
             except (ValueError,KeyError,TypeError,FileNotFoundError) as exc:

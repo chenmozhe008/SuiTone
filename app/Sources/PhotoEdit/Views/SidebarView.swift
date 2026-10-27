@@ -1,47 +1,42 @@
 import SwiftUI
 
-struct SidebarView: View {
+struct FilmstripView: View {
     @Bindable var store: WorkspaceStore
     var body: some View {
-        VStack(spacing:0) {
-            HStack {
-                Text("照片").font(.headline)
-                Spacer()
-                Text("\(store.photos.count)").foregroundStyle(.secondary)
-            }.padding(14)
-            ScrollView {
-              LazyVStack(spacing:2) {
-                ForEach(store.photos) {photo in
-                  Button {store.selectPhoto(photo.id,modifiers:NSEvent.modifierFlags)} label:{
-                    VStack(alignment:.leading,spacing:5) {
-                        LocalPhoto(path:photo.imported.thumbnail).frame(maxWidth:.infinity).frame(height:100)
-                        HStack(spacing:4) {
-                            if photo.starred {Image(systemName:"star.fill").font(.caption2)}
-                            Text(photo.imported.name).font(.caption).lineLimit(1)
-                            Spacer(minLength:0)
-                            if photo.excluded {Image(systemName:"xmark.circle").foregroundStyle(.secondary)}
-                            else if photo.imported.similarTo != nil {Image(systemName:"square.on.square").help("有构图相似的照片，仅作提示")}
-                        }
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: 10) {
+                    ForEach(store.photos) { photo in
+                        Button { store.selectPhoto(photo.id, modifiers: NSEvent.modifierFlags) } label: {
+                            VStack(spacing: 5) {
+                                LocalPhoto(path: store.showOriginal ? photo.imported.thumbnail : photo.previewPath ?? photo.imported.thumbnail)
+                                    .frame(width: 112, height: 76)
+                                    .background(Color(white: 0.1))
+                                    .overlay(Rectangle().stroke(store.selectedIDs.contains(photo.id) ? Color(white: 0.72) : .clear, lineWidth: 2))
+                                    .overlay(alignment: .topTrailing) {
+                                        if photo.starred { Image(systemName: "star.fill").font(.caption2).padding(4).background(Color(white: 0.12)) }
+                                    }
+                                Text(photo.imported.name).font(.system(size: 10)).lineLimit(1)
+                                    .foregroundStyle(photo.id == store.currentID ? .primary : .secondary)
+                            }.frame(width: 112).opacity(photo.excluded ? 0.35 : 1)
+                        }.buttonStyle(.plain)
+                            .id(photo.id)
+                            .accessibilityLabel(photo.imported.name)
+                            .accessibilityValue(store.selectedIDs.contains(photo.id) ? "已选择" : "")
+                            .contextMenu {
+                                Button("单张查看") { store.activate(photo.id); store.grid = false }
+                                Button(photo.starred ? "取消标星" : "标星") { store.toggleStar(photo.id) }
+                                Button(photo.excluded ? "恢复选用" : "排除") { store.toggleExcluded(photo.id) }
+                                if photo.imported.similarTo != nil { Text("有构图相似的照片") }
+                            }
                     }
-                    .opacity(photo.excluded ? 0.4:1)
-                    .padding(8)
-                    .background(store.selectedIDs.contains(photo.id) ? Color(white:0.28):Color.clear)
-                  }.buttonStyle(.plain)
-                    .accessibilityLabel(photo.imported.name)
-                    .accessibilityValue(store.selectedIDs.contains(photo.id) ? "已选择":"")
-                    .contextMenu {
-                        Button(photo.starred ? "取消标星":"标星") {store.toggleStar(photo.id)}
-                        Button(photo.excluded ? "恢复选用":"排除") {store.toggleExcluded(photo.id)}
-                    }
-                }
-              }.padding(.horizontal,5)
-            }
-            .onChange(of:store.selectedIDs) {_, ids in
-                if !ids.contains(store.currentID ?? "") {store.activate(store.photos.first(where:{ids.contains($0.id)})?.id)}
-            }
-            HStack {Text("⌘ 多选 · 右键标星／排除").font(.caption2).foregroundStyle(.secondary);Spacer()}.padding(10)
-        }
-        .background(Color(white:0.13))
-        .dropDestination(for:URL.self) {urls,_ in store.importURLs(urls);return true}
+                    Button { store.chooseImport() } label: {
+                        Image(systemName: "plus").font(.title2.weight(.ultraLight))
+                            .frame(width: 72, height: 76).background(Color(white: 0.17))
+                    }.buttonStyle(.plain).disabled(store.controlsBlocked).help("添加照片")
+                }.padding(.horizontal, 18).padding(.top, 12)
+            }.scrollIndicators(.hidden)
+                .onChange(of: store.currentID) { _, id in if let id { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) } } }
+        }.background(Color(white: 0.12))
     }
 }

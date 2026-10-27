@@ -96,7 +96,8 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
                 sky_hue=-100.0, autumn=0.25, black_white=0.5, contrast=1.0,
                 exposure=0.0, saturation=1.0, enabled=None, regions=None,
                 match_strength=1.0, skin_protect=False, smooth=0.0, bright=0.0, analysis=None,auto_dehaze=False,
-                temperature=0.0,tint=0.0,highlights=0.0,shadows=0.0,effect_strength=1.0):
+                temperature=0.0,tint=0.0,highlights=0.0,shadows=0.0,effect_strength=1.0,
+                shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.):
     if auto_dehaze:
         if analysis is None:
             from analysis import Analysis
@@ -153,6 +154,12 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
     if on('color'):
         mid=.3+.7*np.clip(1-np.abs(L-50)/50,0,1)
         A=A+tint*7*mid; B=B+temperature*10*mid
+        if shadow_chroma or highlight_chroma:
+            shadow=(1-ss(L,18,62))*ss(L,0,10)*shadow_chroma
+            highlight=ss(L,45,86)*(1-ss(L,98,100))*highlight_chroma
+            A=A+shadow*np.cos(np.deg2rad(shadow_hue))+highlight*np.cos(np.deg2rad(highlight_hue))
+            B=B+shadow*np.sin(np.deg2rad(shadow_hue))+highlight*np.sin(np.deg2rad(highlight_hue))
+    if fade and on('light'):L=L+fade*14*(1-ss(L,0,58))
     lab=np.stack([L,A*sat,B*sat],-1)
     if regions and on('match'):
         from match import apply_regions

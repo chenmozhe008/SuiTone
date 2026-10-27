@@ -29,11 +29,13 @@ python3 -m venv ~/.cache/photo-edit/venv
 | `portrait.py` | 肤色保护、轻修饰 | `skin_mask()`、`protect_skin()`、`retouch()` |
 | `lut.py` | 从「原图→调后」学出 3D LUT（.cube） | `fit()`、`write_cube()`、`read_cube()`、`apply()` |
 | `raw.py` | 读 RAW（DNG/CR2/NEF/ARW…），保留高光余量 | `load_raw()` |
-| `enhance.py` | 降噪、放大 | `denoise()`、`upscale(scale=2\|4)` |
+| `enhance.py` | 降噪、放大；编辑预览与原尺寸导出共用处理 | `denoise()`、`upscale(scale=2\|4)`、`prepare_quality()` |
 | `info_bar.py` | 底部 iPhone 式出片信息条（读 EXIF） | `with_bar()`、`meta()` |
 | `cli.py` | 命令行入口，参数用 JSON，结果输出一行 JSON（给 App 调用） | 见文件头 |
 
 ## 已知局限（实测过）
+
+App 的 `preview` 和 `smart` 请求可携带 `quality={"denoise":true,"scale":2}`；画质结果独立缓存，换调色参数不重新降噪、放大或识别选区。编辑预览使用 1200px 源图处理并适屏显示；导出使用原图处理，不能用适屏预览代替原尺寸细节验收。`export.items` 的每张照片携带自己的 `quality`，导出记录同时保存；旧客户端的全局 `options.denoise/scale` 仅在项目没有逐张设置时作兼容回退。
 
 - LUT 只能表达「同一个颜色映射到同一个颜色」：灰蓝的水和灰蓝的雾山分不开，所以分区调色导不进 LUT。实际做法是导一个「底子 LUT」，水和天在达芬奇里用 Magic Mask 单独建节点调。
 - 细小的物体，或者模型叫不出名字的东西（比如被认成 building 的信号塔），要用 `box` + `keep=['sky']` 来框选。

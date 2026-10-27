@@ -14,20 +14,67 @@ struct RegionAdjustment: Codable, Equatable, Sendable {
 struct AdjustmentParameters: Codable, Equatable, Sendable {
     var water: [Double] = [54, -17, -7]
     var waterVar = 0.6
-    var dehazeAmt = 1.0
-    var autoDehaze: Bool? = true
+    var dehazeAmt = 0.0
+    var autoDehaze: Bool? = false
     var skyHue = -100.0
     var autumn = 0.25
-    var blackWhite = 0.5
-    var contrast = 1.0
+    var blackWhite = 0.0
+    var contrast = 0.0
     var exposure = 0.0
     var saturation = 1.0
+    var temperature = 0.0
+    var tint = 0.0
+    var highlights = 0.0
+    var shadows = 0.0
+    var effectStrength = 1.0
+    var shadowHue = -160.0
+    var shadowChroma = 0.0
+    var highlightHue = 65.0
+    var highlightChroma = 0.0
+    var fade = 0.0
     var skinProtect = true
     var smooth = 0.0
     var bright = 0.0
     var matchStrength = 1.0
-    var enabled: [String: Bool] = [:]
+    var enabled: [String: Bool] = ["water":false,"sky":false,"land":false]
     var regions: [String: RegionAdjustment] = [:]
+
+    init() {}
+    enum CodingKeys:String,CodingKey {
+        case water,waterVar,dehazeAmt,autoDehaze,skyHue,autumn,blackWhite,contrast,exposure,saturation
+        case temperature,tint,highlights,shadows,effectStrength,skinProtect,smooth,bright,matchStrength,enabled,regions
+        case shadowHue,shadowChroma,highlightHue,highlightChroma,fade
+    }
+    init(from decoder:Decoder) throws {
+        self.init()
+        let c=try decoder.container(keyedBy:CodingKeys.self)
+        water=try c.decodeIfPresent([Double].self,forKey:.water) ?? water
+        enabled=try c.decodeIfPresent([String:Bool].self,forKey:.enabled) ?? enabled
+        regions=try c.decodeIfPresent([String:RegionAdjustment].self,forKey:.regions) ?? regions
+        skinProtect=try c.decodeIfPresent(Bool.self,forKey:.skinProtect) ?? true
+        autoDehaze=try c.decodeIfPresent(Bool.self,forKey:.autoDehaze) ?? false
+        waterVar=try c.decodeIfPresent(Double.self,forKey:.waterVar) ?? waterVar
+        dehazeAmt=try c.decodeIfPresent(Double.self,forKey:.dehazeAmt) ?? dehazeAmt
+        skyHue=try c.decodeIfPresent(Double.self,forKey:.skyHue) ?? skyHue
+        autumn=try c.decodeIfPresent(Double.self,forKey:.autumn) ?? autumn
+        blackWhite=try c.decodeIfPresent(Double.self,forKey:.blackWhite) ?? blackWhite
+        contrast=try c.decodeIfPresent(Double.self,forKey:.contrast) ?? contrast
+        exposure=try c.decodeIfPresent(Double.self,forKey:.exposure) ?? exposure
+        saturation=try c.decodeIfPresent(Double.self,forKey:.saturation) ?? saturation
+        temperature=try c.decodeIfPresent(Double.self,forKey:.temperature) ?? temperature
+        tint=try c.decodeIfPresent(Double.self,forKey:.tint) ?? tint
+        highlights=try c.decodeIfPresent(Double.self,forKey:.highlights) ?? highlights
+        shadows=try c.decodeIfPresent(Double.self,forKey:.shadows) ?? shadows
+        effectStrength=try c.decodeIfPresent(Double.self,forKey:.effectStrength) ?? effectStrength
+        shadowHue=try c.decodeIfPresent(Double.self,forKey:.shadowHue) ?? shadowHue
+        shadowChroma=try c.decodeIfPresent(Double.self,forKey:.shadowChroma) ?? shadowChroma
+        highlightHue=try c.decodeIfPresent(Double.self,forKey:.highlightHue) ?? highlightHue
+        highlightChroma=try c.decodeIfPresent(Double.self,forKey:.highlightChroma) ?? highlightChroma
+        fade=try c.decodeIfPresent(Double.self,forKey:.fade) ?? fade
+        smooth=try c.decodeIfPresent(Double.self,forKey:.smooth) ?? smooth
+        bright=try c.decodeIfPresent(Double.self,forKey:.bright) ?? bright
+        matchStrength=try c.decodeIfPresent(Double.self,forKey:.matchStrength) ?? matchStrength
+    }
 }
 
 struct ImportedPhoto: Decodable, Identifiable, Sendable {
@@ -52,6 +99,14 @@ struct EditSnapshot: Equatable {
     var parameters: AdjustmentParameters
     var operations: [RemovalOperation]
     var label: String
+    var lookName: String
+    var notes: [String]
+    var quality = QualitySettings()
+}
+
+struct QualitySettings: Codable, Equatable, Sendable {
+    var denoise = false
+    var scale = 1
 }
 
 struct PhotoRecord: Identifiable {
@@ -66,9 +121,13 @@ struct PhotoRecord: Identifiable {
     var future: [EditSnapshot] = []
     var snapshots: [EditSnapshot] = []
     var previewPath: String?
+    var lookName = "原图"
+    var notes: [String] = []
+    var ready = false
+    var quality = QualitySettings()
 
     var snapshot: EditSnapshot {
-        EditSnapshot(assetID: assetID, parameters: parameters, operations: operations, label: "调整")
+        EditSnapshot(assetID: assetID, parameters: parameters, operations: operations, label: "调整",lookName:lookName,notes:notes,quality:quality)
     }
 }
 
@@ -113,11 +172,33 @@ struct RemoveResponse: Decodable, Sendable {
 }
 
 struct ExportOptions: Codable, Sendable {
+    var format: String? = "jpeg"
     var infoBar = false
     var place = ""
     var lut = false
     var denoise = false
     var scale = 1
+
+    enum CodingKeys: String, CodingKey { case format, infoBar, place, lut, denoise, scale }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(format, forKey: .format)
+        try c.encode(infoBar, forKey: .infoBar)
+        try c.encode(place, forKey: .place)
+        try c.encode(lut, forKey: .lut)
+    }
+
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        format = try c.decodeIfPresent(String.self, forKey: .format)
+        infoBar = try c.decodeIfPresent(Bool.self, forKey: .infoBar) ?? false
+        place = try c.decodeIfPresent(String.self, forKey: .place) ?? ""
+        lut = try c.decodeIfPresent(Bool.self, forKey: .lut) ?? false
+        // 只读取旧调整记录；新记录把画质保存在每张照片上。
+        denoise = try c.decodeIfPresent(Bool.self, forKey: .denoise) ?? false
+        scale = try c.decodeIfPresent(Int.self, forKey: .scale) ?? 1
+    }
 }
 
 struct ExportResponse: Decodable, Sendable {
@@ -136,6 +217,11 @@ struct ProjectPhoto: Codable {
     var path: String
     var params: AdjustmentParameters
     var operations: [RemovalOperation]
+    var quality: QualitySettings? = nil
+
+    func restoredQuality(options: ExportOptions) -> QualitySettings {
+        quality ?? QualitySettings(denoise: options.denoise, scale: options.scale)
+    }
 }
 
 enum RegionNames {

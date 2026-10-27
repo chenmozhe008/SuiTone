@@ -4,6 +4,10 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        if let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
+           let icon = NSImage(contentsOfFile: path) {
+            NSApp.applicationIconImage = icon
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -15,7 +19,7 @@ struct PhotoEditApp: App {
     @State private var store = WorkspaceStore()
 
     var body: some Scene {
-        WindowGroup("Photo Edit", id: "workspace") {
+        WindowGroup(AppIdentity.windowTitle, id: "workspace") {
             ContentView(store: store)
                 .preferredColorScheme(.dark)
                 .task { await store.start() }
@@ -34,15 +38,16 @@ struct PhotoEditApp: App {
                 Divider()
                 Button("打开调整记录…") { store.openProject() }.disabled(store.busy)
                 Button("保存调整记录…") { store.saveProject() }.keyboardShortcut("s").disabled(store.photos.isEmpty)
-                Button("导出所选照片…") { store.showExportOptions = true }.keyboardShortcut("e",modifiers:[.command,.shift]).disabled(store.selected.isEmpty || store.busy)
+                Button("导出照片…") { store.showExportOptions = true }.keyboardShortcut("e",modifiers:[.command,.shift]).disabled(store.targets.isEmpty || store.controlsBlocked)
             }
             CommandGroup(replacing: .undoRedo) {
-                Button("撤销") { store.undo() }.keyboardShortcut("z").disabled(!store.canUndo || store.busy)
-                Button("重做") { store.redo() }.keyboardShortcut("z",modifiers:[.command,.shift]).disabled(!store.canRedo || store.busy)
+                Button("撤销") { store.undo() }.keyboardShortcut("z").disabled(!store.canUndo || store.controlsBlocked)
+                Button("重做") { store.redo() }.keyboardShortcut("z",modifiers:[.command,.shift]).disabled(!store.canRedo || store.controlsBlocked)
             }
             CommandMenu("照片") {
                 Button("显示／隐藏原图") { store.showOriginal.toggle() }.keyboardShortcut("\\",modifiers:[])
                 Button("保存快照") { store.snapshot() }.keyboardShortcut("k").disabled(store.current == nil)
+                Button("移除杂物") { store.inspectorTab = "repair" }.keyboardShortcut("r").disabled(store.current == nil || store.controlsBlocked)
                 Button("选择全部照片") { store.selectedIDs = Set(store.photos.map(\.id)) }.keyboardShortcut("a")
             }
         }
