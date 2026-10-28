@@ -18,10 +18,12 @@ def run_provider(provider, engine, targets):
     bridge = AssistantBridge(engine)
     checks = []
 
-    def run(name, message, items, verify, history=None, cancel=False):
+    def run(name, message, items, verify, history=None, cancel=False, context=None):
         original = deepcopy(items)
         start = monotonic()
-        job_id = bridge.start(dict(provider=provider, message=message, targets=deepcopy(items), history=history or []))['id']
+        request = dict(provider=provider, message=message, targets=deepcopy(items), history=history or [])
+        request.update(context or {})
+        job_id = bridge.start(request)['id']
         cancellation_sent = False
         while True:
             job = bridge.status(job_id)
@@ -67,6 +69,14 @@ def run_provider(provider, engine, targets):
                 assert actual == expected, '只要求曝光却改了其他参数'
         return verify
 
+    def requested_operation(kind, value):
+        def verify(job):
+            assert len(job['changes']) == 1, '没有返回当前照片的操作'
+            ops = job['changes'][0].get('operations', [])
+            assert any(op['kind'] == kind and op['value'] == value for op in ops), '没有返回请求的操作'
+            assert job['changes'][0]['params'] == one[0]['params'], '仅请求工具操作时改变了调色参数'
+        return verify
+
     one = deepcopy(targets[:1])
     run('consultation', '只讨论调色建议，不要修改照片。请用一句话说明自然微调方向。', one, no_changes)
     first = run('single_exact', '只将当前照片曝光提高 0.15 EV，其他参数完全保持不变。直接调整。', one, exposure_only(one, .15))
@@ -78,6 +88,14 @@ def run_provider(provider, engine, targets):
     else:
         checks.append(dict(name='followup_relative', passed=False, errors=['前置精确调整失败，未测试后续上下文']))
     run('unsupported_repair', '请现在自动去掉画面右侧的人。没有框选，我不想先框选。', one, no_changes)
+    run('denoise', '只打开当前照片的降噪，其他参数保持不变，直接处理。', one, requested_operation('denoise', 1))
+    run('upscale', '只将当前照片放大到 2 倍，其他不变，直接处理。', one, requested_operation('upscale', 2))
+    run('reference_match', '请用已添加的参考图匹配当前照片的颜色，其他不动。', one,
+        requested_operation('match', 0), context=dict(reference_ids=[targets[1]['id']]))
+    run('repair_selection', '请修复我已框选的区域，其他不动。', one,
+        requested_operation('repair', 0), context=dict(repair_selection=dict(id=one[0]['id'],box=[.2,.2,.4,.4])))
+    run('undo', '撤销上一步调整，不做其他修改。', one, requested_operation('undo', 0),
+        context=dict(undo_available=True))
     run('cancel', '请认真考虑几种电影调色方案并给出详细分析，但暂时不要修改照片。', one, no_changes, cancel=True)
     return dict(provider=provider, passed=all(check['passed'] for check in checks), checks=checks)
 
@@ -94,7 +112,7 @@ def main():
         params = neutral(); params['exposure'] = .2 + index*.15
         targets.append(dict(id=asset.id, params=params))
     providers = engine.assistant.providers()
-    available = [p['id'] for p in providers if p['available']]
+    available = [p['id'] for p in providers if p['available'] and p['id'] in ('codex', 'claude')]
     report = dict(status='running', image_pixels_sent=False, providers=providers, results=[])
     path = folder / 'results.json'
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2))

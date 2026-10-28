@@ -11,7 +11,7 @@ struct PhotoCanvas: View {
                 let h=w/ratio
                 ZStack {
                     LocalPhoto(path:displayPath(photo)).frame(width:w,height:h)
-                    if let box=store.selectionBox,store.repairEnabled,store.repairDraft == nil {
+                    if let box=store.selectionBox,(store.repairEnabled || store.inspectorTab == "chat"),store.repairDraft == nil {
                         Rectangle().stroke(.white,lineWidth:1).background(.white.opacity(0.08))
                             .frame(width:w*(box[2]-box[0]),height:h*(box[3]-box[1]))
                             .position(x:w*(box[0]+box[2])/2,y:h*(box[1]+box[3])/2)

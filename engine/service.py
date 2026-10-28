@@ -110,6 +110,7 @@ class Engine:
         self.assets = {}
         self.analyses = OrderedDict()
         self.previews = OrderedDict()
+        self.suggestion_cache = OrderedDict()
         self.quality_analyses = OrderedDict()
         self.progress = dict(done=0,total=0,name='')
         self.lock = RLock()
@@ -201,6 +202,31 @@ class Engine:
             overlays[name]=str(path)
         return dict(regions=a.summary(),overlays=overlays,cache_hit=cached,
                     analysis_ms=(perf_counter()-start)*1000,inference_count=segmentation.inference_count)
+
+    def suggestions(self, key):
+        from suggestions import local_suggestions
+        self.asset(key)
+        if key in self.suggestion_cache:
+            self.suggestion_cache.move_to_end(key)
+            return dict(cards=deepcopy(self.suggestion_cache[key]), source='local', cache_hit=True)
+        context,_=self.analysis(key)
+        cards=local_suggestions(context)
+        self.suggestion_cache[key]=deepcopy(cards)
+        while len(self.suggestion_cache)>64:self.suggestion_cache.popitem(last=False)
+        return dict(cards=cards, source='local', cache_hit=False)
+
+    def apply_suggestion(self, key, card_id, raw, quality=None):
+        from smart import suggest,apply_operations
+        card=next((c for c in self.suggestions(key)['cards'] if c['id']==card_id),None)
+        if card is None:raise ValueError('这张照片没有可用的此项建议')
+        context,_=self.analysis(key)
+        if card['preset']=='keep':
+            params,notes=apply_operations(parameters(raw),card['adjustments'],context)
+        else:
+            result=suggest(context,card['preset'])
+            params,notes=result['params'],result['notes']
+        preview=self.preview(key,params,quality)['preview']
+        return dict(params=params,title=card['title'],notes=notes,preview=preview)
 
     def quality_analysis(self,key,quality):
         source,cached=self.analysis(key)
@@ -393,6 +419,8 @@ def serve(root, token, watch_stdin=True):
                     elif self.path=='/import': result=engine.import_paths(data['paths'])
                     elif self.path=='/analyze': result=engine.analyze(data['id'])
                     elif self.path=='/preview': result=engine.preview(data['id'],data.get('params',{}),data.get('quality'))
+                    elif self.path=='/suggestions': result=engine.suggestions(data['id'])
+                    elif self.path=='/suggestion-apply': result=engine.apply_suggestion(data['id'],data['card_id'],data.get('params',{}),data.get('quality'))
                     elif self.path=='/match': result=engine.match(data['id'],data['references'],data.get('params',{}),data.get('only'),data.get('reference_scopes'))
                     elif self.path=='/smart':result=engine.smart(data['id'],data.get('style','smart'),data.get('quality'))
                     elif self.path=='/style-tiles':result=engine.style_tiles(data['id'])

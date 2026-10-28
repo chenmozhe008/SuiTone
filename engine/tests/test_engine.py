@@ -18,6 +18,154 @@ from lut import base_lut,write_cube,read_cube,apply
 
 
 class EngineTests(unittest.TestCase):
+    def test_visual_review_cannot_apply_preset_or_tool_operation(self):
+        from assistant import validate_plan
+        from smart import neutral
+        context=self.context(Image.new('RGB',(32,32),(100,110,120)))
+        engine=SimpleNamespace(analysis=lambda key:(context,True))
+        targets=[{'id':'a','params':neutral()}]
+        action=dict(id='a',preset='film',adjustments=[],operations=[])
+        plan=dict(reply='建议',selection='none',actions=[action])
+        with self.assertRaises(ValueError):validate_plan(plan,targets,engine,{'review_only':True})
+        action['preset']='keep';action['operations']=[{'kind':'denoise','value':1}]
+        with self.assertRaises(ValueError):validate_plan(plan,targets,engine,{'review_only':True})
+        action['operations']=[];action['adjustments']=[{'parameter':'shadows','mode':'add','value':.05}]
+        result=validate_plan(plan,targets,engine,{'review_only':True})
+        self.assertAlmostEqual(result['changes'][0]['params']['shadows'],.05)
+
+    def test_api_adapter_requires_image_consent_and_does_not_expose_credentials(self):
+        from anthropic_provider import invoke, ENDPOINT
+        from assistant import SCHEMA
+        from io import BytesIO
+        from urllib.error import HTTPError
+        import json
+        calls=[]
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self,*args): pass
+            def read(self,limit):
+                return json.dumps({'stop_reason':'end_turn','content':[{'type':'text','text':'{"reply":"ok","selection":"none","actions":[]}'}]}).encode()
+        def opener(request,timeout):
+            calls.append(request);return Response()
+        image=[{'label':'当前照片 a','data':b'fixture-image'}]
+        with self.assertRaises(ValueError):invoke('fixture-secret','test',SCHEMA,image,opener=opener)
+        self.assertEqual(calls,[])
+        result=invoke('fixture-secret','test',SCHEMA,image,image_consent=True,opener=opener)
+        self.assertEqual(result['reply'],'ok')
+        self.assertEqual(calls[0].full_url,ENDPOINT)
+        body=json.loads(calls[0].data)
+        self.assertEqual(body['messages'][0]['content'][2]['source']['type'],'base64')
+        self.assertEqual(body['output_config']['format']['schema'],SCHEMA)
+        def denied(request,timeout): raise HTTPError(ENDPOINT,401,'fixture-secret',{},BytesIO())
+        with self.assertRaises(ValueError) as error:invoke('fixture-secret','test',SCHEMA,opener=denied)
+        self.assertNotIn('fixture-secret',str(error.exception))
+
+    def test_api_provider_uses_common_validation_without_putting_key_in_prompt(self):
+        from assistant import AssistantBridge
+        from smart import neutral
+        from threading import Event,RLock
+        from unittest.mock import patch
+        context=self.context(Image.new('RGB',(32,32),(80,90,100)))
+        engine=SimpleNamespace(lock=RLock(),analysis=lambda key:(context,True))
+        bridge=AssistantBridge(engine);bridge.events['job']=Event();bridge.jobs['job']={'state':'preparing'}
+        data=dict(provider='anthropic',api_key='fixture-secret',message='只讨论，不修改',
+                  targets=[dict(id='a',params=neutral(),quality={'denoise':False,'scale':1})],
+                  image_consent=False)
+        def invoke(key,prompt,schema,images,**kwargs):
+            self.assertEqual(key,'fixture-secret');self.assertNotIn(key,prompt);self.assertEqual(images,[])
+            return dict(reply='建议',selection='none',actions=[])
+        with patch('anthropic_provider.invoke',side_effect=invoke):bridge._run('job',data)
+        result=bridge.status('job')
+        self.assertEqual(result['state'],'done');self.assertEqual(result['changes'],[])
+        self.assertNotIn('fixture-secret',repr(result))
+
+    def test_local_suggestions_only_offer_detected_regions(self):
+        from suggestions import local_suggestions
+        class Context:
+            def __init__(self,sky,person): self.sky=sky;self.person=person
+            def summary(self):
+                return {'sky':{'available':self.sky},'person':{'available':self.person}}
+        for sky in [False,True]:
+            for person in [False,True]:
+                cards=local_suggestions(Context(sky,person))
+                ids={card['id'] for card in cards}
+                self.assertEqual('sky' in ids,sky)
+                self.assertEqual('person' in ids,person)
+                self.assertGreaterEqual(len(cards),3)
+                self.assertLessEqual(len(cards),5)
+                self.assertEqual(len(cards),len(ids))
+
+    def test_local_suggestions_cache_does_not_share_mutable_results(self):
+        class Context:
+            def summary(self):return {'sky':{'available':True},'person':{'available':False}}
+        with TemporaryDirectory() as folder:
+            engine=Engine(folder);engine.asset=lambda key:None
+            calls=[]
+            def analyze(key): calls.append(key);return Context(),False
+            engine.analysis=analyze
+            first=engine.suggestions('photo')
+            first['cards'][0]['title']='changed locally'
+            second=engine.suggestions('photo')
+            self.assertFalse(first['cache_hit']);self.assertTrue(second['cache_hit'])
+            self.assertNotEqual(second['cards'][0]['title'],'changed locally')
+            self.assertEqual(calls,['photo'])
+
+    def test_suggestion_applies_only_available_card_to_current_parameters(self):
+        from smart import neutral
+        context=self.context(Image.new('RGB',(48,48),(100,110,120)))
+        with TemporaryDirectory() as folder:
+            engine=Engine(folder);engine.asset=lambda key:None
+            engine.analysis=lambda key:(context,True)
+            engine.preview=lambda key,p,quality:{'preview':'fixture-preview'}
+            params=neutral();params['exposure']=.3
+            result=engine.apply_suggestion('photo','shadows',params)
+            self.assertAlmostEqual(result['params']['shadows'],.12)
+            self.assertAlmostEqual(result['params']['exposure'],.3)
+            self.assertEqual(result['preview'],'fixture-preview')
+            with self.assertRaises(ValueError):engine.apply_suggestion('photo','sky',params)
+
+    def test_visual_inputs_require_explicit_consent_before_reading_assets(self):
+        from vision import prepare_images
+        from threading import Event
+        class UnreadableEngine:
+            def __getattr__(self, name):
+                raise AssertionError('未授权时不应读取照片')
+        self.assertEqual(prepare_images(UnreadableEngine(), {'targets': []}), [])
+        self.assertEqual(prepare_images(UnreadableEngine(), {'targets': [], 'image_consent': False}), [])
+        with self.assertRaises(ValueError):
+            prepare_images(UnreadableEngine(), {'targets': [], 'image_consent': 1})
+        cancelled=Event();cancelled.set()
+        with self.assertRaises(InterruptedError):
+            prepare_images(UnreadableEngine(), {'targets':[{'id':'x'}], 'image_consent':True},cancelled)
+
+    def test_visual_inputs_use_current_preview_strip_metadata_and_keep_selection(self):
+        from vision import prepare_images
+        from io import BytesIO
+        class MockEngine:
+            def __init__(self, path): self.path=path; self.called=[]
+            def preview(self, key, params, quality):
+                self.called.append((key, params, quality)); return {'preview': str(self.path)}
+            def asset(self, key): return SimpleNamespace(image_path=self.path)
+        with TemporaryDirectory() as folder:
+            path=Path(folder)/'source.jpg'
+            image=Image.new('RGB',(1500,1000),(100,120,140))
+            exif=Image.Exif();exif[270]='private test metadata'
+            image.save(path,exif=exif)
+            engine=MockEngine(path)
+            data={'image_consent':True,'targets':[{'id':'a','params':{'exposure':.2},'quality':{'scale':1}}],
+                  'reference_ids':['b'],'repair_selection':{'id':'a','box':[.1,.2,.3,.4]}}
+            result=prepare_images(engine,data)
+            self.assertEqual(len(result),3)
+            self.assertEqual(engine.called,[('a',{'exposure':.2},{'scale':1})])
+            self.assertIn('用户指定的选区',result[1]['label'])
+            for attachment in result:
+                with Image.open(BytesIO(attachment['data'])) as sent:
+                    self.assertEqual(sent.size,(1024,683))
+                    self.assertFalse(sent.getexif())
+            self.assertNotEqual(result[0]['data'],result[1]['data'])
+            data['targets']*=21
+            with self.assertRaises(ValueError):prepare_images(engine,data)
+
     def test_quality_preview_is_cached_across_color_edits_without_new_segmentation(self):
         from unittest.mock import patch
         from smart import neutral
@@ -267,6 +415,50 @@ class EngineTests(unittest.TestCase):
         updated,notes=apply_operations(p,[dict(parameter='water_a',mode='add',value=-3)],context)
         self.assertEqual(updated,p);self.assertTrue(notes)
 
+    def test_ai_operations_are_bounded_and_require_real_context(self):
+        from assistant import validate_plan
+        from smart import neutral
+        context=self.context(Image.new('RGB',(64,64),(120,135,145)))
+        engine=SimpleNamespace(analysis=lambda key:(context,True))
+        targets=[dict(id='one',params=neutral())]
+        action=dict(id='one',preset='keep',adjustments=[],operations=[
+            dict(kind='denoise',value=1),dict(kind='upscale',value=2),
+            dict(kind='repair',value=0),dict(kind='match',value=0)])
+        plan=dict(reply='准备处理',selection='none',actions=[action])
+        available=dict(repair_selection=dict(id='one',box=[.1,.1,.4,.4]),reference_ids=['ref'])
+        result=validate_plan(plan,targets,engine,available)
+        self.assertEqual([op['kind'] for op in result['changes'][0]['operations']],['denoise','upscale','repair','match'])
+        with self.assertRaises(ValueError):validate_plan(plan,targets,engine,dict(reference_ids=['ref']))
+        with self.assertRaises(ValueError):validate_plan(plan,targets,engine,dict(repair_selection=available['repair_selection']))
+        for op in [dict(kind='upscale',value=3),dict(kind='denoise',value=2),dict(kind='shell',value=0)]:
+            invalid=deepcopy(plan);invalid['actions'][0]['operations']=[op]
+            with self.assertRaises(ValueError):validate_plan(invalid,targets,engine,available)
+        undo=deepcopy(plan);undo['actions'][0]['operations']=[dict(kind='undo',value=0)]
+        with self.assertRaises(ValueError):validate_plan(undo,targets,engine,available)
+        self.assertEqual(validate_plan(undo,targets,engine,dict(undo_available=True))['changes'][0]['operations'][0]['kind'],'undo')
+        undo['actions'][0]['operations'].append(dict(kind='denoise',value=1))
+        with self.assertRaises(ValueError):validate_plan(undo,targets,engine,dict(undo_available=True))
+
+    def test_ai_cancellation_wins_before_result_is_published(self):
+        from assistant import AssistantBridge
+        from threading import Event
+        from unittest.mock import patch
+        from smart import neutral
+        context=self.context(Image.new('RGB',(64,64),(120,135,145)))
+        from threading import RLock
+        engine=SimpleNamespace(lock=RLock(),analysis=lambda key:(context,True))
+        bridge=AssistantBridge(engine);key='cancelled-job';event=Event()
+        bridge.events[key]=event;bridge.jobs[key]=dict(state='preparing')
+        data=dict(provider='codex',targets=[dict(id='one',params=neutral())],history=[],message='调整')
+        def invoke(*args):
+            return dict(reply='计划',selection='none',actions=[])
+        def validate(*args):
+            event.set()
+            return dict(reply='计划',selection='none',changes=[])
+        with patch.object(bridge,'_invoke',side_effect=invoke),patch('assistant.validate_plan',side_effect=validate):
+            bridge._run(key,data)
+        self.assertEqual(bridge.status(key)['state'],'cancelled')
+
     def test_cli_failures_are_actionable_and_do_not_echo_private_logs(self):
         from assistant import cli_failure
         private='private-fixture-value'
@@ -293,6 +485,69 @@ class EngineTests(unittest.TestCase):
         with self.assertRaises(CLIRequestError):bridge._invoke('codex','test',Event())
         self.assertEqual(len(calls),1)
         self.assertEqual(set(SCHEMA['properties']['actions']['items']['properties']['preset']['enum']),{'keep'}|{s['id'] for s in STYLES})
+
+    def test_codex_request_disables_general_tools(self):
+        from assistant import AssistantBridge
+        from threading import Event
+        from time import monotonic
+        from unittest.mock import Mock,patch
+        with TemporaryDirectory() as folder:
+            bridge=AssistantBridge(SimpleNamespace(folder=Path(folder)))
+            commands=[]
+            def run(command,**kwargs):
+                commands.append(command)
+                output=Path(command[command.index('--output-last-message')+1])
+                output.write_text('{"reply":"测试","selection":"none","actions":[]}')
+                child=Mock();child.stdin=Mock();child.poll.return_value=0;child.returncode=0
+                return child
+            with patch('assistant.executable',return_value='/test/codex'),patch('assistant.subprocess.Popen',side_effect=run):
+                result=bridge._invoke_once('codex','测试',Event(),monotonic()+10)
+            self.assertEqual(result['actions'],[])
+            disabled={commands[0][i+1] for i,x in enumerate(commands[0][:-1]) if x=='--disable'}
+            self.assertTrue({'shell_tool','unified_exec','apps','browser_use'}.issubset(disabled))
+
+    def test_codex_receives_only_prepared_image_attachments(self):
+        from assistant import AssistantBridge
+        from threading import Event
+        from time import monotonic
+        from unittest.mock import Mock,patch
+        with TemporaryDirectory() as folder:
+            bridge=AssistantBridge(SimpleNamespace(folder=Path(folder)))
+            sent=[]
+            def run(command,**kwargs):
+                paths=[Path(command[i+1]) for i,x in enumerate(command[:-1]) if x=='--image']
+                sent.extend(path.read_bytes() for path in paths)
+                Path(command[command.index('--output-last-message')+1]).write_text('{"reply":"ok","selection":"none","actions":[]}')
+                child=Mock();child.stdin=Mock();child.poll.return_value=0;child.returncode=0
+                return child
+            with patch('assistant.executable',return_value='/test/codex'),patch('assistant.subprocess.Popen',side_effect=run):
+                bridge._invoke_once('codex','test',Event(),monotonic()+10,[{'label':'a','data':b'first'}, {'label':'b','data':b'second'}])
+            self.assertEqual(sent,[b'first',b'second'])
+
+    def test_vision_consent_controls_end_to_end_cli_attachments(self):
+        from assistant import AssistantBridge
+        from smart import neutral
+        from time import monotonic,sleep
+        from unittest.mock import Mock,patch
+        with TemporaryDirectory() as folder:
+            root=Path(folder);source=root/'sample.png'
+            Image.new('RGB',(48,32),(100,110,120)).save(source)
+            engine=Engine(root);asset=engine.import_one(source)
+            context=self.context(Image.new('RGB',(48,32),(100,110,120)))
+            engine.analysis=lambda key:(context,True)
+            bridge=AssistantBridge(engine);seen=[]
+            def run(command,**kwargs):
+                seen.append(sum(x=='--image' for x in command))
+                Path(command[command.index('--output-last-message')+1]).write_text('{"reply":"ok","selection":"none","actions":[]}')
+                child=Mock();child.stdin=Mock();child.poll.return_value=0;child.returncode=0
+                return child
+            with patch('assistant.executable',return_value='/test/codex'),patch('assistant.subprocess.Popen',side_effect=run):
+                for allowed in [False,True]:
+                    job=bridge.start(dict(provider='codex',message='只讨论',targets=[dict(id=asset.id,params=neutral())],image_consent=allowed))['id']
+                    deadline=monotonic()+10
+                    while bridge.status(job)['state'] in ('preparing','thinking') and monotonic()<deadline:sleep(.01)
+                    self.assertEqual(bridge.status(job)['state'],'done')
+            self.assertEqual(seen,[0,1])
 
     def test_old_recipes_keep_manual_dehaze(self):
         self.assertFalse(parameters(dict(dehaze_amt=.35))['auto_dehaze'])

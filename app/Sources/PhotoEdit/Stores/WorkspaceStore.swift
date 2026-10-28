@@ -4,7 +4,8 @@ import UniformTypeIdentifiers
 
 @MainActor @Observable
 final class WorkspaceStore {
-    let engine = EngineClient()
+    let engine: EngineClient
+    init(engine: EngineClient = EngineClient()) { self.engine = engine }
     var photos: [PhotoRecord] = []
     var references: [ImportedPhoto] = []
     var referenceScopes: [String: String] = [:]
@@ -45,10 +46,16 @@ final class WorkspaceStore {
     var redoChanges: [WorkspaceChange] = []
     var providers: [AssistantProvider] = []
     var assistantProvider = "codex"
+    var anthropicAPIKey = ""
+    var visionConsentProvider: String?
+    var visionEnabled: Bool { ["codex", "anthropic"].contains(assistantProvider) && visionConsentProvider == assistantProvider }
+    var suggestions: [SuggestionCard] = []
     var chatDraft = ""
     var chatMessages: [ChatMessage] = []
     var chatting = false
     var assistantJobID: String?
+    var assistantCancellationRequested = false
+    var assistantApplying = false
     var assistantPhase = ""
     var importTask: Task<Void, Never>?
     var batchTask: Task<Void, Never>?
@@ -140,7 +147,7 @@ final class WorkspaceStore {
         Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.snapshot) })
     }
 
-    func recordChange(_ label: String, before: [String: EditSnapshot]) {
+    @discardableResult func recordChange(_ label: String, before: [String: EditSnapshot]) -> UUID? {
         var old: [String: EditSnapshot] = [:], new: [String: EditSnapshot] = [:]
         for (id, origin) in before {
             guard let photo = photos.first(where: { $0.id == id }) else { continue }
@@ -148,10 +155,12 @@ final class WorkspaceStore {
             previous.label = label; now.label = label
             if previous != now { old[id] = previous; new[id] = now }
         }
-        guard !old.isEmpty else { return }
-        undoChanges.append(WorkspaceChange(label: label, before: old, after: new))
+        guard !old.isEmpty else { return nil }
+        let change = WorkspaceChange(label: label, before: old, after: new)
+        undoChanges.append(change)
         if undoChanges.count > 100 { undoChanges.removeFirst() }
         redoChanges = []
+        return change.id
     }
 
     func beginEditing(_ label: String = "调整参数") {
@@ -168,7 +177,12 @@ final class WorkspaceStore {
 
     func update(_ body: (inout AdjustmentParameters) -> Void) {
         guard let i = currentIndex else { return }
-        body(&photos[i].parameters); photos[i].lookName = "自定义"
+        let source = photos[i]
+        var params = source.parameters; body(&params)
+        var prepared = prepareParameters(params, name: "自定义", notes: source.notes, on: source)
+        // 保留上一帧，直到新预览就绪，避免拖动时闪回原图。
+        prepared.previewPath = source.previewPath
+        guard commitPrepared(prepared, expected: source.snapshot) else { return }
         overlay = ""; showOriginal = false; schedulePreview()
     }
 
@@ -197,12 +211,14 @@ final class WorkspaceStore {
     func undo() {
         finishEditing()
         guard let last = undoChanges.popLast() else { return }
+        for i in chatMessages.indices where chatMessages[i].changeID == last.id { chatMessages[i].wasUndone = true }
         redoChanges.append(last); applyStates(last.before)
         status = "已撤销：\(last.label) · \(last.before.count) 张"
     }
 
     func redo() {
         guard let next = redoChanges.popLast() else { return }
+        for i in chatMessages.indices where chatMessages[i].changeID == next.id { chatMessages[i].wasUndone = false }
         undoChanges.append(next); applyStates(next.after)
         status = "已重做：\(next.label) · \(next.after.count) 张"
     }

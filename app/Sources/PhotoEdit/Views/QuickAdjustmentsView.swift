@@ -15,7 +15,9 @@ struct InspectorView: View {
             else { QuickAdjustmentsView(store: store) }
         }.background(Color(white: 0.15))
             .onChange(of: store.inspectorTab) { _, tab in
+                let selectionForChat = tab == "chat" && store.repairDraft == nil ? store.selectionBox : nil
                 store.cancelRepairPreview()
+                if let selectionForChat { store.selectionBox = selectionForChat }
                 store.repairEnabled = tab == "repair"
                 store.overlay = ""; store.showOriginal = false
                 if tab == "repair" { store.grid = false }

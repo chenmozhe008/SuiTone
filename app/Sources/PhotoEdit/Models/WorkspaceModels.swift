@@ -6,6 +6,7 @@ enum AdjustmentScope:String,CaseIterable {
 }
 
 struct WorkspaceChange {
+    let id = UUID()
     var label:String
     var before:[String:EditSnapshot]
     var after:[String:EditSnapshot]
@@ -60,18 +61,37 @@ struct AssistantProvider:Decodable,Identifiable {
     var available:Bool
 }
 
+struct SuggestionCard: Decodable, Identifiable {
+    var id: String
+    var title: String
+}
+
+struct SuggestionsResponse: Decodable {
+    var cards: [SuggestionCard]
+    var source: String
+    var cacheHit: Bool
+}
+
 struct ChatMessage:Identifiable {
     let id=UUID()
     var role:String
     var text:String
     var notes:[String]=[]
     var affectedPhotos:[String]=[]
+    var changeID: UUID? = nil
+    var wasUndone = false
 }
 
 struct AssistantChange:Decodable {
     var id:String
     var params:AdjustmentParameters
     var notes:[String]
+    var operations: [AssistantOperation]? = nil
+}
+
+struct AssistantOperation: Decodable {
+    var kind: String
+    var value: Double
 }
 
 struct AssistantJob:Decodable {

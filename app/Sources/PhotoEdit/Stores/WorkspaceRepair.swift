@@ -7,7 +7,7 @@ extension WorkspaceStore {
         return box[2] - box[0] > 0.002 && box[3] - box[1] > 0.002
     }
 
-    private func removalOperation(_ box: [Double]) -> RemovalOperation {
+    func removalOperation(_ box: [Double]) -> RemovalOperation {
         RemovalOperation(box: box,
             classes: repairMode == "classes" ? repairClasses.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } : nil,
             keep: repairMode == "keepSky" ? ["sky"] : nil)
@@ -23,14 +23,12 @@ extension WorkspaceStore {
         Task {
             defer { busy = false }
             do {
-                var body = try EngineClient.object(operation); body["id"] = photo.assetID
-                let result: RemoveResponse = try await engine.request("remove", body: body)
-                let rendered: PreviewResponse = try await engine.request("preview", body: ["id": result.id, "params": try EngineClient.object(photo.parameters), "quality": try EngineClient.object(photo.quality)])
+                let prepared = try await prepareOperation(.repair(operation), on: photo)
                 guard repairRevision == revision, currentID == photo.id, current?.assetID == photo.assetID,
                       current?.parameters == photo.parameters, inspectorTab == "repair" else { return }
                 repairDraft = RepairDraft(photoID: photo.id, sourceAssetID: photo.assetID, parameters: photo.parameters,
-                    operation: operation, resultAssetID: result.id,
-                    beforePath: photo.previewPath ?? photo.imported.original, previewPath: rendered.preview)
+                    operation: operation, resultAssetID: prepared.assetID,
+                    beforePath: photo.previewPath ?? photo.imported.original, previewPath: prepared.previewPath!)
                 repairShowingBefore = false
                 status = "修复预览已生成"
             } catch { self.error = error.localizedDescription }
@@ -51,9 +49,10 @@ extension WorkspaceStore {
             cancelRepairPreview(); return
         }
         let before = photos[i].snapshot
-        photos[i].assetID = draft.resultAssetID
-        photos[i].operations.append(draft.operation)
-        photos[i].previewPath = draft.previewPath
+        var prepared = photos[i]
+        prepared.assetID = draft.resultAssetID; prepared.operations.append(draft.operation)
+        prepared.previewPath = draft.previewPath
+        guard commitPrepared(prepared, expected: before) else { cancelRepairPreview(); return }
         recordChange("移除杂物", before: [draft.photoID: before])
         cancelRepairPreview()
         analysis = nil; overlay = ""; styleTiles = [:]

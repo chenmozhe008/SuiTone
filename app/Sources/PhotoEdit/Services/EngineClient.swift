@@ -18,8 +18,10 @@ actor EngineClient {
     }()
     let root: URL
 
-    init() {
-        if let path = Bundle.main.object(forInfoDictionaryKey: "PhotoEditProjectRoot") as? String {
+    init(root explicitRoot: URL? = nil) {
+        if let explicitRoot {
+            root = explicitRoot
+        } else if let path = Bundle.main.object(forInfoDictionaryKey: "PhotoEditProjectRoot") as? String {
             root = URL(fileURLWithPath: path)
         } else {
             root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
