@@ -10,6 +10,8 @@ from threading import Event,RLock,Thread
 from time import monotonic
 from uuid import uuid4
 import math
+import re
+import base64
 from smart import STYLES
 
 PARAMETERS=['exposure','contrast','saturation','temperature','tint','highlights','shadows',
@@ -31,10 +33,15 @@ SCHEMA=dict(type='object',additionalProperties=False,required=['reply','selectio
 SYSTEM='''你是随心调色 SuiTone 的修图助手。理解用户任意自然语言，延续对话，给出可执行的本地修图参数或审美建议。
 你拿到的是本地分析摘要和当前参数，没有看到照片本身，不得声称看过细节或把统计推断当成事实。
 只能输出规定的 JSON；不执行工具、命令、不读取文件、不联网。不要编程、修改 App 或其他项目。
-编辑输出可回退的参数方案。裁切、尺寸和输出格式属于导出工作流，不是永久禁令。
+编辑输出可回退的参数方案。当前版本尚不支持裁切或比例导出，也不能覆盖原文件；导出会另存为新文件。
 用户只讨论、询问或要求建议时 actions=[]。
 仅当用户要求修图时填写 actions，且 id 只能来自当前 targets。整批请求要覆盖 targets 各张，考虑每张自身曝光。
 默认温和调整，保留现场光感和肤色。自然不是固定成某种水色；暖调、电影感、复古等根据诉求用通用风格起步再调整。
+用户明确要求明显的电影感、胶片感或其他创作风格时，应让变化在整张预览中清晰可见，而不是只做难以察觉的微调。
+使用创作风格预设时，以预设参数作为风格基础，除非画面或用户要求需要，不要把构成风格的染色、对比、褪色等参数大幅削弱；整体强度通常保持 1。
+如果用户要求轻微、自然或保留特定区域，则按要求克制调整，不夸大效果；暗部无法恢复的细节要如实说明。
+“稍微”约束风格力度，不等于变化可以难以察觉；应根据照片中目标区域的实际问题，调整到前后预览可辨认，同时避免破坏雾气、边缘和亮部渐变。
+用户明确要求变化能看出来时，自然与可见须同时满足：重点区域要有可辨认的改善，同时保留色彩、质感和高光细节。
 preset=keep 保留现有设置；smart/clean/soft/warm/cool/mono 为自然微调。
 vivid鲜明、airy轻盈也属于自然微调；golden金色时刻、bleach银幕冷调属于创作风格。
 cinema青橙电影、film暖胶片、neon霓虹夜色、vintage复古褪色、editorial低饱和叙事、noir高反差黑白为明显创作风格。
@@ -42,6 +49,7 @@ shadow_hue/highlight_hue[-180,180]、shadow_chroma/highlight_chroma[0,30] 可分
 adjustments 为 set/add/multiply 数值操作：exposure[-3,3]EV、contrast[0,2]、saturation[0,2]、
 temperature[-1,1]正暖负冷、tint[-1,1]正洋红负绿、highlights/shadows[-1,1]、black_white[0,1]、
 dehaze_amt[0,1]、effect_strength[0,1]、match_strength[0,1]、smooth/bright[0,1]。
+contrast 是引擎对比增强的强度，0 为无调整；小数值如 0.08 往往非常轻，不能把它误当成常规照片软件里 8% 的可见对比提升。根据画面需求选择力度，不要为了明显而牺牲高光或制造色阶断层。
 skin_protect 和 *_enabled 用 set 0/1。water/sky/land/person 的 _l/_a/_b 是对应区域 Lab 目标，可用 add 微调现有区域，
 只在确实存在可靠区域时使用。L[0,100]、a/b[-100,100]，a负绿正红，b负蓝正黄。
 要查看选区时 selection 取对应名称，否则 none。曝光/对比/色温/高光/阴影等全局调整适用于任何场景。
@@ -50,7 +58,11 @@ repair 和 match 的 value 都为 0。修复只能在目标有用户提供的 re
 参考匹配只有 reference_count 大于 0 时使用。没有可用选区或参考图时说明如何操作，不填该操作。
 undo 的 value 为 0，只能在 undo_available 为 true 时单独使用，preset=keep、adjustments=[]，不能和其他操作混用。
 每张照片可先使用 preset 与 adjustments，再依序执行 operations；无需额外操作时 operations=[]。
-保存个人风格、液化、美妆、生成内容尚未支持，要如实解释，不返回假操作。
+修复选区目前只支持框选，不支持涂抹。保存个人风格、液化、美妆、生成内容尚未支持，要如实解释，不返回假操作。
+用户提到画面中的人物或其他具体对象时，先核对已有信息：有预览图且对象明显不存在时，说明没有看到，别指示用户框选不存在的对象；
+看不到照片、对象过小或无法确定时，说明无法确认并请用户指出位置，不把用户描述当作已经验证的画面事实。
+视觉上若用户对当前画面颜色、明暗或主体的事实判断与预览明显不一致，要礼貌指出所见及不确定性；若方向因此不明确，先问用户想变暖还是变冷等具体问题，actions=[]。如果用户明确指定了创作方向，即使原片本来偏暖或偏冷也可按指定方向调整，不要擅自反转。
+不要把中间色或微弱变化描述成饱和的具体色彩，也不要在目标方向、区域或变化幅度没有把握时说已经符合要求。
 reply 用中文描述建议，不要提前宣称已完成；缺关键审美方向时可以问一个具体问题，actions 留空。'''
 
 
@@ -83,15 +95,29 @@ def executable(provider):
     return next((p for p in candidates.get(provider,[]) if p and os.path.isfile(p) and os.access(p,os.X_OK)),None)
 
 
-def parse_output(provider,text,last_message=None):
+def parse_output(provider,text,last_message=None,stream=False):
     if provider=='codex':return json.loads(last_message or text)
-    envelope=json.loads(text)
+    if stream:
+        events=[json.loads(line) for line in text.splitlines() if line.strip()]
+        envelope=next((event for event in reversed(events) if event.get('type')=='result'),None)
+        if envelope is None:raise ValueError('Claude Code 未返回最终结果')
+    else:envelope=json.loads(text)
     if envelope.get('is_error'):raise ValueError('Claude Code 未完成请求，请检查其登录状态或可用额度')
     structured=envelope.get('structured_output')
     if isinstance(structured,dict):return structured
     result=envelope.get('result','').strip()
     if result.startswith('```'):result=result.split('\n',1)[1].rsplit('```',1)[0]
     return json.loads(result)
+
+
+def safe_advice(reply):
+    """拦截已知的不存在的操作指引；实际界面支持框选、另存为。"""
+    if '覆盖原' in reply:
+        return ('当前版本不能覆盖原文件，导出会保存为新文件。'
+                + ('目前也不支持裁切或比例导出。' if any(word in reply for word in ('裁切','裁剪','比例','3:4')) else ''))
+    if re.search(r'(导出|保存).{0,36}(裁切|裁剪|比例)|(裁切|裁剪|比例).{0,36}(导出|保存)',reply,re.S):
+        return '当前版本尚不支持裁切或比例导出；可以导出为新文件后再用其他工具处理。'
+    return reply.replace('涂抹或框选','框选').replace('涂抹或拉框','框选').replace('涂抹','框选')
 
 
 def validate_plan(plan,targets,engine,available_context=None):
@@ -130,7 +156,7 @@ def validate_plan(plan,targets,engine,available_context=None):
             if kind=='undo' and value==0 and available_context.get('undo_available') is True and len(actions)==1 and len(operations)==1 and preset=='keep' and not action['adjustments']:continue
             raise ValueError('AI 请求的操作不可用或缺少选区、参考图')
         changes.append(dict(id=key,params=p,notes=notes,operations=operations))
-    return dict(reply=plan['reply'],selection=plan['selection'],changes=changes)
+    return dict(reply=safe_advice(plan['reply']) if not changes else plan['reply'],selection=plan['selection'],changes=changes)
 
 
 class AssistantBridge:
@@ -149,8 +175,6 @@ class AssistantBridge:
         if data['provider']=='anthropic' and (not isinstance(data.get('api_key'),str) or not 0<len(data['api_key'].strip())<=512):
             raise ValueError('请先配置 Claude API 密钥')
         if not isinstance(data.get('image_consent',False),bool):raise ValueError('图片发送开关无效')
-        if data.get('image_consent') and data['provider']=='claude':
-            raise ValueError('该对话引擎暂不支持安全发送图片，请关闭看图或选择 Codex')
         if not isinstance(data.get('message'),str) or not 0<len(data['message'].strip())<=8000:
             raise ValueError('请输入要讨论或调整的内容')
         targets=data.get('targets')
@@ -165,6 +189,15 @@ class AssistantBridge:
         for reference_id in reference_ids:self.engine.asset(reference_id)
         if not isinstance(data.get('undo_available',False),bool):raise ValueError('撤销状态无效')
         if not isinstance(data.get('review_only',False),bool):raise ValueError('复看状态无效')
+        before=data.get('review_before',[])
+        if not isinstance(before,list) or len(before)>len(targets) or (before and not data.get('review_only',False)):
+            raise ValueError('复看前的照片状态无效')
+        target_ids={item['id'] for item in targets};seen=set()
+        for item in before:
+            if not isinstance(item,dict) or item.get('id') not in target_ids or item['id'] in seen or not isinstance(item.get('source_id'),str):
+                raise ValueError('复看前的照片不属于当前范围')
+            seen.add(item['id']);self.engine.asset(item['source_id'])
+            item['params']=parameters(item['params']);item['quality']=quality_settings(item.get('quality'))
         selected=data.get('repair_selection')
         if selected is not None:
             if not isinstance(selected,dict) or set(selected)!={'id','box'} or selected['id'] not in {t['id'] for t in targets}:
@@ -215,7 +248,9 @@ class AssistantBridge:
                     '你能看到按顺序附带的预览图，图像标签在 images 列表中；只能依据可见内容和本地分析判断。')
             else:system=SYSTEM
             if data.get('review_only'):
-                system+='\n这是唯一一次结果复看：若已符合要求，actions=[]；仅在明显需要修正时微调参数，preset 必须为 keep，operations 必须为空。'
+                system+='\n这是唯一一次结果复看：比较调整前后对应区域的色相、亮度和变化幅度，判断实际方向是否符合用户指定；不能仅凭参数或首轮描述认定成功。方向不符、变化不足或有不确定性时要明确说明，不要夸大效果；仅在明显需要修正时微调参数，preset 必须为 keep，operations 必须为空。若确实符合要求，actions=[]。'
+                if images and data.get('review_before'):
+                    system+='\n每张对照图左侧为调整前、右侧为调整后。比较用户要求的重点区域和整体变化，不要仅因右图本身好看就判定完成；要求变化可见时若两侧差别难以辨认，应在允许范围内适度加强已有调整，同时保留自然细节。'
             prompt=system+'\n'+json.dumps(context,ensure_ascii=False)
             if event.is_set():raise InterruptedError()
             with self.lock:self.jobs[key]=dict(state='thinking')
@@ -263,11 +298,11 @@ class AssistantBridge:
                     attachment.write_bytes(image['data'])
                     command.extend(['--image',str(attachment)])
             else:
-                if images:raise ValueError('Claude Code 暂不支持安全发送图片')
-                command=[executable(provider),'-p','--output-format','json','--json-schema',json.dumps(SCHEMA),
+                command=[executable(provider),'-p','--output-format','stream-json' if images else 'json','--json-schema',json.dumps(SCHEMA),
                          '--tools','','--strict-mcp-config','--mcp-config','{"mcpServers":{}}',
                          '--settings','{"disableAllHooks":true}','--disable-slash-commands',
                          '--no-session-persistence','--permission-mode','plan']
+                if images:command.extend(['--input-format','stream-json','--verbose'])
             environment=os.environ.copy()
             environment.pop('CLAUDECODE',None)
             # 凭证只交给既有 CLI，不落入日志、提示或返回值。
@@ -275,16 +310,34 @@ class AssistantBridge:
                 if cancel.is_set():raise InterruptedError()
                 child=subprocess.Popen(command,cwd=root,env=environment,stdin=subprocess.PIPE,stdout=stdout,stderr=stderr)
                 try:
-                    child.stdin.write(prompt.encode());child.stdin.close()
+                    if provider=='claude' and images:
+                        content=[dict(type='text',text=prompt)]
+                        for image in images:
+                            content.append(dict(type='text',text=image['label']))
+                            content.append(dict(type='image',source=dict(type='base64',media_type='image/jpeg',
+                                                data=base64.b64encode(image['data']).decode('ascii'))))
+                        message=dict(type='user',message=dict(role='user',content=content),parent_tool_use_id=None,session_id=None)
+                        payload=(json.dumps(message,ensure_ascii=False)+'\n').encode()
+                    else:payload=prompt.encode()
+                    input_errors=[]
+                    def send_input():
+                        try:
+                            child.stdin.write(payload)
+                            child.stdin.close()
+                        except (OSError,ValueError) as exc:input_errors.append(exc)
+                    writer=Thread(target=send_input,daemon=True);writer.start()
                     while child.poll() is None:
                         if cancel.wait(.2):raise InterruptedError()
                         if monotonic()>deadline:raise ValueError('AI 对话超时，本地调整未改变。可以重试或切换另一个 CLI')
+                    writer.join(timeout=1)
                     if child.returncode:
                         stdout.seek(0);stderr.seek(0)
                         diagnostic=(stdout.read(512*1024)+stderr.read(512*1024)).decode(errors='replace')
                         raise cli_failure(provider,diagnostic)
+                    if writer.is_alive() or input_errors:
+                        raise ValueError('AI 输入未能完整发送，本地调整未改变。请重试')
                     stdout.seek(0);text=stdout.read(2*1024*1024).decode(errors='replace')
-                    try:return parse_output(provider,text,output.read_text() if output.exists() else None)
+                    try:return parse_output(provider,text,output.read_text() if output.exists() else None,stream=provider=='claude' and bool(images))
                     except (ValueError,TypeError):raise ValueError('AI 没有返回有效的调整计划，设置未改变')
                 finally:
                     if child.poll() is None:

@@ -22,6 +22,15 @@ MD=os.path.expanduser('~/.cache/photo-edit/segformer')
 _M=np.array([[0.4124,0.3576,0.1805],[0.2126,0.7152,0.0722],[0.0193,0.1192,0.9505]]); _Mi=np.linalg.inv(_M); _WP=np.array([0.95047,1.0,1.08883])
 def _lin(c): return np.where(c<=0.04045,c/12.92,((c+0.055)/1.055)**2.4)
 def _gam(c): c=np.clip(c,0,1); return np.where(c<=0.0031308,c*12.92,1.055*c**(1/2.4)-0.055)
+def _expose(a,ev,highlights):
+    linear=_lin(a)*2**ev
+    if ev>0 and highlights<0:
+        # 在截断前对亮部做连续肩部压缩，保持线性 RGB 比例和高光细节。
+        knee=1-.5*min(-highlights,1.)
+        peak=linear.max(axis=-1,keepdims=True)
+        shoulder=knee+(1-knee)*(-np.expm1(-np.maximum(peak-knee,0)/(1-knee)))
+        linear=linear*np.where(peak>knee,shoulder/np.maximum(peak,1e-12),1.)
+    return _gam(linear)
 def rgb2lab(a):
     x=_lin(a)@_M.T/_WP; f=np.where(x>0.008856,np.cbrt(x),7.787*x+16/116)
     return np.stack([116*f[...,1]-16,500*(f[...,0]-f[...,1]),200*(f[...,1]-f[...,2])],-1)
@@ -29,6 +38,13 @@ def lab2rgb(l):
     fy=(l[...,0]+16)/116; fx=fy+l[...,1]/500; fz=fy-l[...,2]/200; f=np.stack([fx,fy,fz],-1)
     return _gam(np.where(f**3>0.008856,f**3,(f-16/116)/7.787)*_WP@_Mi.T)
 def ss(x,a,b): t=np.clip((x-a)/(b-a),0,1); return t*t*(3-2*t)
+def _protect_contrast_highlights(original, adjusted):
+    """平滑压缩对比增强造成的亮部增量，避免把原有细节推成一片白。"""
+    increase=np.maximum(adjusted-original,0)
+    room=np.maximum(100-original,0)
+    safe=np.maximum(room,1e-9)
+    compressed=room*(-np.expm1(-increase/safe))
+    return np.where(increase>0,original+compressed,adjusted)
 def blur(m,r):
     H,W=m.shape; k=max(int(r),1)
     return np.asarray(Image.fromarray(m.astype(np.float32),'F').resize((max(W//k,2),max(H//k,2)),Image.BOX).resize((W,H),Image.BICUBIC))
@@ -122,7 +138,7 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
         level_points.append((l,h));lv[...,c]=np.clip((a[...,c]-l)/max(h-l,1e-3),0,1)
     if analysis is not None and not getattr(analysis,'global_fields',False): analysis.level_points=level_points
     k=black_white if on('levels') else 0; a=a*(1-k)+lv*k
-    if exposure and on('light'): a=_gam(np.clip(_lin(a)*2**exposure,0,1))
+    if exposure and on('light'): a=_expose(a,exposure,highlights)
     lab=rgb2lab(a); L,A,B=lab[...,0].copy(),lab[...,1].copy(),lab[...,2].copy()
     # 3 对比
     if on('contrast'):
@@ -130,6 +146,7 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
         local=analysis.contrast_blur if getattr(analysis,'global_fields',False) else blur(L,40)
         if analysis is not None and not getattr(analysis,'global_fields',False): analysis.contrast_blur=local
         L=L+0.15*(L-local); L=100*np.interp(L/100,[0,0.1,0.3,0.5,0.7,0.9,1],[0,0.09,0.28,0.5,0.72,0.91,1]); L=old+(L-old)*contrast
+        L=_protect_contrast_highlights(old,L)
     # 4 水：绝对目标色
     if on('water') and getattr(analysis,'water_active',wm.sum()>W*H*0.01):
         sel=wm>0.8

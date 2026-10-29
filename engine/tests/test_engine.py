@@ -18,6 +18,125 @@ from lut import base_lut,write_cube,read_cube,apply
 
 
 class EngineTests(unittest.TestCase):
+    def test_contrast_preserves_continuous_gray_gradient_order(self):
+        from smart import neutral
+        values=np.linspace(0,1,4096)
+        ramp=np.tile(values,(32,1))
+        rgb=np.repeat(ramp[...,None],3,axis=2)
+        image=Image.fromarray(np.uint8(rgb*255))
+        zeros=np.zeros(ramp.shape)
+        context=Analysis.__new__(Analysis)
+        context.image=image;context.rgb=rgb;context.dehazed=None
+        for name in ('water','sky','land','person','skin'):setattr(context,name,zeros)
+        for strength in (0.,.65,1.25,2.):
+            params=neutral();params['contrast']=strength
+            result=grade_array(image,analysis=context,**params)
+            self.assertTrue(np.isfinite(result).all())
+            self.assertTrue(np.all(np.diff(result[16].mean(axis=1))>=-1e-8))
+
+    def test_contrast_highlight_increase_preserves_headroom(self):
+        from grade import _protect_contrast_highlights
+        original=np.array([20.,80.,95.,99.,100.])
+        adjusted=np.array([18.,82.,100.,103.,105.])
+        result=_protect_contrast_highlights(original,adjusted)
+        self.assertEqual(result[0],adjusted[0])
+        self.assertTrue(np.all(result[1:4]>original[1:4]))
+        self.assertTrue(np.all(result[1:4]<100.))
+        self.assertEqual(result[-1],100.)
+        self.assertTrue(np.allclose(_protect_contrast_highlights(original,original),original))
+
+    def test_assistant_prompt_handles_missing_or_uncertain_subjects(self):
+        from assistant import SYSTEM
+        self.assertIn('对象明显不存在时，说明没有看到', SYSTEM)
+        self.assertIn('无法确定时，说明无法确认', SYSTEM)
+        self.assertIn('别指示用户框选不存在的对象', SYSTEM)
+
+    def test_exposure_with_highlight_recovery_preserves_smooth_bright_detail(self):
+        from grade import _expose
+        values=np.linspace(0,1,4096,dtype=np.float64)
+        ramp=np.repeat(values[None,:,None],3,axis=2)
+        clipped=_expose(ramp,.5,0)[0,:,0]
+        recovered=_expose(ramp,.5,-.4)[0,:,0]
+        self.assertTrue(np.all(np.diff(recovered)>=-1e-12))
+        self.assertLess(np.max(np.abs(np.diff(recovered,2))),.001)
+        self.assertLess(np.count_nonzero(recovered>=.999),np.count_nonzero(clipped>=.999))
+        self.assertTrue(np.allclose(recovered[values<.5],clipped[values<.5]))
+        color=np.array([[[.9,.6,.3]]])
+        from grade import _lin
+        ratio=_lin(_expose(color,.5,-.4))[0,0]
+        self.assertTrue(np.allclose(ratio/ratio[0],_lin(color)[0,0]/_lin(color)[0,0,0],atol=1e-8))
+
+    def test_cli_cancellation_interrupts_blocked_input(self):
+        from assistant import AssistantBridge
+        from threading import Event,Thread
+        from time import monotonic
+        from unittest.mock import Mock,patch
+        with TemporaryDirectory() as folder:
+            bridge=AssistantBridge(SimpleNamespace(folder=Path(folder)))
+            started=Event();release=Event();finished=Event();cancel=Event();errors=[]
+            child=Mock();child.returncode=None
+            def write(_):
+                started.set();release.wait(5)
+            child.stdin.write.side_effect=write
+            child.poll.side_effect=lambda: child.returncode
+            def terminate():
+                child.returncode=-15;release.set()
+            child.terminate.side_effect=terminate
+            def invoke():
+                try:
+                    bridge._invoke_once('claude','test',cancel,monotonic()+10,
+                                        [{'label':'fixture','data':b'image'}])
+                except Exception as exc:errors.append(exc)
+                finally:finished.set()
+            with patch('assistant.executable',return_value='/test/claude'),patch('assistant.subprocess.Popen',return_value=child):
+                thread=Thread(target=invoke,daemon=True);thread.start()
+                try:
+                    self.assertTrue(started.wait(2))
+                    cancel.set()
+                    self.assertTrue(finished.wait(1),'取消应中断阻塞的 CLI 输入')
+                    self.assertIsInstance(errors[0],InterruptedError)
+                finally:
+                    release.set();thread.join(3)
+
+    def test_claude_image_input_is_structured_and_tools_remain_disabled(self):
+        from assistant import AssistantBridge
+        from threading import Event
+        from time import monotonic
+        from unittest.mock import Mock,patch
+        import base64,json
+        with TemporaryDirectory() as folder:
+            bridge=AssistantBridge(SimpleNamespace(folder=Path(folder)));calls=[]
+            def run(command,**kwargs):
+                child=Mock();child.stdin=Mock();child.poll.return_value=0;child.returncode=0
+                calls.append((command,child))
+                kwargs['stdout'].write((json.dumps({'type':'result','structured_output':{'reply':'ok','selection':'none','actions':[]}})+'\n').encode())
+                return child
+            with patch('assistant.executable',return_value='/test/claude'),patch('assistant.subprocess.Popen',side_effect=run):
+                result=bridge._invoke_once('claude','test prompt',Event(),monotonic()+10,
+                    [{'label':'公开样片','data':b'image-fixture'}])
+            command,child=calls[0]
+            self.assertEqual(result['reply'],'ok')
+            self.assertEqual(command[command.index('--tools')+1],'')
+            self.assertEqual(command[command.index('--input-format')+1],'stream-json')
+            self.assertEqual(command[command.index('--output-format')+1],'stream-json')
+            self.assertIn('--verbose',command)
+            message=json.loads(child.stdin.write.call_args.args[0])
+            self.assertEqual(message['message']['content'][1]['text'],'公开样片')
+            self.assertEqual(base64.b64decode(message['message']['content'][2]['source']['data']),b'image-fixture')
+
+    def test_advice_does_not_promise_unavailable_export_or_painting(self):
+        from assistant import safe_advice,validate_plan
+        from smart import neutral
+        context=self.context(Image.new('RGB',(32,32),(100,110,120)))
+        engine=SimpleNamespace(analysis=lambda key:(context,True))
+        plan=dict(reply='请在导出流程中设置 3:4，保存时选择覆盖原文件。',selection='none',actions=[])
+        result=validate_plan(plan,[dict(id='a',params=neutral())],engine)
+        self.assertIn('不能覆盖原文件',result['reply'])
+        self.assertIn('不支持裁切',result['reply'])
+        self.assertNotIn('选择覆盖',result['reply'])
+        self.assertEqual(safe_advice('请涂抹或框选后再修复。'),'请框选后再修复。')
+        self.assertIn('不支持裁切',safe_advice('可以在导出时设置裁剪比例。'))
+
     def test_visual_review_cannot_apply_preset_or_tool_operation(self):
         from assistant import validate_plan
         from smart import neutral
@@ -137,6 +256,65 @@ class EngineTests(unittest.TestCase):
         cancelled=Event();cancelled.set()
         with self.assertRaises(InterruptedError):
             prepare_images(UnreadableEngine(), {'targets':[{'id':'x'}], 'image_consent':True},cancelled)
+
+    def test_review_comparison_sends_before_and_after_in_one_bounded_attachment(self):
+        from vision import prepare_images
+        from io import BytesIO
+        with TemporaryDirectory() as folder:
+            before=Path(folder)/'before.png';after=Path(folder)/'after.png'
+            Image.new('RGB',(1200,800),(25,35,45)).save(before)
+            Image.new('RGB',(1200,800),(180,190,200)).save(after)
+            class MockEngine:
+                def preview(self,key,params,quality):
+                    return {'preview':str(before if key=='original' else after)}
+            data={'image_consent':True,'review_only':True,
+                  'targets':[{'id':'edited','params':{},'quality':{}}],
+                  'review_before':[{'id':'edited','source_id':'original','params':{},'quality':{}}]}
+            result=prepare_images(MockEngine(),data)
+            self.assertEqual(len(result),1)
+            self.assertIn('左侧调整前，右侧调整后',result[0]['label'])
+            with Image.open(BytesIO(result[0]['data'])) as image:
+                self.assertLessEqual(max(image.size),1024)
+                self.assertLess(image.getpixel((image.width//4,image.height//2))[0],50)
+                self.assertGreater(image.getpixel((image.width*3//4,image.height//2))[0],150)
+                self.assertFalse(image.getexif())
+
+    def test_review_job_does_not_claim_images_when_consent_is_off(self):
+        from assistant import AssistantBridge
+        from smart import neutral
+        from threading import Event,RLock
+        from unittest.mock import patch
+        context=self.context(Image.new('RGB',(32,32),(80,90,100)))
+        engine=SimpleNamespace(lock=RLock(),analysis=lambda key:(context,True))
+        bridge=AssistantBridge(engine);bridge.events['job']=Event();bridge.jobs['job']={'state':'preparing'}
+        data=dict(provider='codex',message='复看',targets=[dict(id='a',params=neutral(),quality={})],
+                  image_consent=False,review_only=True,
+                  review_before=[dict(id='a',source_id='a',params=neutral(),quality={})])
+        def invoke(provider,prompt,cancel,*images):
+            self.assertNotIn('每张对照图左侧',prompt)
+            self.assertFalse(images)
+            return dict(reply='建议',selection='none',actions=[])
+        with patch.object(bridge,'_invoke',side_effect=invoke):bridge._run('job',data)
+        self.assertEqual(bridge.status('job')['state'],'done')
+
+    def test_review_job_sends_comparison_to_model_with_clear_order(self):
+        from assistant import AssistantBridge
+        from smart import neutral
+        from threading import Event,RLock
+        from unittest.mock import patch
+        context=self.context(Image.new('RGB',(32,32),(80,90,100)))
+        engine=SimpleNamespace(lock=RLock(),analysis=lambda key:(context,True))
+        bridge=AssistantBridge(engine);bridge.events['job']=Event();bridge.jobs['job']={'state':'preparing'}
+        data=dict(provider='codex',message='复看',targets=[dict(id='a',params=neutral(),quality={})],
+                  image_consent=True,review_only=True,
+                  review_before=[dict(id='a',source_id='a',params=neutral(),quality={})])
+        attachment=[dict(label='照片对照 a：左侧调整前，右侧调整后',data=b'fixture')]
+        def invoke(provider,prompt,cancel,images):
+            self.assertIn('每张对照图左侧为调整前、右侧为调整后',prompt)
+            self.assertEqual(images,attachment)
+            return dict(reply='建议',selection='none',actions=[])
+        with patch('vision.prepare_images',return_value=attachment),patch.object(bridge,'_invoke',side_effect=invoke):bridge._run('job',data)
+        self.assertEqual(bridge.status('job')['state'],'done')
 
     def test_visual_inputs_use_current_preview_strip_metadata_and_keep_selection(self):
         from vision import prepare_images

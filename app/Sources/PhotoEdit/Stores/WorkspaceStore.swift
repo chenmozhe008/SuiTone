@@ -48,8 +48,9 @@ final class WorkspaceStore {
     var assistantProvider = "codex"
     var anthropicAPIKey = ""
     var visionConsentProvider: String?
-    var visionEnabled: Bool { ["codex", "anthropic"].contains(assistantProvider) && visionConsentProvider == assistantProvider }
+    var visionEnabled: Bool { ["codex", "claude", "anthropic"].contains(assistantProvider) && visionConsentProvider == assistantProvider }
     var suggestions: [SuggestionCard] = []
+    var aiSuggestionCache: [String: [SuggestionCard]] = [:]
     var chatDraft = ""
     var chatMessages: [ChatMessage] = []
     var chatting = false

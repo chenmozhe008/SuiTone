@@ -3,6 +3,8 @@ import Foundation
 extension WorkspaceStore {
     func loadSuggestions(for assetID: String) async {
         suggestions = []
+        let provider = assistantProvider, useVision = visionEnabled, apiKey = anthropicAPIKey
+        let cacheKey = provider + ":" + assetID
         do {
             let response: SuggestionsResponse = try await engine.request("suggestions", body: ["id": assetID])
             guard !Task.isCancelled, current?.assetID == assetID else { return }
@@ -11,6 +13,51 @@ extension WorkspaceStore {
             guard !Task.isCancelled, current?.assetID == assetID else { return }
             status = "建议暂不可用，可继续手动调整"
         }
+        guard useVision, !Task.isCancelled, let photo = current, photo.assetID == assetID,
+              provider != "anthropic" || !apiKey.isEmpty else { return }
+        if let cached = aiSuggestionCache[cacheKey] { suggestions = cached; return }
+        struct Started: Decodable { var id: String }
+        struct RecommendationJob: Decodable { var state: String; var cards: [SuggestionCard]? }
+        var jobID: String?
+        do {
+            var body: [String: Any] = ["provider": provider, "image_consent": true,
+                "targets": [["id": assetID, "params": try EngineClient.object(photo.parameters),
+                             "quality": try EngineClient.object(photo.quality)]]]
+            if provider == "anthropic" { body["api_key"] = apiKey }
+            guard let startedID = try await startRecommendationJob(start: {
+                let started: Started = try await self.engine.request("recommendation-start", body: body)
+                return started.id
+            }, cancel: { id in
+                struct Cancelled: Decodable { var cancelled: Bool }
+                let _: Cancelled? = try? await self.engine.request("recommendation-cancel", body: ["id": id])
+            }) else { return }
+            jobID = startedID
+            while !Task.isCancelled {
+                let result: RecommendationJob = try await engine.get("recommendation-status", query: [URLQueryItem(name: "id", value: startedID)])
+                if result.state == "done", let cards = result.cards {
+                    guard !Task.isCancelled, current?.assetID == assetID, visionEnabled, assistantProvider == provider else { break }
+                    aiSuggestionCache[cacheKey] = cards; suggestions = cards; return
+                }
+                if result.state == "error" || result.state == "cancelled" { return }
+                try await Task.sleep(for: .milliseconds(600))
+            }
+        } catch { }
+        if let jobID {
+            struct Cancelled: Decodable { var cancelled: Bool }
+            Task { let _: Cancelled? = try? await engine.request("recommendation-cancel", body: ["id": jobID]) }
+        }
+    }
+
+    func startRecommendationJob(start: @escaping () async throws -> String,
+                                cancel: @escaping (String) async -> Void) async throws -> String? {
+        // 外层被取消后仍需等待启动响应，以便拿到编号并停止服务端任务。
+        let task = Task { try await start() }
+        let id = try await task.value
+        if Task.isCancelled {
+            await Task { await cancel(id) }.value
+            return nil
+        }
+        return id
     }
 
     func applySuggestion(_ card: SuggestionCard) {
@@ -58,12 +105,13 @@ extension WorkspaceStore {
                     if result.state == "done" {
                         assistantApplying = true; assistantPhase = "正在应用调整"
                         let review: (([PhotoRecord]) async throws -> [AssistantChange])? = sendImages ? { prepared in
-                            try await self.reviewAssistantChanges(prepared, provider: provider,
+                            try await self.reviewAssistantChanges(prepared, originals: items, provider: provider,
                                 originalRequest: message, referenceIDs: referenceIDs, apiKey: apiKey)
                         } : nil
                         await applyAssistantResult(result, items: items,
                             referenceIDs: referenceIDs, scopes: scopes, only: only, repair: repair,
-                            undoCandidate: undoAvailable ? undoCandidate?.id : nil, review: review)
+                            undoCandidate: undoAvailable ? undoCandidate?.id : nil, review: review,
+                            preserveExactValues: message.rangeOfCharacter(from: .decimalDigits) != nil)
                         return
                     }
                     if result.state == "error" { throw EngineError(message: result.error ?? "AI 未完成请求") }
@@ -81,7 +129,8 @@ extension WorkspaceStore {
     func applyAssistantResult(_ result: AssistantJob, items: [PhotoRecord],
                               referenceIDs: [String] = [], scopes: [String: String] = [:], only: String = "all",
                               repair: (id: String, operation: RemovalOperation)? = nil, undoCandidate: UUID? = nil,
-                              review: (([PhotoRecord]) async throws -> [AssistantChange])? = nil) async {
+                              review: (([PhotoRecord]) async throws -> [AssistantChange])? = nil,
+                              preserveExactValues: Bool = false) async {
         guard !assistantCancellationRequested else { return }
         // 先结束正在拖动的滑块，让撤销目标与当前状态包含用户的最新手动编辑。
         if !(result.changes ?? []).isEmpty { finishEditing() }
@@ -166,6 +215,10 @@ extension WorkspaceStore {
                     guard let index = preparedResults.firstIndex(where: { $0.0.assetID == change.id }) else { continue }
                     let (photo, origin, notes) = preparedResults[index]
                     if change.params != photo.parameters {
+                        if preserveExactValues {
+                            details.append(photo.imported.name + "：保留你指定的数值，已跳过复看调整")
+                            continue
+                        }
                         guard try reviewKeepsRequestedParameters(original: origin.parameters,
                                                                  first: photo.parameters, reviewed: change.params) else {
                             details.append(photo.imported.name + "：复看涉及未请求的参数，已跳过复看调整")
@@ -214,30 +267,58 @@ extension WorkspaceStore {
 
     private func reviewKeepsRequestedParameters(original: AdjustmentParameters, first: AdjustmentParameters,
                                                  reviewed: AdjustmentParameters) throws -> Bool {
-        let originalFields = try EngineClient.object(original)
+        var baseline = original
+        // 新建的局部滑块以 sourceMean 为未调整基准；不能把新字典里的全部通道都视为用户请求。
+        for (name, region) in first.regions where baseline.regions[name] == nil && region.referenceCount == 0 {
+            var neutralRegion = region
+            neutralRegion.mean = region.sourceMean
+            baseline.regions[name] = neutralRegion
+        }
+        let originalFields = try EngineClient.object(baseline)
         let firstFields = try EngineClient.object(first)
         let reviewedFields = try EngineClient.object(reviewed)
-        for key in reviewedFields.keys {
-            guard let initial = originalFields[key], let firstValue = firstFields[key], let revised = reviewedFields[key] else { return false }
-            let old = NSDictionary(dictionary: [key: initial])
-            let middle = NSDictionary(dictionary: [key: firstValue])
-            let new = NSDictionary(dictionary: [key: revised])
-            if !middle.isEqual(new) && old.isEqual(middle) { return false }
+        func equal(_ a: Any?, _ b: Any?) -> Bool {
+            switch (a, b) {
+            case (nil, nil): return true
+            case let (a?, b?): return NSDictionary(dictionary: ["value": a]).isEqual(NSDictionary(dictionary: ["value": b]))
+            default: return false
+            }
         }
-        return true
+        func permitted(_ old: Any?, _ first: Any?, _ revised: Any?) -> Bool {
+            if equal(first, revised) { return true }
+            if let firstMap = first as? [String: Any], let revisedMap = revised as? [String: Any] {
+                let oldMap = old as? [String: Any] ?? [:]
+                let keys = Set(oldMap.keys).union(firstMap.keys).union(revisedMap.keys)
+                return keys.allSatisfy { permitted(oldMap[$0], firstMap[$0], revisedMap[$0]) }
+            }
+            if let firstArray = first as? [Any], let revisedArray = revised as? [Any] {
+                guard firstArray.count == revisedArray.count else { return false }
+                let oldArray = old as? [Any]
+                return firstArray.indices.allSatisfy { i in
+                    permitted(oldArray.flatMap { i < $0.count ? $0[i] : nil }, firstArray[i], revisedArray[i])
+                }
+            }
+            return !equal(old, first)
+        }
+        return permitted(originalFields, firstFields, reviewedFields)
     }
 
-    private func reviewAssistantChanges(_ photos: [PhotoRecord], provider: String,
+    private func reviewAssistantChanges(_ photos: [PhotoRecord], originals: [PhotoRecord], provider: String,
                                         originalRequest: String, referenceIDs: [String], apiKey: String) async throws -> [AssistantChange] {
         assistantPhase = "正在复看调整结果"
         // 开始请求时允许取消标记先落下；拿到任务 ID 后再通知引擎取消。
         assistantApplying = false
         defer { assistantApplying = true }
-        let message = "请复看已调整的照片。用户原要求：\(originalRequest)\n若结果已经合适，不要改动；只有明显偏离要求才微调。不要应用风格或执行其他工具。"
+        let message = "请对照调整前后照片，检查目标区域的颜色方向、变化幅度和画质。用户原要求：\(originalRequest)\n不符合或无法判断时如实说明，不要夸大效果；确实合适时不要改动，明显偏离时可微调已有参数。不要应用风格或执行其他工具。"
         var body: [String: Any] = ["provider": provider, "message": message, "history": [],
             "targets": try photos.map { ["id": $0.assetID, "params": try EngineClient.object($0.parameters),
                                           "quality": try EngineClient.object($0.quality)] },
-            "reference_ids": referenceIDs, "undo_available": false, "image_consent": true, "review_only": true]
+            "reference_ids": referenceIDs, "undo_available": false, "image_consent": true, "review_only": true,
+            "review_before": try photos.compactMap { photo -> [String: Any]? in
+                guard let source = originals.first(where: { $0.id == photo.id }) else { return nil }
+                return ["id": photo.assetID, "source_id": source.assetID,
+                        "params": try EngineClient.object(source.parameters), "quality": try EngineClient.object(source.quality)]
+            }]
         if provider == "anthropic" { body["api_key"] = apiKey }
         struct Started: Decodable { var id: String }
         let started: Started = try await engine.request("assistant", body: body)

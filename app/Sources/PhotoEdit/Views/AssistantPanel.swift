@@ -21,7 +21,7 @@ struct AssistantPanel: View {
                 Label(store.visionEnabled ? "看图已开启" : "看图已关闭", systemImage: store.visionEnabled ? "eye" : "eye.slash")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                if ["codex", "anthropic"].contains(store.assistantProvider) {
+                if ["codex", "claude", "anthropic"].contains(store.assistantProvider) {
                     Button(store.visionEnabled ? "关闭" : "开启") {
                         if store.visionEnabled { store.visionConsentProvider = nil }
                         else { showingVisionConsent = true }
@@ -135,12 +135,12 @@ struct AssistantPanel: View {
             store.visionConsentProvider = nil
             if provider == "anthropic" && store.anthropicAPIKey.isEmpty { showingAPISettings = true }
         }
-        .task(id: store.current?.assetID) {
+        .task(id: "\(store.current?.assetID ?? "")|\(store.assistantProvider)|\(store.visionEnabled)|\(!store.anthropicAPIKey.isEmpty)") {
             if let assetID = store.current?.assetID { await store.loadSuggestions(for: assetID) }
             else { store.suggestions = [] }
         }
         .sheet(isPresented: $showingVisionConsent) {
-            VisionConsentSheet(destination: store.assistantProvider == "anthropic" ? "Claude API / Anthropic" : "Codex / OpenAI") {
+            VisionConsentSheet(destination: store.assistantProvider == "anthropic" ? "Claude API / Anthropic" : (store.assistantProvider == "claude" ? "Claude Code / Anthropic" : "Codex / OpenAI")) {
                 store.visionConsentProvider = store.assistantProvider
                 showingVisionConsent = false
             } cancel: {
@@ -172,7 +172,7 @@ private struct VisionConsentSheet: View {
                     Text("让对话建议更贴合照片内容").foregroundStyle(.secondary)
                 }
             }
-            Text("开启后，当前所选照片的缩小预览、参考图和你选择的区域会发送至所选 AI 服务。原图文件保留在本机。")
+            Text("开启后，当前照片的缩小预览会自动发送至所选 AI 服务，用于生成建议。对话时，所选照片、参考图和选择的区域也可能发送。原图文件保留在本机。")
                 .fixedSize(horizontal: false, vertical: true).lineSpacing(4)
             VStack(alignment: .leading, spacing: 10) {
                 HStack { Text("发送到").foregroundStyle(.secondary); Spacer(); Text(destination) }

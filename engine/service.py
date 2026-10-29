@@ -116,6 +116,8 @@ class Engine:
         self.lock = RLock()
         from assistant import AssistantBridge
         self.assistant=AssistantBridge(self)
+        from ai_recommendation import RecommendationBridge
+        self.ai_recommendations=RecommendationBridge(self)
         self.import_hashes={}
 
     def scan_paths(self,paths):
@@ -217,9 +219,11 @@ class Engine:
 
     def apply_suggestion(self, key, card_id, raw, quality=None):
         from smart import suggest,apply_operations
-        card=next((c for c in self.suggestions(key)['cards'] if c['id']==card_id),None)
-        if card is None:raise ValueError('这张照片没有可用的此项建议')
+        from recommendations import candidates
+        self.asset(key)
         context,_=self.analysis(key)
+        card=next((c for c in candidates(context) if c['id']==card_id),None)
+        if card is None:raise ValueError('这张照片没有可用的此项建议')
         if card['preset']=='keep':
             params,notes=apply_operations(parameters(raw),card['adjustments'],context)
         else:
@@ -405,6 +409,10 @@ def serve(root, token, watch_stdin=True):
                 from urllib.parse import parse_qs,urlsplit
                 job=parse_qs(urlsplit(self.path).query).get('id',[''])[0]
                 return self.response(200,engine.assistant.status(job))
+            if self.path.startswith('/recommendation-status?'):
+                from urllib.parse import parse_qs,urlsplit
+                job=parse_qs(urlsplit(self.path).query).get('id',[''])[0]
+                return self.response(200,engine.ai_recommendations.status(job))
             if self.path!='/health': return self.response(404,{'error':'未知操作'})
             cache=Path.home()/'.cache/photo-edit'
             return self.response(200,dict(ok=True,missing=[str(cache/p) for p in ['segformer/model.onnx','segformer/config.json','lama/lama_fp32.onnx'] if not (cache/p).is_file()]))
@@ -421,6 +429,8 @@ def serve(root, token, watch_stdin=True):
                     elif self.path=='/preview': result=engine.preview(data['id'],data.get('params',{}),data.get('quality'))
                     elif self.path=='/suggestions': result=engine.suggestions(data['id'])
                     elif self.path=='/suggestion-apply': result=engine.apply_suggestion(data['id'],data['card_id'],data.get('params',{}),data.get('quality'))
+                    elif self.path=='/recommendation-start':result=engine.ai_recommendations.start(data)
+                    elif self.path=='/recommendation-cancel':result=engine.ai_recommendations.cancel(data['id'])
                     elif self.path=='/match': result=engine.match(data['id'],data['references'],data.get('params',{}),data.get('only'),data.get('reference_scopes'))
                     elif self.path=='/smart':result=engine.smart(data['id'],data.get('style','smart'),data.get('quality'))
                     elif self.path=='/style-tiles':result=engine.style_tiles(data['id'])

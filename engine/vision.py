@@ -22,6 +22,19 @@ def _jpeg(path, box=None):
     return result.getvalue()
 
 
+def _comparison(before, after):
+    """同一附件中按左前右后排列；不更改编辑结果或添加照片装饰。"""
+    images=[]
+    for path in (before,after):
+        with Image.open(path) as source:
+            image=source.convert('RGB');image.thumbnail((LONG_EDGE//2,LONG_EDGE),Image.Resampling.LANCZOS)
+            images.append(image)
+    canvas=Image.new('RGB',(images[0].width+images[1].width,max(i.height for i in images)),(24,24,24))
+    canvas.paste(images[0],(0,0));canvas.paste(images[1],(images[0].width,0))
+    result=BytesIO();canvas.save(result,format='JPEG',quality=90,optimize=True)
+    return result.getvalue()
+
+
 def prepare_images(engine, data, cancel=None):
     """只按会话资产 ID 取得图像；关闭授权时甚至不触碰图像内容。"""
     consent = data.get('image_consent', False)
@@ -32,6 +45,7 @@ def prepare_images(engine, data, cancel=None):
     targets = data['targets']
     references = data.get('reference_ids', [])
     selection = data.get('repair_selection')
+    before_by_id = {item['id']:item for item in data.get('review_before',[])}
     count = len(targets) + len(references) + (1 if selection else 0)
     if count > MAX_ATTACHMENTS:
         raise ValueError('看图一次最多发送 20 张预览，请减少所选照片或参考图')
@@ -39,7 +53,11 @@ def prepare_images(engine, data, cancel=None):
     for item in targets:
         if cancel is not None and cancel.is_set():raise InterruptedError()
         preview = engine.preview(item['id'], item['params'], item.get('quality'))['preview']
-        result.append(dict(label='当前照片 '+item['id'], data=_jpeg(preview)))
+        if item['id'] in before_by_id:
+            before=before_by_id[item['id']]
+            original=engine.preview(before['source_id'],before['params'],before.get('quality'))['preview']
+            result.append(dict(label='照片对照 '+item['id']+'：左侧调整前，右侧调整后',data=_comparison(original,preview)))
+        else:result.append(dict(label='当前照片 '+item['id'], data=_jpeg(preview)))
         if selection and selection['id'] == item['id']:
             result.append(dict(label='红框是用户指定的选区 '+item['id'], data=_jpeg(preview, selection['box'])))
     for reference in references:

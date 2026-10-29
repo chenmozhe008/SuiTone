@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'engine'))
 from service import Engine
 from smart import neutral
+from review_constraints import review_allowed
 
 FILES = {
     'portrait': ROOT/'tmp/ui-review-input/Portrait Christian Bolt.jpg',
@@ -78,7 +79,7 @@ def execute_case(engine, asset, case, output, review):
             row['review']=second
             if second['state']=='done' and second.get('changes'):
                 revised=second['changes'][0]['params']
-                if all(revised[k]==final[k] or original[k]!=final[k] for k in final):
+                if review_allowed(original,final,revised):
                     final=revised
                 else:
                     row['review_skipped']='复看涉及首轮未调整的参数'

@@ -2,6 +2,106 @@ import XCTest
 @testable import PhotoEdit
 
 final class AssistantTransactionTests: XCTestCase {
+    @MainActor func testVisualReviewCannotAddDifferentRegion() async {
+        let store = fixture(), items = store.photos
+        let region = RegionAdjustment(mean: [60, 1, 2], sourceMean: [50, 1, 2], chromaScale: [1, 1],
+            lumaX: [0, 100], lumaY: [0, 100], referenceLumaMean: 50, strength: 1, referenceCount: 0)
+        var first = items[0].parameters; first.regions["person"] = region
+        let job = AssistantJob(state: "done", reply: "", selection: "none", changes: [
+            AssistantChange(id: "original", params: first, notes: [])], error: nil)
+        await store.applyAssistantResult(job, items: items, review: { prepared in
+            var altered = prepared[0].parameters; altered.regions["sky"] = region
+            return [AssistantChange(id: "original", params: altered, notes: ["天空"])]
+        })
+        store.previewTask?.cancel()
+        XCTAssertNotNil(store.photos[0].parameters.regions["person"])
+        XCTAssertNil(store.photos[0].parameters.regions["sky"])
+        XCTAssertTrue(store.chatMessages.last!.notes.contains { $0.contains("未请求") })
+        store.undo(); store.previewTask?.cancel()
+        XCTAssertTrue(store.photos[0].parameters.regions.isEmpty)
+    }
+
+    @MainActor func testVisualReviewCannotAlterUnrequestedRegionChannel() async {
+        let store = fixture()
+        let region = RegionAdjustment(mean: [50, 1, 2], sourceMean: [50, 1, 2], chromaScale: [1, 1],
+            lumaX: [0, 100], lumaY: [0, 100], referenceLumaMean: 50, strength: 1, referenceCount: 0)
+        store.photos[0].parameters.regions["person"] = region
+        let items = store.photos
+        var first = items[0].parameters; first.regions["person"]!.mean[0] = 60
+        let job = AssistantJob(state: "done", reply: "", selection: "none", changes: [
+            AssistantChange(id: "original", params: first, notes: [])], error: nil)
+        await store.applyAssistantResult(job, items: items, review: { prepared in
+            var altered = prepared[0].parameters; altered.regions["person"]!.mean[1] = 12
+            return [AssistantChange(id: "original", params: altered, notes: ["人物色彩"])]
+        })
+        store.previewTask?.cancel()
+        XCTAssertEqual(store.photos[0].parameters.regions["person"]?.mean, [60, 1, 2])
+        XCTAssertTrue(store.chatMessages.last!.notes.contains { $0.contains("未请求") })
+    }
+
+    @MainActor func testNewPersonRegionReviewCannotAlterUnrequestedColor() async {
+        let store = fixture(), items = store.photos
+        let region = RegionAdjustment(mean: [60, 1, 2], sourceMean: [50, 1, 2], chromaScale: [1, 1],
+            lumaX: [0, 100], lumaY: [0, 100], referenceLumaMean: 50, strength: 1, referenceCount: 0)
+        var first = items[0].parameters; first.regions["person"] = region
+        let job = AssistantJob(state: "done", reply: "", selection: "none", changes: [
+            AssistantChange(id: "original", params: first, notes: [])], error: nil)
+        await store.applyAssistantResult(job, items: items, review: { prepared in
+            var altered = prepared[0].parameters; altered.regions["person"]!.mean[1] = 12
+            return [AssistantChange(id: "original", params: altered, notes: ["人物色彩"])]
+        })
+        store.previewTask?.cancel()
+        XCTAssertEqual(store.photos[0].parameters.regions["person"]?.mean, [60, 1, 2])
+        XCTAssertTrue(store.chatMessages.last!.notes.contains { $0.contains("未请求") })
+    }
+
+    @MainActor func testNewPersonRegionCanRefineRequestedBrightness() async {
+        let store = fixture(), items = store.photos
+        let region = RegionAdjustment(mean: [60, 1, 2], sourceMean: [50, 1, 2], chromaScale: [1, 1],
+            lumaX: [0, 100], lumaY: [0, 100], referenceLumaMean: 50, strength: 1, referenceCount: 0)
+        var first = items[0].parameters; first.regions["person"] = region
+        let job = AssistantJob(state: "done", reply: "", selection: "none", changes: [
+            AssistantChange(id: "original", params: first, notes: [])], error: nil)
+        await store.applyAssistantResult(job, items: items, review: { prepared in
+            var altered = prepared[0].parameters; altered.regions["person"]!.mean[0] = 65
+            return [AssistantChange(id: "original", params: altered, notes: ["人物亮度"])]
+        })
+        store.previewTask?.cancel()
+        XCTAssertEqual(store.photos[0].parameters.regions["person"]?.mean, [65, 1, 2])
+        store.undo(); store.previewTask?.cancel()
+        XCTAssertTrue(store.photos[0].parameters.regions.isEmpty)
+    }
+
+    @MainActor func testCancellingSuggestionBeforeJobIDStillCancelsServerJob() async throws {
+        let store = WorkspaceStore()
+        var cancelledID: String?
+        let task = Task {
+            try await store.startRecommendationJob(start: {
+                try await Task.sleep(for: .milliseconds(80))
+                return "delayed-job"
+            }, cancel: { id in cancelledID = id })
+        }
+        try await Task.sleep(for: .milliseconds(10))
+        task.cancel()
+        let result = try await task.value
+        XCTAssertNil(result)
+        XCTAssertEqual(cancelledID, "delayed-job")
+    }
+
+    @MainActor func testVisualReviewPreservesExplicitNumericRequest() async {
+        let store = fixture(), items = store.photos
+        var first = items[0].parameters; first.exposure = 0.2
+        let job = AssistantJob(state: "done", reply: "", selection: "none", changes: [
+            AssistantChange(id: "original", params: first, notes: [])], error: nil)
+        await store.applyAssistantResult(job, items: items, review: { prepared in
+            var altered = prepared[0].parameters; altered.exposure = 0.3
+            return [AssistantChange(id: "original", params: altered, notes: [])]
+        }, preserveExactValues: true)
+        store.previewTask?.cancel()
+        XCTAssertEqual(store.photos[0].parameters.exposure, 0.2)
+        XCTAssertTrue(store.chatMessages.last!.notes.contains { $0.contains("指定的数值") })
+    }
+
     @MainActor func testVisualReviewCannotAddAnUnrequestedParameter() async {
         let store = fixture(), items = store.photos
         var first = items[0].parameters; first.exposure = 0.3
