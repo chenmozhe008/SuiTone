@@ -15,11 +15,7 @@ struct RepairPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                HStack {
-                    Text("移除杂物").font(.headline)
-                    Spacer()
-                    Text("当前照片").font(.caption).foregroundStyle(.secondary)
-                }
+                Text("移除杂物，只改当前照片。").font(.callout).foregroundStyle(.secondary)
                 if store.repairDraft != nil {
                     Text("查看修补后的细节，满意后保留。").font(.callout).foregroundStyle(.secondary)
                     Picker("修复比较", selection: $store.repairShowingBefore) {

@@ -19,28 +19,28 @@
 | 引擎新参数 | 完成 | `light`、`vibrance`、`texture`（暗角＋柔光＋颗粒）、`whites`、`blacks`、`local.{区域}.{exposure…feather}`、`/region-at`；分条导出无接缝有测试；AI 操作清单已同步 |
 | 修复四种选法 | 完成，待试用 | 画笔／套索／点选物体（大片背景拒绝）／方框；`RemovalOperation` 加 strokes、radius、polygon、point |
 | 参考图 | 完成，待试用 | 缩略图带 ✕；匹配强度按差异自动 45%–80% 并说明原因；AI 先判断参考是否合适 |
-| 阶段 4 风格库 | 完成，待用户肉眼确认 | `engine/smart.py` 的 `STYLES` 表：自然 10 款、出片 24 款（都带 `texture`），App 从 `/styles` 读列表；对比图 `output/style-review-20261029/`（人像、夜景、逆光、风光各一张）。RAW 样片还没过 |
+| 阶段 4 风格库 | 完成，待用户肉眼确认 | `engine/smart.py` 的 `STYLES` 表：自然 10 款、出片 24 款（都带 `texture`），App 从 `/styles` 读列表；对比图 `output/style-review-20261029/`（人像、夜景、逆光、风光、RAW 各一张；RAW 用 raw.pixls.us 的 CC0 索尼 A7M3 样片）|
 | 临时文件自动清理 | 完成 | 引擎启动时删掉已退出会话的 `tmp/app-session-*`，识别缓存超 500MB 从旧删起 |
 | 其他 | 完成 | 左右滑动对比；缩略图铺满去黑边；回车发送（输入法选字不误发）；CLI 没额度运行中即报错；转圈显示秒数 |
 
 ### 未完成 / 待验证
 
 1. **阶段 2 验收没收尾**：20 条固定案例里 04、08、12、20（能力边界）和 14（日出剪影调暖，用户判不通过）未过；原始评分 `output/stage2-score-audit-20261029.json` 是早期快照，后续重测记录在 `docs/archive/RESUME_20261029.md`。重测时区分“同一案例重测”和“换图／换话术的新证据”，不能把未通过改成通过。用户同意这些与后续并行补，不卡进度。
-2. **阶段 3 验收剩两条没测**：滑块暖缓存预览 < 1 秒；最小窗口下中文不竖排、按钮可达。对话页建议卡片仍是整行列表，未改成效果图里的标签样式。
+2. 阶段 3 验收已补齐：拖滑块预览 310–420 ms（JPG 与 RAW，含质感＋局部）；1050×720 最小窗口三页无竖排、按钮可达；建议卡片已改成标签式。
 3. **AI 对新参数的使用**（局部、质感、参考图判断）只改了提示词和校验，还没用真实对话验证。
 4. 钥匙串：旧版临时签名存的密钥，新版读出后会自动重存一次以停止反复弹窗。若用户仍说每次弹，改成本机 0600 文件存储（先跟用户说清安全性差异）。
 
 ### 下一步（按用户定的顺序）
 
-1. 等用户看 `output/style-review-20261029/` 的风格对比图，按意见调 `STYLES` 参数；找一张 RAW 样片补一遍。
-2. 补阶段 2、3 剩余验收（上面 1–3 条）。
+1. 等用户看 `output/style-review-20261029/` 的风格对比图，按意见调 `STYLES` 参数。
+2. 补阶段 2 剩余验收和 AI 新能力的真实对话验证（上面 1、3 条，需用户的 API 或 CLI 额度）。
 3. 阶段 5 对外发行准备（见第 7 节）。
 
 ### 开发环境的坑（本机只有命令行工具，没有 Xcode）
 
 - SDK 27 缺 SwiftUI 宏插件、也没有 XCTest：`script/swift_env.sh` 改用 26.5 SDK，测试已改写成 Swift Testing。**跑测试只用 `./script/test.sh`**，不要直接 `swift test`。编辑器里 SourceKit 报的 “StateMacro not found / Cannot find type” 是误报，以实际编译为准。
 - `build_and_run.sh` 用 Apple Development 证书签名（钥匙串靠固定签名认 App）；`--build-only` 不关正在用的 App。用户可能开着 App，**重启前先确认**。
-- 验收截图不抢鼠标：`open -n -g dist/SuiTone.app --args -assistantProvider codex -importOnLaunch "a.jpg|b.jpg" -selectCount 2 -openTab adjust -localRegion sky`（`-assistantProvider codex` 避免读钥匙串在用户屏幕上弹窗），再用 `swiftc` 编一个按 PID 取窗口号的小工具配合 `screencapture -l`。测试样片放项目 `tmp/`。
+- 验收截图不抢鼠标：`open -n -g dist/SuiTone.app --args -assistantProvider codex -importOnLaunch "a.jpg|b.jpg" -selectCount 2 -openTab adjust -localRegion sky -windowSize 1050x720`（`-assistantProvider codex` 避免读钥匙串在用户屏幕上弹窗），再用 `swiftc` 编一个按 PID 取窗口号的小工具配合 `screencapture -l`。测试样片放项目 `tmp/`。
 - 命令行 `cli.py grade` 的默认参数还是湖水案例那套（水色目标、天空色相默认开启），看真实效果要传 `"enabled":{"water":false,"sky":false,"land":false}`，App 里用的是 `smart.neutral()`。
 
 ---

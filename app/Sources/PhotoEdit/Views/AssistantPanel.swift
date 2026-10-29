@@ -61,14 +61,15 @@ struct AssistantPanel: View {
                     VStack(alignment: .leading, spacing: 18) {
                         if !store.suggestions.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("为这张照片建议").font(.callout.weight(.semibold))
-                                Text("根据画面内容，选择一项即可调整。")
-                                    .font(.callout).foregroundStyle(.secondary)
-                                ForEach(store.suggestions) { card in
-                                    Button { store.applySuggestion(card) } label: {
-                                        HStack { Text(card.title); Spacer(); Image(systemName: "plus") }
-                                            .font(.callout).padding(10).background(Color(white: 0.21))
-                                    }.buttonStyle(.plain).disabled(store.controlsBlocked || store.chatting)
+                                Text("这张照片可以试试").font(.callout.weight(.semibold))
+                                FlowLayout(spacing: 8) {
+                                    ForEach(store.suggestions) { card in
+                                        Button { store.applySuggestion(card) } label: {
+                                            Text(card.title).font(.callout).padding(.horizontal, 12).padding(.vertical, 7)
+                                                .background(Color(white: 0.23), in: RoundedRectangle(cornerRadius: 8))
+                                        }.buttonStyle(.plain).disabled(store.controlsBlocked || store.chatting)
+                                            .help("点一下直接调整" + store.scopeLabel)
+                                    }
                                 }
                             }
                         }
@@ -348,5 +349,41 @@ private struct APISettingsSheet: View {
                 result = (false, error.localizedDescription)
             }
         }
+    }
+}
+
+/// 从左到右排，放不下就换行（建议标签用）。
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0,
+                      height: rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0)))
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.items {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+    private func arrange(width: CGFloat, subviews: Subviews) -> [(items: [Int], width: CGFloat, height: CGFloat)] {
+        var rows: [(items: [Int], width: CGFloat, height: CGFloat)] = []
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            if let last = rows.last, last.width + spacing + size.width <= width {
+                rows[rows.count - 1].items.append(index)
+                rows[rows.count - 1].width += spacing + size.width
+                rows[rows.count - 1].height = max(last.height, size.height)
+            } else {
+                rows.append(([index], size.width, size.height))
+            }
+        }
+        return rows
     }
 }

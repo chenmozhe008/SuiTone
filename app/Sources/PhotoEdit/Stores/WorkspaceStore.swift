@@ -175,6 +175,10 @@ final class WorkspaceStore {
                 try? await Task.sleep(for: .milliseconds(500))
             }
             grid = false
+            if let size = (options["windowSize"] as? String)?.split(separator: "x").compactMap({ Double($0) }), size.count == 2,
+               let window = NSApp.windows.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) {
+                window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: size[0], height: size[1] + 28)), display: true)
+            }
             if let count = Int(options["selectCount"] as? String ?? ""), count > 1 {
                 selectedIDs = Set(photos.prefix(count).map(\.id)); activate(photos.first?.id)
             }
