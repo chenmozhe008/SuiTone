@@ -9,7 +9,7 @@ struct FilmstripView: View {
                     ForEach(store.photos) { photo in
                         Button { store.selectPhoto(photo.id, modifiers: NSEvent.modifierFlags) } label: {
                             VStack(spacing: 5) {
-                                LocalPhoto(path: store.showOriginal ? photo.imported.thumbnail : photo.previewPath ?? photo.imported.thumbnail)
+                                LocalPhoto(path: store.showOriginal ? photo.imported.thumbnail : photo.previewPath ?? photo.imported.thumbnail, fill: true)
                                     .frame(width: 112, height: 76)
                                     .background(Color(white: 0.1))
                                     .overlay(Rectangle().stroke(store.selectedIDs.contains(photo.id) ? Color(white: 0.72) : .clear, lineWidth: 2))

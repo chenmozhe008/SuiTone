@@ -154,22 +154,19 @@ import Testing
         #expect(store.chatMessages.last!.notes.contains { $0.contains("已跳过") })
     }
 
-    @Test @MainActor func testVisionConsentDefaultsOffAndIsScopedToProvider() {
+    @Test @MainActor func testVisionConsentIsRememberedPerProvider() {
         let store = WorkspaceStore()
+        let saved = store.visionConsents
+        store.visionConsents = []
         store.assistantProvider = "codex"
         #expect(!(store.visionEnabled))
-        store.visionConsentProvider = "codex"
+        store.visionConsents.insert("codex")
         #expect(store.visionEnabled)
         store.assistantProvider = "claude"
         #expect(!(store.visionEnabled))
-        store.visionConsentProvider = nil
+        #expect(WorkspaceStore().visionConsents == ["codex"])
+        store.visionConsents = saved
         store.assistantProvider = "codex"
-        #expect(!(store.visionEnabled))
-        store.assistantProvider = "anthropic"
-        store.visionConsentProvider = "anthropic"
-        #expect(store.visionEnabled)
-        store.assistantProvider = "codex"
-        #expect(!(store.visionEnabled))
     }
 
     @Test @MainActor func testAPIProviderNeedsKeyModelAndCustomAddress() {

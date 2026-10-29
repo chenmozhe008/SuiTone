@@ -9,8 +9,15 @@ APP_MACOS="$APP_BUNDLE/Contents/MacOS"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 
 source "$ROOT_DIR/script/swift_env.sh"
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
-pkill -x PhotoEdit >/dev/null 2>&1 || true
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Apple Development}"
+# 没有开发证书时退回临时签名。固定签名身份能让钥匙串在重新编译后仍认出这个 App，不必重新授权读取 API 密钥。
+if [[ "$CODESIGN_IDENTITY" != "-" ]] && ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$CODESIGN_IDENTITY"; then
+  CODESIGN_IDENTITY="-"
+fi
+stop_app() {
+  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+  pkill -x PhotoEdit >/dev/null 2>&1 || true
+}
 swift build --package-path "$ROOT_DIR/app" -c release
 BUILD_BINARY="$(swift build --package-path "$ROOT_DIR/app" -c release --show-bin-path)/$APP_NAME"
 mkdir -p "$APP_MACOS"
@@ -32,11 +39,13 @@ info=dict(CFBundleExecutable='SuiTone',CFBundleIdentifier='local.photo-edit.app'
 if (root/'app/Resources/AppIcon.icns').is_file():info['CFBundleIconFile']='AppIcon'
 with (root/'dist/SuiTone.app/Contents/Info.plist').open('wb') as f: plistlib.dump(info,f)
 PY
+codesign --force --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_ID" --timestamp=none "$APP_BUNDLE"
+codesign --verify --strict "$APP_BUNDLE"
 case "$MODE" in
   --build-only) ;;
-  run) /usr/bin/open -n "$APP_BUNDLE" ;;
-  --debug|debug) lldb -- "$APP_BINARY" ;;
-  --logs|logs) /usr/bin/open -n "$APP_BUNDLE"; /usr/bin/log stream --info --style compact --predicate 'process == "SuiTone"' ;;
-  --verify|verify) /usr/bin/open -n "$APP_BUNDLE"; sleep 1; pgrep -x "$APP_NAME" >/dev/null ;;
+  run) stop_app; /usr/bin/open -n "$APP_BUNDLE" ;;
+  --debug|debug) stop_app; lldb -- "$APP_BINARY" ;;
+  --logs|logs) stop_app; /usr/bin/open -n "$APP_BUNDLE"; /usr/bin/log stream --info --style compact --predicate 'process == "SuiTone"' ;;
+  --verify|verify) stop_app; /usr/bin/open -n "$APP_BUNDLE"; sleep 1; pgrep -x "$APP_NAME" >/dev/null ;;
   *) echo 'usage: build_and_run.sh [--build-only|--verify|--debug|--logs]' >&2; exit 2 ;;
 esac

@@ -82,15 +82,17 @@ private struct CanvasHeader: View {
                 Text(photo.lookName).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Toggle(isOn: $store.showOriginal) { Label("原图对比", systemImage: "circle.lefthalf.filled") }
-                .toggleStyle(.button).help("按 \\ 切换原图")
+            Toggle(isOn: $store.splitCompare) { Label("左右对比", systemImage: "rectangle.split.2x1") }
+                .toggleStyle(.button).help("拖动画面上的分隔线比较原图和调整后").disabled(store.grid)
+            Toggle(isOn: $store.showOriginal) { Label("原图", systemImage: "circle.lefthalf.filled") }
+                .toggleStyle(.button).help("按 \\ 切换整张原图")
             Picker("预览方式", selection: $store.grid) {
                 Image(systemName: "rectangle").tag(false)
                 Image(systemName: "square.grid.2x2").tag(true)
             }.pickerStyle(.segmented).labelsHidden().frame(width: 72).disabled(store.inspectorTab == "repair")
                 .onChange(of: store.grid) { _, value in if value { store.refreshGrid() } }
                 .help("单张／整批预览")
-        }.controlSize(.small).padding(.horizontal, 18).frame(height: 44)
+        }.padding(.horizontal, 18).frame(height: 54)
     }
 }
 

@@ -11,6 +11,20 @@ struct PhotoCanvas: View {
                 let h=w/ratio
                 ZStack {
                     LocalPhoto(path:displayPath(photo)).frame(width:w,height:h)
+                    if splitActive {
+                        let x=w*store.splitPosition
+                        LocalPhoto(path:photo.imported.original).frame(width:w,height:h)
+                            .mask(alignment:.leading) {Rectangle().frame(width:x)}
+                        Rectangle().fill(.white).frame(width:1.5,height:h).position(x:x,y:h/2).shadow(radius:2)
+                        Image(systemName:"chevron.left.chevron.right").font(.system(size:11,weight:.semibold))
+                            .foregroundStyle(.black).frame(width:30,height:30).background(.white,in:Circle()).shadow(radius:3)
+                            .position(x:x,y:h/2)
+                        HStack {
+                            canvasLabel("原图").opacity(store.splitPosition>0.08 ? 1 : 0)
+                            Spacer()
+                            canvasLabel("调整后").opacity(store.splitPosition<0.92 ? 1 : 0)
+                        }.frame(width:w,height:h,alignment:.top)
+                    }
                     if let box=store.selectionBox,(store.repairEnabled || store.inspectorTab == "chat"),store.repairDraft == nil {
                         Rectangle().stroke(.white,lineWidth:1).background(.white.opacity(0.08))
                             .frame(width:w*(box[2]-box[0]),height:h*(box[3]-box[1]))
@@ -19,8 +33,9 @@ struct PhotoCanvas: View {
                 }
                 .frame(width:w,height:h)
                 .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance:2).onChanged {value in
-                    guard store.repairEnabled, !store.busy, store.repairDraft == nil else {return}
+                .gesture(DragGesture(minimumDistance:0).onChanged {value in
+                    if splitActive {store.splitPosition=min(1,max(0,value.location.x/w));return}
+                    guard value.translation != .zero, store.repairEnabled, !store.busy, store.repairDraft == nil else {return}
                     store.repairMaskOverlay=nil
                     let clamp:(CGFloat)->CGFloat={min(1,max(0,$0))}
                     let x0=clamp(value.startLocation.x/w),y0=clamp(value.startLocation.y/h)
@@ -29,9 +44,9 @@ struct PhotoCanvas: View {
                 })
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
                 .overlay(alignment:.bottomLeading) {
-                    if store.showOriginal {Text("原图").font(.caption).padding(8).background(Color(white:0.12)).padding(10)}
-                    else if store.repairDraft != nil {Text(store.repairShowingBefore ? "修复前" : "修复预览").font(.caption).padding(8).background(Color(white:0.12)).padding(10)}
-                    else if !store.overlay.isEmpty {Text(RegionNames.title(store.overlay)+"选区").font(.caption).padding(8).background(Color(white:0.12)).padding(10)}
+                    if store.showOriginal {canvasLabel("原图").padding(10)}
+                    else if store.repairDraft != nil {canvasLabel(store.repairShowingBefore ? "修复前" : "修复预览").padding(10)}
+                    else if !store.overlay.isEmpty && !splitActive {canvasLabel(RegionNames.title(store.overlay)+"选区").padding(10)}
                 }
             } else {
                 VStack(spacing:16) {
@@ -43,6 +58,16 @@ struct PhotoCanvas: View {
             }
         }
         .dropDestination(for:URL.self) {urls,_ in store.importURLs(urls);return true}
+    }
+
+    /// 修复、看选区或整张看原图时不叠加滑动对比，避免两种对比同时出现。
+    private var splitActive: Bool {
+        store.splitCompare && !store.showOriginal && !store.repairEnabled && store.repairDraft == nil && store.overlay.isEmpty
+    }
+
+    private func canvasLabel(_ text:String)->some View {
+        Text(text).font(.caption.weight(.medium)).padding(.horizontal,9).padding(.vertical,5)
+            .background(.black.opacity(0.45),in:Capsule()).padding(10)
     }
 
     private func displayPath(_ photo:PhotoRecord)->String {

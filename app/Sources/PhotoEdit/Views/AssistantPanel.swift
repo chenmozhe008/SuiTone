@@ -8,8 +8,6 @@ struct AssistantPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("对话调整").font(.headline).fixedSize()
-                Image(systemName:"info.circle").font(.caption).foregroundStyle(.secondary)
-                    .help(store.visionEnabled ? "已允许向所选 AI 服务发送照片预览；可随时关闭。" : "目前发送文字和本地分析摘要，不发送照片像素。")
                 Spacer()
                 Picker("对话引擎", selection: $store.assistantProvider) {
                     Section("本机账号") {
@@ -22,26 +20,40 @@ struct AssistantPanel: View {
                     }
                 }.labelsHidden().frame(width: 150).disabled(store.chatting)
             }.padding(16)
-            HStack {
-                Label(store.visionEnabled ? "看图已开启" : "看图已关闭", systemImage: store.visionEnabled ? "eye" : "eye.slash")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                if store.currentProvider?.available ?? false {
-                    Button(store.visionEnabled ? "关闭" : "开启") {
-                        if store.visionEnabled { store.visionConsentProvider = nil }
-                        else { showingVisionConsent = true }
-                    }.font(.caption).disabled(store.chatting)
-                } else {
-                    Text("此引擎暂不可用").font(.caption).foregroundStyle(.secondary)
-                }
-            }.padding(.horizontal, 16).padding(.bottom, 10)
-            if store.usesAPI {
+            if !(store.currentProvider?.available ?? false) {
+                Text("此引擎暂不可用，请换一个").font(.callout).foregroundStyle(.secondary)
+                    .padding(.horizontal, 16).padding(.bottom, 12)
+            }
+            if store.usesAPI && !store.assistantReady {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.title3).foregroundStyle(.yellow)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("尚未完成 API 设置").font(.body.weight(.semibold)).foregroundStyle(.yellow)
+                        Text("填写密钥并选择模型后才能对话").font(.callout).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Button("去设置") { showingAPISettings = true }.buttonStyle(.borderedProminent).disabled(store.chatting)
+                }.padding(14)
+                    .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.yellow.opacity(0.45), lineWidth: 1))
+                    .padding(.horizontal, 16).padding(.bottom, 12)
+            } else if store.usesAPI {
                 HStack {
-                    Text(store.assistantReady ? store.apiCredentials?.model ?? "" : "尚未完成 API 设置")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Label(store.apiCredentials?.model ?? "", systemImage: "key")
+                        .font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
-                    Button("设置") { showingAPISettings = true }.font(.caption).disabled(store.chatting)
-                }.padding(.horizontal, 16).padding(.bottom, 10)
+                    Button("设置…") { showingAPISettings = true }.disabled(store.chatting)
+                }.padding(.horizontal, 16).padding(.bottom, 12)
+            }
+            if (store.currentProvider?.available ?? false) && !store.visionEnabled {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("对话调整需要 AI 看到照片", systemImage: "eye").font(.callout.weight(.medium))
+                    Text("只发送缩小的预览图到 \(visionDestination)，原图留在本机。")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button("允许看图") { showingVisionConsent = true }.buttonStyle(.borderedProminent).disabled(store.chatting)
+                }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(white: 0.22), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(.horizontal, 16).padding(.bottom, 12)
             }
             Divider()
             ScrollViewReader { proxy in
@@ -132,12 +144,11 @@ struct AssistantPanel: View {
                     Spacer()
                     Button("发送", systemImage: "arrow.up") { store.sendChat() }
                         .buttonStyle(.borderedProminent).keyboardShortcut(.return, modifiers: .command)
-                        .disabled(store.chatting || store.controlsBlocked || store.targets.isEmpty || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.assistantReady)
+                        .disabled(store.chatting || store.controlsBlocked || store.targets.isEmpty || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.assistantReady || !store.visionEnabled)
                 }
             }.padding(16)
         }
         .onChange(of: store.assistantProvider) { _, provider in
-            store.visionConsentProvider = nil
             store.loadAPIKey()
             if store.usesAPI && !store.assistantReady { showingAPISettings = true }
         }
@@ -147,7 +158,7 @@ struct AssistantPanel: View {
         }
         .sheet(isPresented: $showingVisionConsent) {
             VisionConsentSheet(destination: visionDestination) {
-                store.visionConsentProvider = store.assistantProvider
+                store.visionConsents.insert(store.assistantProvider)
                 showingVisionConsent = false
             } cancel: {
                 showingVisionConsent = false
@@ -179,7 +190,7 @@ private struct VisionConsentSheet: View {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: "eye").font(.title2).foregroundStyle(.secondary).frame(width: 35)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("允许 AI 查看照片？").font(.title2.weight(.semibold))
+                    Text("允许 AI 看照片").font(.title2.weight(.semibold))
                     Text("让对话建议更贴合照片内容").foregroundStyle(.secondary)
                 }
             }
@@ -189,11 +200,11 @@ private struct VisionConsentSheet: View {
                 HStack { Text("发送到").foregroundStyle(.secondary); Spacer(); Text(destination) }
                 HStack { Text("图片大小").foregroundStyle(.secondary); Spacer(); Text("最长边约 1024 像素") }
             }.font(.callout).padding(14).background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
-            Text("调整后最多再发送一次预览以复看。使用自带账号会消耗对应额度；使用 API 密钥时，服务商可能收费。你可以随时关闭看图，关闭后只发送文字和本地分析摘要。")
+            Text("调整后最多再发送一次预览以复看。使用自带账号会消耗对应额度；使用 API 密钥时，服务商可能收费。对话调整必须看图，不同意则无法使用对话，滑块和风格不受影响。")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).lineSpacing(3)
             HStack {
                 Spacer()
-                Button("暂不开启", action: cancel).keyboardShortcut(.cancelAction)
+                Button("暂不使用", action: cancel).keyboardShortcut(.cancelAction)
                 Button("允许看图", action: allow).buttonStyle(.borderedProminent)
             }
         }.padding(24).frame(width: 540)
@@ -209,6 +220,7 @@ private struct APISettingsSheet: View {
     @State private var baseURL = ""
     @State private var fetched: [String] = []
     @State private var fetching = false
+    @State private var manualModel = false
     @State private var result: (ok: Bool, text: String)?
 
     private var savedKey: Bool { !(store.apiKeys[provider.id] ?? "").isEmpty }
@@ -238,21 +250,26 @@ private struct APISettingsSheet: View {
                         TextField("接口地址", text: $baseURL, prompt: Text("https://…/v1"))
                     }
                     SecureField("API 密钥", text: $key, prompt: Text(savedKey ? "已保存，留空则不修改" : "粘贴密钥"))
-                    HStack(spacing: 6) {
-                        TextField("模型", text: $model, prompt: Text("模型名称"))
+                    LabeledContent("模型") {
                         Menu {
                             if !provider.models.isEmpty {
-                                Section("常用看图模型") { ForEach(provider.models, id: \.self) { name in Button(name) { model = name } } }
+                                Section("常用看图模型") { ForEach(provider.models, id: \.self) { name in Button(name) { model = name; manualModel = false } } }
                             }
                             if !fetched.isEmpty {
-                                Section("服务商提供") { ForEach(fetched, id: \.self) { name in Button(name) { model = name } } }
+                                Section("服务商提供") { ForEach(fetched, id: \.self) { name in Button(name) { model = name; manualModel = false } } }
                             }
-                        } label: { Image(systemName: "chevron.up.chevron.down") }
-                            .menuStyle(.borderlessButton).fixedSize()
-                            .disabled(provider.models.isEmpty && fetched.isEmpty)
+                            Divider()
+                            Button("手动填写…") { manualModel = true }
+                        } label: {
+                            Text(trimmedModel.isEmpty ? "选择模型" : trimmedModel).lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }.frame(width: 300)
+                    }
+                    if manualModel {
+                        TextField("模型名称", text: $model, prompt: Text("按服务商文档填写"))
                     }
                 } footer: {
-                    Text("需选择能看图的模型。测试连接后可从服务商提供的列表里选，也可直接填写。")
+                    Text("需选择能看图的模型。测试连接后，下拉里会列出这家的全部模型。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {

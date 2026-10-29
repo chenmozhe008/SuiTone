@@ -14,6 +14,9 @@ final class WorkspaceStore {
     var analysis: AnalysisResponse?
     var overlay = ""
     var showOriginal = false
+    /// 左右滑动对比：左侧原图、右侧调整后；splitPosition 为分隔线位置（0–1）。
+    var splitCompare = false
+    var splitPosition = 0.5
     var grid = false
     var busy = false
     var importing = false
@@ -56,8 +59,11 @@ final class WorkspaceStore {
     var customBaseURL: String = UserDefaults.standard.string(forKey: "customBaseURL") ?? "" {
         didSet { UserDefaults.standard.set(customBaseURL, forKey: "customBaseURL") }
     }
-    var visionConsentProvider: String?
-    var visionEnabled: Bool { visionConsentProvider == assistantProvider }
+    /// 对话调整必须看图；用户对每个服务商同意一次后记住。
+    var visionConsents: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "visionConsents") ?? []) {
+        didSet { UserDefaults.standard.set(Array(visionConsents).sorted(), forKey: "visionConsents") }
+    }
+    var visionEnabled: Bool { visionConsents.contains(assistantProvider) }
     var currentProvider: AssistantProvider? { providers.first { $0.id == assistantProvider } }
     var usesAPI: Bool { currentProvider?.isAPI ?? false }
 

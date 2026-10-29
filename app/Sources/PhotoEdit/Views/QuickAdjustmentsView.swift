@@ -123,7 +123,7 @@ private struct QuickAdjustmentsView: View {
                     Button { store.applyStyle(style.id) } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             if let tile=store.styleTiles[style.id] {
-                                LocalPhoto(path:tile).frame(height:76).frame(maxWidth:.infinity).background(Color(white:0.1))
+                                LocalPhoto(path:tile,fill:true).frame(height:76).frame(maxWidth:.infinity).background(Color(white:0.1))
                             }
                             HStack {
                                 if store.styleTiles[style.id]==nil {Image(systemName: style.icon).font(.callout).foregroundStyle(.secondary)}
@@ -205,7 +205,7 @@ private struct ReferencePanel: View {
                     HStack(spacing: 8) {
                         ForEach(store.references) { reference in
                             VStack(spacing: 3) {
-                                LocalPhoto(path: reference.thumbnail).frame(width: 76, height: 52)
+                                LocalPhoto(path: reference.thumbnail, fill: true).frame(width: 76, height: 52)
                                 Text(store.referenceScopes[reference.id].map { $0 == "all" ? "全部区域" : "只学" + RegionNames.title($0) } ?? "全部区域")
                                     .font(.system(size: 9)).foregroundStyle(.secondary)
                             }.help(reference.name).contextMenu {

@@ -68,7 +68,7 @@ extension WorkspaceStore {
     func sendChat() {
         let message = chatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty, !chatting, !controlsBlocked, !targets.isEmpty else { return }
-        guard assistantReady else { return }
+        guard assistantReady, visionEnabled else { return }
         finishEditing()
         let items = targets
         let undoCandidate = undoChanges.last

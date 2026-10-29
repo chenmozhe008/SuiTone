@@ -18,9 +18,15 @@ private enum ImageCache {
 
 struct LocalPhoto: View {
     let path: String
+    /// 缩略图铺满格子并裁掉多余部分，避免比例不符时露出底色；主画布仍完整显示。
+    var fill = false
     var body: some View {
         if let image = ImageCache.load(path) {
-            Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+            if fill {
+                Color.clear.overlay(Image(nsImage: image).resizable().interpolation(.high).scaledToFill()).clipped()
+            } else {
+                Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+            }
         } else {
             Image(systemName: "photo").foregroundStyle(.secondary)
         }

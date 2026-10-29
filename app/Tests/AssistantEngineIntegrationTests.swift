@@ -18,7 +18,7 @@ import Testing
         import assistant, service
         assistant.executable=lambda provider: '/fake/claude'
         def fake(self, provider, prompt, cancel, *images):
-            assert provider == 'claude' and not images
+            assert provider == 'claude'
             context=json.loads(prompt.rsplit('\\n',1)[1])
             return {'reply':'已准备胶片风格','selection':'none','actions':[{'id':context['targets'][0]['id'],
                 'preset':'film','adjustments':[],'operations':[]}]}
@@ -34,6 +34,7 @@ import Testing
         let before: PreviewResponse = try await store.engine.request("preview", body: ["id": image.id,
             "params": try EngineClient.object(photo.parameters), "quality": try EngineClient.object(photo.quality)])
         store.providers = [AssistantProvider(id: "claude", title: "Claude Code", available: true)]
+        store.visionConsents.insert("claude")
         store.assistantProvider = "claude"; store.chatDraft = "调成明显的胶片风格"
         store.sendChat()
         let task = try #require(store.assistantTask)
