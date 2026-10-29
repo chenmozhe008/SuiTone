@@ -124,8 +124,8 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(message['message']['content'][1]['text'],'公开样片')
             self.assertEqual(base64.b64decode(message['message']['content'][2]['source']['data']),b'image-fixture')
 
-    def test_advice_does_not_promise_unavailable_export_or_painting(self):
-        from assistant import safe_advice,validate_plan
+    def test_advice_preserves_repair_options_and_rejects_unavailable_export(self):
+        from assistant import SYSTEM,safe_advice,validate_plan
         from smart import neutral
         context=self.context(Image.new('RGB',(32,32),(100,110,120)))
         engine=SimpleNamespace(analysis=lambda key:(context,True))
@@ -134,7 +134,9 @@ class EngineTests(unittest.TestCase):
         self.assertIn('不能覆盖原文件',result['reply'])
         self.assertIn('不支持裁切',result['reply'])
         self.assertNotIn('选择覆盖',result['reply'])
-        self.assertEqual(safe_advice('请涂抹或框选后再修复。'),'请框选后再修复。')
+        self.assertEqual(safe_advice('请涂抹或框选后再修复。'),'请涂抹或框选后再修复。')
+        self.assertIn('画笔、套索、点选物体和方框',SYSTEM)
+        self.assertNotIn('只支持框选',SYSTEM)
         self.assertIn('不支持裁切',safe_advice('可以在导出时设置裁剪比例。'))
 
     def test_visual_review_cannot_apply_preset_or_tool_operation(self):
