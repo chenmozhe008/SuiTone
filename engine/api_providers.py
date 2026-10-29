@@ -1,6 +1,7 @@
 """API 密钥接入：Claude 走原生接口，其余各家走 OpenAI 兼容接口；密钥只由调用方在内存中提供。"""
 import base64
 import json
+import unicodedata
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -49,7 +50,8 @@ def resolve(data):
     provider = BY_ID.get(data.get('provider'))
     if provider is None:raise ValueError('请选择可用的对话引擎')
     key = data.get('api_key')
-    if not isinstance(key, str) or not 0 < len(key.strip()) <= 512:
+    key = clean_key(key) if isinstance(key, str) else None
+    if not key or len(key) > 512:
         raise ValueError('请先配置 '+provider['title']+' API 密钥')
     model = data.get('model') or (provider['models'][0] if provider['models'] else '')
     if not isinstance(model, str) or not 0 < len(model.strip()) <= 128:raise ValueError('请填写模型名称')
@@ -59,24 +61,46 @@ def resolve(data):
     local = parts.hostname in ('127.0.0.1', 'localhost')
     if not parts.hostname or not (parts.scheme == 'https' or (parts.scheme == 'http' and local)):
         raise ValueError('接口地址需以 https:// 开头（本机服务可用 http://localhost）')
-    return provider, key.strip(), model.strip(), base_url.strip().rstrip('/')
+    return provider, key, model.strip(), base_url.strip().rstrip('/')
 
 
 def _name(provider):
     return provider['title'].split('（')[0]
 
 
-def _send(request, provider, opener, timeout=90, limit=2*1024*1024):
+def clean_key(key):
+    """去掉粘贴时混进来的空白、零宽字符，并把全角字母数字转半角；密钥本身只含 ASCII。"""
+    text = unicodedata.normalize('NFKC', key)
+    return ''.join(c for c in text if c.isascii() and c.isprintable() and not c.isspace())
+
+
+def _detail(exc, key):
+    """取服务商返回的错误原话，便于判断原因；抹掉其中可能出现的密钥。"""
+    try:
+        body = json.loads(exc.read(4096))
+        error = body.get('error', body) if isinstance(body, dict) else body
+        message = error.get('message') if isinstance(error, dict) else error
+        message = str(message or '').strip()
+    except Exception:
+        return ''
+    if key and len(key) > 4:message = message.replace(key, '****'+key[-4:])
+    return ('（服务商返回：'+message[:200]+'）') if message else ''
+
+
+def _send(request, provider, opener, timeout=90, limit=2*1024*1024, key=''):
     name = _name(provider)
     try:
         with opener(request, timeout=timeout) as response:
             return response.read(limit)
     except HTTPError as exc:
-        if exc.code in (401, 403):raise ValueError(name+' API 密钥无效或没有权限') from None
-        if exc.code == 404:raise ValueError(name+' 找不到这个模型或接口地址，请检查模型名称') from None
-        if exc.code == 429:raise ValueError(name+' API 请求受限或额度不足，请稍后重试') from None
-        if exc.code == 400:raise ValueError(name+' 拒绝了请求，可能是所选模型不支持看图，请换带视觉的模型') from None
-        raise ValueError(name+' API 未完成请求，请检查配置或稍后重试') from None
+        detail = _detail(exc, key)
+        if exc.code == 401:raise ValueError(name+' 不认这个密钥'+(detail or '，请核对是否完整复制')) from None
+        if exc.code == 403:raise ValueError(name+' 拒绝访问，密钥可能没有开通这个模型'+detail) from None
+        if exc.code == 402:raise ValueError(name+' 账户余额不足'+detail) from None
+        if exc.code == 404:raise ValueError(name+' 找不到这个模型或接口地址，请检查模型名称'+detail) from None
+        if exc.code == 429:raise ValueError(name+' 请求受限或额度不足，请稍后重试'+detail) from None
+        if exc.code == 400:raise ValueError(name+' 拒绝了请求，可能是所选模型不支持看图'+detail) from None
+        raise ValueError(name+' API 未完成请求（HTTP '+str(exc.code)+'）'+detail) from None
     except (URLError, TimeoutError, OSError):
         raise ValueError('无法连接 '+name+' API，请检查网络后重试') from None
 
@@ -121,7 +145,7 @@ def invoke(data, prompt, schema, images=(), *, cancel=None, opener=_open):
                 if provider['schema'] else dict(type='json_object'))
     request = Request(base_url+'/chat/completions', data=_payload(body), method='POST', headers={
         'Content-Type':'application/json', 'Authorization':'Bearer '+key})
-    response_bytes = _send(request, provider, opener)
+    response_bytes = _send(request, provider, opener, key=key)
     if cancel is not None and cancel.is_set():raise InterruptedError()
     try:
         choice = json.loads(response_bytes)['choices'][0]
@@ -136,7 +160,7 @@ def list_models(data, *, opener=_open):
     provider, key, _, base_url = resolve(dict(data, model=data.get('model') or 'x'))
     headers = {'anthropic-version':'2023-06-01', 'x-api-key':key} if provider['kind'] == 'anthropic' \
         else {'Authorization':'Bearer '+key}
-    response_bytes = _send(Request(base_url+'/models', headers=headers), provider, opener, timeout=20)
+    response_bytes = _send(Request(base_url+'/models', headers=headers), provider, opener, timeout=20, key=key)
     try:
         items = json.loads(response_bytes)['data']
         names = sorted({str(item['id']).removeprefix('models/') for item in items if item.get('id')})

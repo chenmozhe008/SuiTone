@@ -219,6 +219,11 @@ class EngineTests(unittest.TestCase):
         def denied(request,timeout): raise HTTPError(request.full_url,401,'fixture-secret',{},BytesIO())
         with self.assertRaises(ValueError) as error:invoke(dict(provider='deepseek',api_key='fixture-secret'),'test',SCHEMA,opener=denied)
         self.assertNotIn('fixture-secret',str(error.exception))
+        def echoed(request,timeout):
+            raise HTTPError(request.full_url,401,'',{},BytesIO(json.dumps({'error':{'message':'bad key sk-fixture-secret'}}).encode()))
+        with self.assertRaises(ValueError) as error:invoke(dict(provider='deepseek',api_key=' ｓｋ-fixture-secret\u200b\n'),'test',SCHEMA,opener=echoed)
+        self.assertIn('服务商返回',str(error.exception));self.assertNotIn('sk-fixture-secret',str(error.exception))
+        self.assertEqual(resolve(dict(provider='deepseek',api_key=' ｓｋ-ab\u200bc\n'))[1],'sk-abc')
         reply={'data':[{'id':'models/gemini-b'},{'id':'gemini-a'}]}
         self.assertEqual(list_models(dict(provider='gemini',api_key='k'),opener=opener)['models'],['gemini-a','gemini-b'])
         self.assertTrue(calls[-1].full_url.endswith('/v1beta/openai/models'))

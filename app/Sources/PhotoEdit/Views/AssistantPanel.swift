@@ -209,10 +209,16 @@ private struct APISettingsSheet: View {
     @State private var baseURL = ""
     @State private var fetched: [String] = []
     @State private var fetching = false
-    @State private var message: String?
+    @State private var result: (ok: Bool, text: String)?
 
     private var savedKey: Bool { !(store.apiKeys[provider.id] ?? "").isEmpty }
-    private var effectiveKey: String { key.isEmpty ? store.apiKeys[provider.id] ?? "" : key }
+    private var effectiveKey: String { key.isEmpty ? store.apiKeys[provider.id] ?? "" : cleanedKey }
+    /// 去掉粘贴时混进来的空白和不可见字符，全角转半角；密钥只含 ASCII。
+    private var cleanedKey: String {
+        String(String.UnicodeScalarView(key.precomposedStringWithCompatibilityMapping.unicodeScalars.filter {
+            $0.isASCII && $0.properties.isWhitespace == false && $0.value >= 0x21 && $0.value < 0x7f
+        }))
+    }
     private var trimmedModel: String { model.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var trimmedURL: String { baseURL.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var canSave: Bool {
@@ -220,46 +226,48 @@ private struct APISettingsSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("使用 \(provider.title) API").font(.title2.weight(.semibold))
-                Text("连接你自己的 API 账号").foregroundStyle(.secondary)
-            }
-            if provider.needsBaseUrl {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("接口地址").font(.callout)
-                    TextField("https://…/v1", text: $baseURL)
+                Text("连接你自己的 API 账号。密钥保存在本机钥匙串，不写入项目文件或聊天记录。")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.top, 24)
+            Form {
+                Section {
+                    if provider.needsBaseUrl {
+                        TextField("接口地址", text: $baseURL, prompt: Text("https://…/v1"))
+                    }
+                    SecureField("API 密钥", text: $key, prompt: Text(savedKey ? "已保存，留空则不修改" : "粘贴密钥"))
+                    HStack(spacing: 6) {
+                        TextField("模型", text: $model, prompt: Text("模型名称"))
+                        Menu {
+                            if !provider.models.isEmpty {
+                                Section("常用看图模型") { ForEach(provider.models, id: \.self) { name in Button(name) { model = name } } }
+                            }
+                            if !fetched.isEmpty {
+                                Section("服务商提供") { ForEach(fetched, id: \.self) { name in Button(name) { model = name } } }
+                            }
+                        } label: { Image(systemName: "chevron.up.chevron.down") }
+                            .menuStyle(.borderlessButton).fixedSize()
+                            .disabled(provider.models.isEmpty && fetched.isEmpty)
+                    }
+                } footer: {
+                    Text("需选择能看图的模型。测试连接后可从服务商提供的列表里选，也可直接填写。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("API 密钥").font(.callout)
-                SecureField(savedKey ? "已保存，留空则不修改" : "在此输入密钥", text: $key)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("模型").font(.callout)
-                    Spacer()
-                    Button(fetching ? "正在读取…" : "从服务商读取") { fetchModels() }
-                        .font(.caption).disabled(fetching || effectiveKey.isEmpty || (provider.needsBaseUrl && trimmedURL.isEmpty))
-                }
-                HStack(spacing: 6) {
-                    TextField("模型名称", text: $model)
-                    Menu {
-                        if !provider.models.isEmpty {
-                            Section("常用看图模型") { ForEach(provider.models, id: \.self) { name in Button(name) { model = name } } }
+                Section {
+                    HStack(spacing: 10) {
+                        Button(fetching ? "正在测试…" : "测试连接") { testConnection() }
+                            .disabled(fetching || effectiveKey.isEmpty || (provider.needsBaseUrl && trimmedURL.isEmpty))
+                        if fetching { ProgressView().controlSize(.small) }
+                        if let result {
+                            Label(result.text, systemImage: result.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                .foregroundStyle(result.ok ? Color.green : Color.orange)
+                                .font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                         }
-                        if !fetched.isEmpty {
-                            Section("服务商提供") { ForEach(fetched, id: \.self) { name in Button(name) { model = name } } }
-                        }
-                    } label: { Image(systemName: "chevron.down") }
-                        .menuStyle(.borderlessButton).fixedSize()
-                        .disabled(provider.models.isEmpty && fetched.isEmpty)
+                    }
                 }
-                Text(message ?? "需选择能看图的模型。模型名以服务商为准，可从列表选或直接填写。")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            Text("密钥保存在本机钥匙串，不写入项目文件或聊天记录。使用 API 按服务商标准收费；发送照片前会单独征得同意。")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).lineSpacing(3)
+            }.formStyle(.grouped).scrollDisabled(true).frame(height: provider.needsBaseUrl ? 330 : 290)
             HStack {
                 if savedKey {
                     Button("删除密钥") { store.saveAPISettings(provider: provider.id, key: "", model: trimmedModel, baseURL: trimmedURL); done() }
@@ -267,28 +275,28 @@ private struct APISettingsSheet: View {
                 Spacer()
                 Button("取消", action: done).keyboardShortcut(.cancelAction)
                 Button("保存") {
-                    store.saveAPISettings(provider: provider.id, key: key.isEmpty ? nil : key.trimmingCharacters(in: .whitespacesAndNewlines),
+                    store.saveAPISettings(provider: provider.id, key: key.isEmpty ? nil : cleanedKey,
                                           model: trimmedModel, baseURL: trimmedURL)
                     key = ""; done()
-                }.buttonStyle(.borderedProminent).disabled(!canSave)
-            }
-        }.padding(24).frame(width: 540)
+                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(!canSave)
+            }.padding(.horizontal, 24).padding(.bottom, 20)
+        }.frame(width: 580)
         .onAppear {
             model = store.apiModels[provider.id] ?? provider.models.first ?? ""
             baseURL = store.customBaseURL
         }
     }
 
-    private func fetchModels() {
-        fetching = true; message = nil
-        let secret = effectiveKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func testConnection() {
+        fetching = true; result = nil
+        let secret = key.isEmpty ? effectiveKey : cleanedKey
         Task {
             defer { fetching = false }
             do {
                 fetched = try await store.fetchModels(provider: provider.id, key: secret, baseURL: provider.needsBaseUrl ? trimmedURL : "")
-                message = fetched.isEmpty ? "服务商没有返回模型，可直接填写。" : "已读取 \(fetched.count) 个模型，点右侧箭头选择。"
+                result = (true, fetched.isEmpty ? "连接成功" : "连接成功，可选 \(fetched.count) 个模型")
             } catch {
-                message = error.localizedDescription
+                result = (false, error.localizedDescription)
             }
         }
     }
