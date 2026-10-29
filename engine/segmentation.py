@@ -5,6 +5,7 @@ from pathlib import Path
 from threading import RLock
 import json
 import os
+from zipfile import BadZipFile
 from uuid import uuid4
 import numpy as np
 from PIL import Image
@@ -30,11 +31,17 @@ def probabilities(image):
         labels = {int(k): v for k, v in json.loads((MODEL_DIR / 'config.json').read_text())['id2label'].items()}
         disk = Path(cache_dir) / (digest + '.npz') if cache_dir else None
         if disk and disk.exists():
-            with np.load(disk) as stored:
-                result = (stored['p'], labels)
-            _cache[key] = result
-            while len(_cache) > 8: _cache.popitem(last=False)
-            return result
+            try:
+                with np.load(disk) as stored:
+                    probabilities = stored['p']
+                    if probabilities.ndim != 3 or probabilities.shape[0] != len(labels) or not np.isfinite(probabilities).all():
+                        raise ValueError('invalid segmentation cache')
+                    result = (probabilities, labels)
+                _cache[key] = result
+                while len(_cache) > 8: _cache.popitem(last=False)
+                return result
+            except (OSError, ValueError, KeyError, EOFError, BadZipFile):
+                pass
         import onnxruntime as ort
         if _session is None:
             opts = ort.SessionOptions()

@@ -148,7 +148,7 @@ def clean_temporary(tmp, cache_limit=500*1024*1024):
     files=[]
     for f in (tmp/'app-cache').rglob('*'):
         try:
-            if f.is_file():
+            if len(f.stem)==64 and all(c in '0123456789abcdef' for c in f.stem) and f.suffix=='.npz' and f.is_file():
                 stat=f.stat();files.append((stat.st_mtime,stat.st_size,f))
         except OSError:continue
     files.sort(key=lambda item:item[0])

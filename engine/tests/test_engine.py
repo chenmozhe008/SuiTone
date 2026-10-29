@@ -573,11 +573,31 @@ class EngineTests(unittest.TestCase):
         interrupted=tmp/'app-session-999999-starting';interrupted.mkdir()
         cache=tmp/'app-cache/segmentation';cache.mkdir(parents=True)
         for i in range(3):
-            f=cache/f'{i}.npz';f.write_bytes(b'x'*100);os.utime(f,(i,i))
+            f=cache/(str(i)*64+'.npz');f.write_bytes(b'x'*100);os.utime(f,(i,i))
+        writing=cache/('a'*64+'-writing.npz');writing.write_bytes(b'x'*100)
         clean_temporary(tmp,cache_limit=150)
         self.assertFalse(dead.exists());self.assertTrue(legacy.exists());self.assertTrue(live.exists())
         self.assertTrue(starting.exists());self.assertFalse(interrupted.exists())
-        self.assertEqual(sorted(f.name for f in cache.iterdir()),['2.npz'])
+        self.assertEqual(sorted(f.name for f in cache.iterdir()),['2'*64+'.npz',writing.name])
+
+    def test_corrupt_segmentation_cache_is_recomputed(self):
+        import hashlib,json
+        from collections import OrderedDict
+        from unittest.mock import patch
+        import segmentation
+        with TemporaryDirectory() as folder:
+            root=Path(folder);model=root/'model';model.mkdir()
+            (model/'model.onnx').write_bytes(b'model')
+            (model/'config.json').write_text(json.dumps({'id2label':{'0':'sky','1':'land'}}))
+            image=Image.new('RGB',(8,8),(80,120,140))
+            signature=str(((model/'model.onnx').stat().st_mtime_ns,(model/'config.json').stat().st_mtime_ns,'imagenet-512-bicubic-v1'))
+            digest=hashlib.sha256(image.tobytes()+signature.encode()).hexdigest()
+            cache=root/'cache';cache.mkdir();(cache/(digest+'.npz')).write_bytes(b'broken')
+            session=SimpleNamespace(get_inputs=lambda:[SimpleNamespace(name='input')],run=lambda *args:[np.zeros((1,2,2,2),np.float32)])
+            with patch.object(segmentation,'MODEL_DIR',model),patch.object(segmentation,'cache_dir',cache),patch.object(segmentation,'_cache',OrderedDict()),patch.object(segmentation,'_session',session):
+                probabilities,labels=segmentation.probabilities(image)
+            self.assertEqual(probabilities.shape,(2,2,2));self.assertEqual(labels[0],'sky')
+            with np.load(cache/(digest+'.npz')) as saved:self.assertEqual(saved['p'].shape,(2,2,2))
 
     def test_reference_strength_drops_when_reference_differs_a_lot(self):
         from match import suggested_strength
