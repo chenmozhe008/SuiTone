@@ -186,7 +186,7 @@
 
 ```bash
 cd '/Users/forwardyan/Coding/Coding Project/photo-edit'
-swift test --package-path app
+./script/test.sh                              # Swift + Python 测试；本机只有命令行工具，参数见 script/swift_env.sh
 /Users/forwardyan/.cache/photo-edit/venv/bin/python -B engine/tests/test_engine.py
 bash script/build_and_run.sh --verify        # 会停掉旧 App 并重启，先保存编辑记录
 /Users/forwardyan/.cache/photo-edit/venv/bin/python -B script/ai_acceptance.py   # 真实调用 CLI，消耗额度

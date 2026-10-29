@@ -28,7 +28,7 @@ class RecommendationBridge:
                  'reply 必须只包含 JSON 对象，格式为 {"cards":["候选ID",...]}。候选：'
                  +json.dumps(choices,ensure_ascii=False))
         request={key:deepcopy(value) for key,value in data.items()
-                 if key in ('provider','api_key','targets','image_consent')}
+                 if key in ('provider','api_key','model','base_url','targets','image_consent')}
         request.update(message=message,history=[],reference_ids=[],undo_available=False)
         started=self.bridge.start(request)
         with self.lock:

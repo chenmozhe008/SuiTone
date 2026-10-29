@@ -1,11 +1,12 @@
-import XCTest
+import Foundation
+import Testing
 @testable import PhotoEdit
 
-final class AssistantEngineIntegrationTests: XCTestCase {
-    @MainActor func testClaudeChatRunsThroughLocalServiceAndUpdatesPreview() async throws {
+@MainActor @Suite struct AssistantEngineIntegrationTests {
+    @Test @MainActor func testClaudeChatRunsThroughLocalServiceAndUpdatesPreview() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let sample = root.appendingPathComponent("output/stage2-20261028/city-public.jpg")
-        guard FileManager.default.fileExists(atPath: sample.path) else { throw XCTSkip("缺少公开城市样片") }
+        guard FileManager.default.fileExists(atPath: sample.path) else { /* 跳过：缺少公开城市样片 */ return }
         let fixture = root.appendingPathComponent("tmp/claude-chat-fixture-\(UUID().uuidString)")
         let engineDir = fixture.appendingPathComponent("engine")
         try FileManager.default.createDirectory(at: engineDir, withIntermediateDirectories: true)
@@ -27,73 +28,72 @@ final class AssistantEngineIntegrationTests: XCTestCase {
         try script.write(to: engineDir.appendingPathComponent("service.py"), atomically: true, encoding: .utf8)
         let store = WorkspaceStore(engine: EngineClient(root: fixture))
         let imported: ImportResponse = try await store.engine.request("import", body: ["paths": [sample.path]])
-        let image = try XCTUnwrap(imported.photos.first)
+        let image = try #require(imported.photos.first)
         var photo = PhotoRecord(imported: image, assetID: image.id); photo.ready = true
         store.photos = [photo]; store.currentID = photo.id
         let before: PreviewResponse = try await store.engine.request("preview", body: ["id": image.id,
             "params": try EngineClient.object(photo.parameters), "quality": try EngineClient.object(photo.quality)])
+        store.providers = [AssistantProvider(id: "claude", title: "Claude Code", available: true)]
         store.assistantProvider = "claude"; store.chatDraft = "调成明显的胶片风格"
         store.sendChat()
-        let task = try XCTUnwrap(store.assistantTask)
+        let task = try #require(store.assistantTask)
         await task.value
-        XCTAssertFalse(store.chatting)
-        XCTAssertEqual(store.undoChanges.count, 1, store.chatMessages.map(\.text).joined(separator: " | "))
-        XCTAssertTrue(store.chatMessages.last?.text.contains("已完成调整") == true, store.chatMessages.map(\.text).joined(separator: " | "))
+        #expect(!(store.chatting))
+        #expect(store.undoChanges.count == 1, Comment(rawValue: store.chatMessages.map(\.text).joined(separator: " | ")))
+        #expect(store.chatMessages.last?.text.contains("已完成调整") == true, Comment(rawValue: store.chatMessages.map(\.text).joined(separator: " | ")))
         let previewTask = store.previewTask
         await previewTask?.value
-        let afterPath = try XCTUnwrap(store.photos[0].previewPath)
-        XCTAssertNotEqual(try Data(contentsOf: URL(fileURLWithPath: before.preview)),
-                          try Data(contentsOf: URL(fileURLWithPath: afterPath)))
+        let afterPath = try #require(store.photos[0].previewPath)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: before.preview)) != Data(contentsOf: URL(fileURLWithPath: afterPath)))
         store.undo(); store.previewTask?.cancel()
-        XCTAssertEqual(store.photos[0].parameters, photo.parameters)
+        #expect(store.photos[0].parameters == photo.parameters)
     }
 
-    @MainActor func testRecordedClaudeVisionAdjustmentChangesPreviewAndCanBeUndone() async throws {
+    @Test @MainActor func testRecordedClaudeVisionAdjustmentChangesPreviewAndCanBeUndone() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let sample = root.appendingPathComponent("output/stage2-20261028/city-public.jpg")
         let recorded = root.appendingPathComponent("output/stage2-20261028/claude-edit-check-20261029.json")
         guard FileManager.default.fileExists(atPath: sample.path), FileManager.default.fileExists(atPath: recorded.path) else {
-            throw XCTSkip("缺少公开样片或已保存的 Claude 响应")
+            /* 跳过：缺少公开样片或已保存的 Claude 响应 */ return
         }
         let store = WorkspaceStore(engine: EngineClient(root: root))
         let imported: ImportResponse = try await store.engine.request("import", body: ["paths": [sample.path]])
-        let image = try XCTUnwrap(imported.photos.first)
+        let image = try #require(imported.photos.first)
         var photo = PhotoRecord(imported: image, assetID: image.id); photo.ready = true
         store.photos = [photo]; store.currentID = photo.id
         let before: PreviewResponse = try await store.engine.request("preview", body: ["id": image.id,
             "params": try EngineClient.object(photo.parameters), "quality": try EngineClient.object(photo.quality)])
-        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: recorded)) as? [String: Any])
-        var result = try XCTUnwrap(json["result"] as? [String: Any])
-        var changes = try XCTUnwrap(result["changes"] as? [[String: Any]])
-        XCTAssertEqual(changes.count, 1)
+        let json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: recorded)) as? [String: Any])
+        var result = try #require(json["result"] as? [String: Any])
+        var changes = try #require(result["changes"] as? [[String: Any]])
+        #expect(changes.count == 1)
         changes[0]["id"] = image.id; result["changes"] = changes
         let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
         let job = try decoder.decode(AssistantJob.self, from: JSONSerialization.data(withJSONObject: result))
         await store.applyAssistantResult(job, items: store.photos); store.previewTask?.cancel()
-        XCTAssertEqual(store.undoChanges.count, 1)
-        XCTAssertNotEqual(store.photos[0].parameters, photo.parameters)
+        #expect(store.undoChanges.count == 1)
+        #expect(store.photos[0].parameters != photo.parameters)
         let after: PreviewResponse = try await store.engine.request("preview", body: ["id": image.id,
             "params": try EngineClient.object(store.photos[0].parameters), "quality": try EngineClient.object(photo.quality)])
-        XCTAssertNotEqual(try Data(contentsOf: URL(fileURLWithPath: before.preview)),
-                          try Data(contentsOf: URL(fileURLWithPath: after.preview)))
+        #expect(try Data(contentsOf: URL(fileURLWithPath: before.preview)) != Data(contentsOf: URL(fileURLWithPath: after.preview)))
         store.undo(); store.previewTask?.cancel()
-        XCTAssertEqual(store.photos[0].parameters, photo.parameters)
+        #expect(store.photos[0].parameters == photo.parameters)
     }
 
-    @MainActor func testAIUsesRealEngineForQualityReferenceAndRepair() async throws {
+    @Test @MainActor func testAIUsesRealEngineForQualityReferenceAndRepair() async throws {
         guard ProcessInfo.processInfo.environment["PHOTO_EDIT_RUN_MODEL_TESTS"] == "1" else {
-            throw XCTSkip("真实模型测试由阶段验收显式启用")
+            /* 跳过：真实模型测试由阶段验收显式启用 */ return
         }
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let lake = root.appendingPathComponent("tmp/ui-review-input/IMG_8457.HEIC")
         let small = root.appendingPathComponent("tmp/quality-model-input.png")
         guard FileManager.default.fileExists(atPath: lake.path), FileManager.default.fileExists(atPath: small.path) else {
-            throw XCTSkip("缺少公开样本或案例副本")
+            /* 跳过：缺少公开样本或案例副本 */ return
         }
         let store = WorkspaceStore(engine: EngineClient(root: root))
         let imported: ImportResponse = try await store.engine.request("import", body: ["paths": [lake.path, small.path]])
-        let lakeImage = try XCTUnwrap(imported.photos.first(where: { $0.name == lake.lastPathComponent }))
-        let smallImage = try XCTUnwrap(imported.photos.first(where: { $0.name == small.lastPathComponent }))
+        let lakeImage = try #require(imported.photos.first(where: { $0.name == lake.lastPathComponent }))
+        let smallImage = try #require(imported.photos.first(where: { $0.name == small.lastPathComponent }))
         var lakePhoto = PhotoRecord(imported: lakeImage, assetID: lakeImage.id); lakePhoto.ready = true
         store.photos = [lakePhoto]; store.currentID = lakePhoto.id
 
@@ -103,10 +103,10 @@ final class AssistantEngineIntegrationTests: XCTestCase {
                             operations: [AssistantOperation(kind: "match", value: 0)])], error: nil)
         await store.applyAssistantResult(matchJob, items: matchItems, referenceIDs: [lakeImage.id])
         store.previewTask?.cancel()
-        XCTAssertFalse(store.photos[0].parameters.regions.isEmpty, "参考匹配应学习到共同区域")
-        XCTAssertEqual(store.undoChanges.count, 1)
+        #expect(!(store.photos[0].parameters.regions.isEmpty), Comment(rawValue: "参考匹配应学习到共同区域"))
+        #expect(store.undoChanges.count == 1)
         store.undo(); store.previewTask?.cancel()
-        XCTAssertTrue(store.photos[0].parameters.regions.isEmpty)
+        #expect(store.photos[0].parameters.regions.isEmpty)
 
         let repairItems = store.photos
         let removal = RemovalOperation(box: [0.88, 0.30, 0.998, 0.996], classes: ["railing", "fence"], keep: nil)
@@ -117,12 +117,12 @@ final class AssistantEngineIntegrationTests: XCTestCase {
         await store.applyAssistantResult(repairJob, items: repairItems,
                                          repair: (id: lakePhoto.assetID, operation: removal))
         store.previewTask?.cancel()
-        XCTAssertNotEqual(store.photos[0].assetID, lakePhoto.assetID)
-        XCTAssertEqual(store.photos[0].operations.count, 1)
-        XCTAssertNil(store.selectionBox)
+        #expect(store.photos[0].assetID != lakePhoto.assetID)
+        #expect(store.photos[0].operations.count == 1)
+        #expect(store.selectionBox == nil)
         store.undo(); store.previewTask?.cancel()
-        XCTAssertEqual(store.photos[0].assetID, lakePhoto.assetID)
-        XCTAssertTrue(store.photos[0].operations.isEmpty)
+        #expect(store.photos[0].assetID == lakePhoto.assetID)
+        #expect(store.photos[0].operations.isEmpty)
 
         var smallPhoto = PhotoRecord(imported: smallImage, assetID: smallImage.id); smallPhoto.ready = true
         store.photos = [smallPhoto]; store.currentID = smallPhoto.id
@@ -133,10 +133,10 @@ final class AssistantEngineIntegrationTests: XCTestCase {
                 AssistantOperation(kind: "denoise", value: 1), AssistantOperation(kind: "upscale", value: 2)])], error: nil)
         await store.applyAssistantResult(qualityJob, items: qualityItems)
         store.previewTask?.cancel()
-        XCTAssertEqual(store.photos[0].quality, QualitySettings(denoise: true, scale: 2))
-        XCTAssertEqual(store.undoChanges.count, 1, "一句话的多个操作应是一条事务")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: store.photos[0].previewPath ?? ""))
+        #expect(store.photos[0].quality == QualitySettings(denoise: true, scale: 2))
+        #expect(store.undoChanges.count == 1, Comment(rawValue: "一句话的多个操作应是一条事务"))
+        #expect(FileManager.default.fileExists(atPath: store.photos[0].previewPath ?? ""))
         store.undo(); store.previewTask?.cancel()
-        XCTAssertEqual(store.photos[0].quality, QualitySettings())
+        #expect(store.photos[0].quality == QualitySettings())
     }
 }

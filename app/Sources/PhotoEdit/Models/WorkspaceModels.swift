@@ -59,6 +59,36 @@ struct AssistantProvider:Decodable,Identifiable {
     var id:String
     var title:String
     var available:Bool
+    /// account = 本机已登录的 CLI；api = 用户自填密钥
+    var kind:String = "account"
+    var models:[String] = []
+    var needsBaseUrl:Bool = false
+    var isAPI:Bool { kind == "api" }
+
+    enum CodingKeys: String, CodingKey { case id, title, available, kind, models, needsBaseUrl }
+    init(id:String,title:String,available:Bool,kind:String="account",models:[String]=[],needsBaseUrl:Bool=false) {
+        self.id=id;self.title=title;self.available=available;self.kind=kind;self.models=models;self.needsBaseUrl=needsBaseUrl
+    }
+    init(from decoder:Decoder) throws {
+        let c=try decoder.container(keyedBy:CodingKeys.self)
+        id=try c.decode(String.self,forKey:.id);title=try c.decode(String.self,forKey:.title)
+        available=try c.decode(Bool.self,forKey:.available)
+        kind=try c.decodeIfPresent(String.self,forKey:.kind) ?? "account"
+        models=try c.decodeIfPresent([String].self,forKey:.models) ?? []
+        needsBaseUrl=try c.decodeIfPresent(Bool.self,forKey:.needsBaseUrl) ?? false
+    }
+}
+
+/// 发给引擎的 API 接入参数；密钥只在内存和钥匙串里。
+struct APICredentials: Sendable {
+    var key: String
+    var model: String
+    var baseURL: String
+    func apply(to body: inout [String: Any]) {
+        body["api_key"] = key
+        if !model.isEmpty { body["model"] = model }
+        if !baseURL.isEmpty { body["base_url"] = baseURL }
+    }
 }
 
 struct SuggestionCard: Decodable, Identifiable {

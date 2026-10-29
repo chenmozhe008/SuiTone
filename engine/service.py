@@ -422,6 +422,9 @@ def serve(root, token, watch_stdin=True):
                 length=int(self.headers.get('Content-Length','0'))
                 if not 0<length<=1024*1024: raise ValueError('请求大小无效')
                 data=json.loads(self.rfile.read(length))
+                if self.path=='/assistant-models':
+                    from api_providers import list_models
+                    return self.response(200,list_models(data))
                 with engine.lock:
                     if self.path=='/scan':result=engine.scan_paths(data['paths'])
                     elif self.path=='/import': result=engine.import_paths(data['paths'])

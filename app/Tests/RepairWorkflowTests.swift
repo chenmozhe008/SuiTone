@@ -1,7 +1,8 @@
-import XCTest
+import Foundation
+import Testing
 @testable import PhotoEdit
 
-final class RepairWorkflowTests: XCTestCase {
+@MainActor @Suite struct RepairWorkflowTests {
     @MainActor private func fixture() -> WorkspaceStore {
         let store = WorkspaceStore()
         let imported = ImportedPhoto(id: "photo", path: "/fixture.jpg", name: "fixture.jpg", thumbnail: "/thumb.png",
@@ -15,53 +16,53 @@ final class RepairWorkflowTests: XCTestCase {
         return store
     }
 
-    @MainActor func testCancelLeavesPhotoAndHistoryUntouched() async {
+    @Test @MainActor func testCancelLeavesPhotoAndHistoryUntouched() async {
         let store = fixture(), before = store.current!.snapshot
-        XCTAssertTrue(store.controlsBlocked)
+        #expect(store.controlsBlocked)
         store.cancelRepairPreview()
-        XCTAssertEqual(store.current!.snapshot, before)
-        XCTAssertTrue(store.undoChanges.isEmpty)
-        XCTAssertNil(store.repairDraft)
-        XCTAssertNil(store.selectionBox)
-        XCTAssertFalse(store.controlsBlocked)
+        #expect(store.current!.snapshot == before)
+        #expect(store.undoChanges.isEmpty)
+        #expect(store.repairDraft == nil)
+        #expect(store.selectionBox == nil)
+        #expect(!(store.controlsBlocked))
     }
 
-    @MainActor func testApplyCreatesOneUndoableChangeAndKeepsColorParameters() async {
+    @Test @MainActor func testApplyCreatesOneUndoableChangeAndKeepsColorParameters() async {
         let store = fixture(), before = store.current!.snapshot
         store.applyRepairPreview()
-        XCTAssertEqual(store.current!.assetID, "repaired")
-        XCTAssertEqual(store.current!.operations.count, 1)
-        XCTAssertEqual(store.current!.parameters, before.parameters)
-        XCTAssertEqual(store.current!.previewPath, "/after.png")
-        XCTAssertEqual(store.undoChanges.count, 1)
-        XCTAssertNil(store.repairDraft)
+        #expect(store.current!.assetID == "repaired")
+        #expect(store.current!.operations.count == 1)
+        #expect(store.current!.parameters == before.parameters)
+        #expect(store.current!.previewPath == "/after.png")
+        #expect(store.undoChanges.count == 1)
+        #expect(store.repairDraft == nil)
         store.undo()
         store.previewTask?.cancel()
-        XCTAssertEqual(store.current!.snapshot.assetID, before.assetID)
-        XCTAssertEqual(store.current!.operations, before.operations)
+        #expect(store.current!.snapshot.assetID == before.assetID)
+        #expect(store.current!.operations == before.operations)
         store.redo()
         store.previewTask?.cancel()
-        XCTAssertEqual(store.current!.assetID, "repaired")
-        XCTAssertEqual(store.current!.operations.count, 1)
+        #expect(store.current!.assetID == "repaired")
+        #expect(store.current!.operations.count == 1)
     }
 
-    @MainActor func testStalePreviewCannotReplaceNewerPhotoEdits() async {
+    @Test @MainActor func testStalePreviewCannotReplaceNewerPhotoEdits() async {
         let store = fixture()
         store.photos[0].parameters.exposure = 0.7
         store.applyRepairPreview()
-        XCTAssertEqual(store.current!.assetID, "original")
-        XCTAssertEqual(store.current!.parameters.exposure, 0.7)
-        XCTAssertTrue(store.undoChanges.isEmpty)
-        XCTAssertNil(store.repairDraft)
+        #expect(store.current!.assetID == "original")
+        #expect(store.current!.parameters.exposure == 0.7)
+        #expect(store.undoChanges.isEmpty)
+        #expect(store.repairDraft == nil)
     }
 
-    @MainActor func testInvalidAndTinySelectionsCannotStartRepair() async {
+    @Test @MainActor func testInvalidAndTinySelectionsCannotStartRepair() async {
         let store = fixture()
         for box in [[0.1], [0.2, 0.3, 0.2, 0.6], [-0.1, 0.2, 0.4, 0.6], [0.2, 0.3, Double.nan, 0.6]] {
             store.selectionBox = box
-            XCTAssertFalse(store.validRepairSelection)
+            #expect(!(store.validRepairSelection))
         }
         store.selectionBox = [0.1, 0.2, 0.4, 0.6]
-        XCTAssertTrue(store.validRepairSelection)
+        #expect(store.validRepairSelection)
     }
 }

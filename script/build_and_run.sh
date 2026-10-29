@@ -8,6 +8,7 @@ APP_BUNDLE="$ROOT_DIR/dist/$APP_NAME.app"
 APP_MACOS="$APP_BUNDLE/Contents/MacOS"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 
+source "$ROOT_DIR/script/swift_env.sh"
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 pkill -x PhotoEdit >/dev/null 2>&1 || true
 swift build --package-path "$ROOT_DIR/app" -c release

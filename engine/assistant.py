@@ -164,16 +164,18 @@ class AssistantBridge:
         self.engine=engine;self.jobs={};self.events={};self.lock=RLock()
 
     def providers(self):
-        result=[dict(id=p,title=t,available=bool(executable(p))) for p,t in [('codex','Codex'),('claude','Claude Code')]]
-        result.append(dict(id='anthropic',title='Claude API',available=True))
+        from api_providers import public_catalog
+        result=[dict(id=p,title=t,kind='account',available=bool(executable(p))) for p,t in [('codex','Codex'),('claude','Claude Code')]]
+        result+=[dict(item,kind='api',available=True) for item in public_catalog()]
         return result
 
     def start(self,data):
         from service import parameters,repair_input,quality_settings
-        if data.get('provider') not in ['codex','claude','anthropic']:raise ValueError('请选择可用的对话引擎')
-        if data['provider'] in ['codex','claude'] and not executable(data['provider']):raise ValueError('找不到这个 CLI，请先在本机安装并登录')
-        if data['provider']=='anthropic' and (not isinstance(data.get('api_key'),str) or not 0<len(data['api_key'].strip())<=512):
-            raise ValueError('请先配置 Claude API 密钥')
+        if data.get('provider') in ['codex','claude']:
+            if not executable(data['provider']):raise ValueError('找不到这个 CLI，请先在本机安装并登录')
+        else:
+            from api_providers import resolve
+            resolve(data)
         if not isinstance(data.get('image_consent',False),bool):raise ValueError('图片发送开关无效')
         if not isinstance(data.get('message'),str) or not 0<len(data['message'].strip())<=8000:
             raise ValueError('请输入要讨论或调整的内容')
@@ -254,10 +256,9 @@ class AssistantBridge:
             prompt=system+'\n'+json.dumps(context,ensure_ascii=False)
             if event.is_set():raise InterruptedError()
             with self.lock:self.jobs[key]=dict(state='thinking')
-            if data['provider']=='anthropic':
-                from anthropic_provider import invoke
-                result=invoke(data['api_key'],prompt,SCHEMA,images,
-                              image_consent=data.get('image_consent',False),cancel=event)
+            if data['provider'] not in ['codex','claude']:
+                from api_providers import invoke
+                result=invoke(data,prompt,SCHEMA,images,cancel=event)
             else:
                 result=(self._invoke(data['provider'],prompt,event,images) if images
                         else self._invoke(data['provider'],prompt,event))

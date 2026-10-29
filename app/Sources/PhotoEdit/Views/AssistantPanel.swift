@@ -12,16 +12,21 @@ struct AssistantPanel: View {
                     .help(store.visionEnabled ? "已允许向所选 AI 服务发送照片预览；可随时关闭。" : "目前发送文字和本地分析摘要，不发送照片像素。")
                 Spacer()
                 Picker("对话引擎", selection: $store.assistantProvider) {
-                    ForEach(store.providers) { provider in
-                        Text(provider.title + (provider.available ? "" : " · 未安装")).tag(provider.id).disabled(!provider.available)
+                    Section("本机账号") {
+                        ForEach(store.providers.filter { !$0.isAPI }) { provider in
+                            Text(provider.title + (provider.available ? "" : " · 未安装")).tag(provider.id).disabled(!provider.available)
+                        }
                     }
-                }.labelsHidden().frame(width: 124).disabled(store.chatting)
+                    Section("API 密钥") {
+                        ForEach(store.providers.filter(\.isAPI)) { provider in Text(provider.title).tag(provider.id) }
+                    }
+                }.labelsHidden().frame(width: 150).disabled(store.chatting)
             }.padding(16)
             HStack {
                 Label(store.visionEnabled ? "看图已开启" : "看图已关闭", systemImage: store.visionEnabled ? "eye" : "eye.slash")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                if ["codex", "claude", "anthropic"].contains(store.assistantProvider) {
+                if store.currentProvider?.available ?? false {
                     Button(store.visionEnabled ? "关闭" : "开启") {
                         if store.visionEnabled { store.visionConsentProvider = nil }
                         else { showingVisionConsent = true }
@@ -30,10 +35,10 @@ struct AssistantPanel: View {
                     Text("此引擎暂不可用").font(.caption).foregroundStyle(.secondary)
                 }
             }.padding(.horizontal, 16).padding(.bottom, 10)
-            if store.assistantProvider == "anthropic" {
+            if store.usesAPI {
                 HStack {
-                    Text(store.anthropicAPIKey.isEmpty ? "尚未设置 API 密钥" : "API 密钥已设置（本次运行）")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(store.assistantReady ? store.apiCredentials?.model ?? "" : "尚未完成 API 设置")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
                     Button("设置") { showingAPISettings = true }.font(.caption).disabled(store.chatting)
                 }.padding(.horizontal, 16).padding(.bottom, 10)
@@ -127,20 +132,21 @@ struct AssistantPanel: View {
                     Spacer()
                     Button("发送", systemImage: "arrow.up") { store.sendChat() }
                         .buttonStyle(.borderedProminent).keyboardShortcut(.return, modifiers: .command)
-                        .disabled(store.chatting || store.controlsBlocked || store.targets.isEmpty || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.providers.contains(where: { $0.id == store.assistantProvider && $0.available }) || (store.assistantProvider == "anthropic" && store.anthropicAPIKey.isEmpty))
+                        .disabled(store.chatting || store.controlsBlocked || store.targets.isEmpty || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.assistantReady)
                 }
             }.padding(16)
         }
         .onChange(of: store.assistantProvider) { _, provider in
             store.visionConsentProvider = nil
-            if provider == "anthropic" && store.anthropicAPIKey.isEmpty { showingAPISettings = true }
+            store.loadAPIKey()
+            if store.usesAPI && !store.assistantReady { showingAPISettings = true }
         }
-        .task(id: "\(store.current?.assetID ?? "")|\(store.assistantProvider)|\(store.visionEnabled)|\(!store.anthropicAPIKey.isEmpty)") {
+        .task(id: "\(store.current?.assetID ?? "")|\(store.assistantProvider)|\(store.visionEnabled)|\(store.assistantReady)|\(store.apiCredentials?.model ?? "")") {
             if let assetID = store.current?.assetID { await store.loadSuggestions(for: assetID) }
             else { store.suggestions = [] }
         }
         .sheet(isPresented: $showingVisionConsent) {
-            VisionConsentSheet(destination: store.assistantProvider == "anthropic" ? "Claude API / Anthropic" : (store.assistantProvider == "claude" ? "Claude Code / Anthropic" : "Codex / OpenAI")) {
+            VisionConsentSheet(destination: visionDestination) {
                 store.visionConsentProvider = store.assistantProvider
                 showingVisionConsent = false
             } cancel: {
@@ -148,12 +154,17 @@ struct AssistantPanel: View {
             }
         }
         .sheet(isPresented: $showingAPISettings) {
-            APISettingsSheet { key in
-                store.anthropicAPIKey = key
-                showingAPISettings = false
-            } cancel: {
-                showingAPISettings = false
+            if let provider = store.currentProvider {
+                APISettingsSheet(store: store, provider: provider) { showingAPISettings = false }
             }
+        }
+    }
+
+    private var visionDestination: String {
+        switch store.assistantProvider {
+        case "codex": return "Codex / OpenAI"
+        case "claude": return "Claude Code / Anthropic"
+        default: return (store.currentProvider?.title ?? "AI") + " API"
         }
     }
 }
@@ -190,29 +201,95 @@ private struct VisionConsentSheet: View {
 }
 
 private struct APISettingsSheet: View {
-    var save: (String) -> Void
-    var cancel: () -> Void
+    @Bindable var store: WorkspaceStore
+    var provider: AssistantProvider
+    var done: () -> Void
     @State private var key = ""
+    @State private var model = ""
+    @State private var baseURL = ""
+    @State private var fetched: [String] = []
+    @State private var fetching = false
+    @State private var message: String?
+
+    private var savedKey: Bool { !(store.apiKeys[provider.id] ?? "").isEmpty }
+    private var effectiveKey: String { key.isEmpty ? store.apiKeys[provider.id] ?? "" : key }
+    private var trimmedModel: String { model.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var trimmedURL: String { baseURL.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var canSave: Bool {
+        !effectiveKey.isEmpty && !trimmedModel.isEmpty && (!provider.needsBaseUrl || !trimmedURL.isEmpty)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("使用 Claude API").font(.title2.weight(.semibold))
+                Text("使用 \(provider.title) API").font(.title2.weight(.semibold))
                 Text("连接你自己的 API 账号").foregroundStyle(.secondary)
+            }
+            if provider.needsBaseUrl {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("接口地址").font(.callout)
+                    TextField("https://…/v1", text: $baseURL)
+                }
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("API 密钥").font(.callout)
-                SecureField("在此输入密钥", text: $key)
+                SecureField(savedKey ? "已保存，留空则不修改" : "在此输入密钥", text: $key)
             }
-            Text("密钥仅在本次运行期间保存在内存中，不写入项目文件或聊天记录。使用 API 将按服务商标准收费；发送照片前会单独提示并征得同意。")
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("模型").font(.callout)
+                    Spacer()
+                    Button(fetching ? "正在读取…" : "从服务商读取") { fetchModels() }
+                        .font(.caption).disabled(fetching || effectiveKey.isEmpty || (provider.needsBaseUrl && trimmedURL.isEmpty))
+                }
+                HStack(spacing: 6) {
+                    TextField("模型名称", text: $model)
+                    Menu {
+                        if !provider.models.isEmpty {
+                            Section("常用看图模型") { ForEach(provider.models, id: \.self) { name in Button(name) { model = name } } }
+                        }
+                        if !fetched.isEmpty {
+                            Section("服务商提供") { ForEach(fetched, id: \.self) { name in Button(name) { model = name } } }
+                        }
+                    } label: { Image(systemName: "chevron.down") }
+                        .menuStyle(.borderlessButton).fixedSize()
+                        .disabled(provider.models.isEmpty && fetched.isEmpty)
+                }
+                Text(message ?? "需选择能看图的模型。模型名以服务商为准，可从列表选或直接填写。")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Text("密钥保存在本机钥匙串，不写入项目文件或聊天记录。使用 API 按服务商标准收费；发送照片前会单独征得同意。")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).lineSpacing(3)
             HStack {
+                if savedKey {
+                    Button("删除密钥") { store.saveAPISettings(provider: provider.id, key: "", model: trimmedModel, baseURL: trimmedURL); done() }
+                }
                 Spacer()
-                Button("取消", action: cancel).keyboardShortcut(.cancelAction)
-                Button("使用密钥") { save(key.trimmingCharacters(in: .whitespacesAndNewlines)); key = "" }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("取消", action: done).keyboardShortcut(.cancelAction)
+                Button("保存") {
+                    store.saveAPISettings(provider: provider.id, key: key.isEmpty ? nil : key.trimmingCharacters(in: .whitespacesAndNewlines),
+                                          model: trimmedModel, baseURL: trimmedURL)
+                    key = ""; done()
+                }.buttonStyle(.borderedProminent).disabled(!canSave)
             }
         }.padding(24).frame(width: 540)
+        .onAppear {
+            model = store.apiModels[provider.id] ?? provider.models.first ?? ""
+            baseURL = store.customBaseURL
+        }
+    }
+
+    private func fetchModels() {
+        fetching = true; message = nil
+        let secret = effectiveKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            defer { fetching = false }
+            do {
+                fetched = try await store.fetchModels(provider: provider.id, key: secret, baseURL: provider.needsBaseUrl ? trimmedURL : "")
+                message = fetched.isEmpty ? "服务商没有返回模型，可直接填写。" : "已读取 \(fetched.count) 个模型，点右侧箭头选择。"
+            } catch {
+                message = error.localizedDescription
+            }
+        }
     }
 }

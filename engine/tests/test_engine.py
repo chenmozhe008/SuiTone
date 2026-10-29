@@ -179,6 +179,50 @@ class EngineTests(unittest.TestCase):
         with self.assertRaises(ValueError) as error:invoke('fixture-secret','test',SCHEMA,opener=denied)
         self.assertNotIn('fixture-secret',str(error.exception))
 
+    def test_openai_compatible_providers_send_images_and_hide_credentials(self):
+        from api_providers import invoke, list_models, resolve
+        from assistant import SCHEMA
+        from io import BytesIO
+        from urllib.error import HTTPError
+        import json
+        calls=[]
+        class Response:
+            def __init__(self,value):self.value=value
+            def __enter__(self): return self
+            def __exit__(self,*args): pass
+            def read(self,limit):return json.dumps(self.value).encode()
+        reply={'choices':[{'finish_reason':'stop','message':{'content':'```json\n{"reply":"ok","selection":"none","actions":[]}\n```'}}]}
+        def opener(request,timeout):
+            calls.append(request);return Response(reply)
+        image=[{'label':'当前照片 a','data':b'fixture-image'}]
+        data=dict(provider='qwen',api_key='fixture-secret',image_consent=True)
+        self.assertEqual(invoke(data,'test',SCHEMA,image,opener=opener)['reply'],'ok')
+        request=calls[0];body=json.loads(request.data)
+        self.assertEqual(request.full_url,'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions')
+        self.assertEqual(request.get_header('Authorization'),'Bearer fixture-secret')
+        self.assertEqual(body['model'],'qwen3-vl-plus')
+        self.assertEqual(body['response_format'],{'type':'json_object'})
+        self.assertIn('JSON Schema',body['messages'][0]['content'][0]['text'])
+        self.assertTrue(body['messages'][0]['content'][2]['image_url']['url'].startswith('data:image/jpeg;base64,'))
+        self.assertNotIn('fixture-secret',request.data.decode())
+        invoke(dict(provider='openai',api_key='k',model='gpt-x'),'test',SCHEMA,opener=opener)
+        body=json.loads(calls[1].data)
+        self.assertEqual(body['response_format']['json_schema']['schema'],SCHEMA)
+        self.assertEqual(body['model'],'gpt-x')
+        with self.assertRaises(ValueError):invoke(dict(provider='qwen',api_key='k'),'test',SCHEMA,image,opener=opener)
+        self.assertEqual(len(calls),2)
+        for url in ['http://example.com/v1','ftp://x','',None]:
+            with self.assertRaises(ValueError):resolve(dict(provider='custom',api_key='k',model='m',base_url=url))
+        self.assertEqual(resolve(dict(provider='custom',api_key='k',model='m',base_url='http://localhost:11434/v1/'))[3],
+                         'http://localhost:11434/v1')
+        with self.assertRaises(ValueError):resolve(dict(provider='nope',api_key='k'))
+        def denied(request,timeout): raise HTTPError(request.full_url,401,'fixture-secret',{},BytesIO())
+        with self.assertRaises(ValueError) as error:invoke(dict(provider='deepseek',api_key='fixture-secret'),'test',SCHEMA,opener=denied)
+        self.assertNotIn('fixture-secret',str(error.exception))
+        reply={'data':[{'id':'models/gemini-b'},{'id':'gemini-a'}]}
+        self.assertEqual(list_models(dict(provider='gemini',api_key='k'),opener=opener)['models'],['gemini-a','gemini-b'])
+        self.assertTrue(calls[-1].full_url.endswith('/v1beta/openai/models'))
+
     def test_api_provider_uses_common_validation_without_putting_key_in_prompt(self):
         from assistant import AssistantBridge
         from smart import neutral

@@ -45,10 +45,46 @@ final class WorkspaceStore {
     var undoChanges: [WorkspaceChange] = []
     var redoChanges: [WorkspaceChange] = []
     var providers: [AssistantProvider] = []
-    var assistantProvider = "codex"
-    var anthropicAPIKey = ""
+    var assistantProvider = UserDefaults.standard.string(forKey: "assistantProvider") ?? "codex" {
+        didSet { UserDefaults.standard.set(assistantProvider, forKey: "assistantProvider") }
+    }
+    /// 已从钥匙串读出的密钥，按服务商缓存；只在选中该服务商时读取，避免反复弹钥匙串授权。
+    var apiKeys: [String: String] = [:]
+    var apiModels: [String: String] = (UserDefaults.standard.dictionary(forKey: "apiModels") as? [String: String]) ?? [:] {
+        didSet { UserDefaults.standard.set(apiModels, forKey: "apiModels") }
+    }
+    var customBaseURL: String = UserDefaults.standard.string(forKey: "customBaseURL") ?? "" {
+        didSet { UserDefaults.standard.set(customBaseURL, forKey: "customBaseURL") }
+    }
     var visionConsentProvider: String?
-    var visionEnabled: Bool { ["codex", "claude", "anthropic"].contains(assistantProvider) && visionConsentProvider == assistantProvider }
+    var visionEnabled: Bool { visionConsentProvider == assistantProvider }
+    var currentProvider: AssistantProvider? { providers.first { $0.id == assistantProvider } }
+    var usesAPI: Bool { currentProvider?.isAPI ?? false }
+
+    func loadAPIKey() {
+        guard usesAPI, apiKeys[assistantProvider] == nil else { return }
+        apiKeys[assistantProvider] = Keychain.read(assistantProvider) ?? ""
+    }
+
+    func saveAPISettings(provider: String, key: String?, model: String, baseURL: String) {
+        if let key { Keychain.save(key, for: provider); apiKeys[provider] = key }
+        apiModels[provider] = model
+        if provider == "custom" { customBaseURL = baseURL }
+    }
+
+    /// 当前服务商需要的接入参数；本机账号返回 nil。API 缺密钥、模型或地址时视为未配置。
+    var apiCredentials: APICredentials? {
+        guard let provider = currentProvider, provider.isAPI else { return nil }
+        let model = apiModels[provider.id] ?? provider.models.first ?? ""
+        return APICredentials(key: apiKeys[provider.id] ?? "", model: model, baseURL: provider.needsBaseUrl ? customBaseURL : "")
+    }
+
+    var assistantReady: Bool {
+        guard let provider = currentProvider, provider.available else { return false }
+        guard provider.isAPI else { return true }
+        guard let credentials = apiCredentials, !credentials.key.isEmpty, !credentials.model.isEmpty else { return false }
+        return !provider.needsBaseUrl || !credentials.baseURL.isEmpty
+    }
     var suggestions: [SuggestionCard] = []
     var aiSuggestionCache: [String: [SuggestionCard]] = [:]
     var chatDraft = ""
@@ -94,6 +130,7 @@ final class WorkspaceStore {
             providers = response.providers
             if !providers.contains(where: { $0.id == assistantProvider && $0.available }),
                let first = providers.first(where: \.available) { assistantProvider = first.id }
+            loadAPIKey()
         } catch { self.error = error.localizedDescription; status = "引擎未就绪" }
     }
 

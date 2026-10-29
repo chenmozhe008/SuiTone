@@ -3,7 +3,7 @@ import Foundation
 extension WorkspaceStore {
     func loadSuggestions(for assetID: String) async {
         suggestions = []
-        let provider = assistantProvider, useVision = visionEnabled, apiKey = anthropicAPIKey
+        let provider = assistantProvider, useVision = visionEnabled, credentials = apiCredentials, ready = assistantReady
         let cacheKey = provider + ":" + assetID
         do {
             let response: SuggestionsResponse = try await engine.request("suggestions", body: ["id": assetID])
@@ -14,7 +14,7 @@ extension WorkspaceStore {
             status = "建议暂不可用，可继续手动调整"
         }
         guard useVision, !Task.isCancelled, let photo = current, photo.assetID == assetID,
-              provider != "anthropic" || !apiKey.isEmpty else { return }
+              ready else { return }
         if let cached = aiSuggestionCache[cacheKey] { suggestions = cached; return }
         struct Started: Decodable { var id: String }
         struct RecommendationJob: Decodable { var state: String; var cards: [SuggestionCard]? }
@@ -23,7 +23,7 @@ extension WorkspaceStore {
             var body: [String: Any] = ["provider": provider, "image_consent": true,
                 "targets": [["id": assetID, "params": try EngineClient.object(photo.parameters),
                              "quality": try EngineClient.object(photo.quality)]]]
-            if provider == "anthropic" { body["api_key"] = apiKey }
+            credentials?.apply(to: &body)
             guard let startedID = try await startRecommendationJob(start: {
                 let started: Started = try await self.engine.request("recommendation-start", body: body)
                 return started.id
@@ -68,13 +68,13 @@ extension WorkspaceStore {
     func sendChat() {
         let message = chatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty, !chatting, !controlsBlocked, !targets.isEmpty else { return }
-        guard assistantProvider != "anthropic" || !anthropicAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard assistantReady else { return }
         finishEditing()
         let items = targets
         let undoCandidate = undoChanges.last
         let undoAvailable = undoCandidate.map { Set($0.before.keys).isSubset(of: Set(items.map(\.id))) } ?? false
         let referenceIDs = references.map(\.id), scopes = referenceScopes, only = matchOnly
-        let provider = assistantProvider, sendImages = visionEnabled, apiKey = anthropicAPIKey
+        let provider = assistantProvider, sendImages = visionEnabled, credentials = apiCredentials
         let repair: (id: String, operation: RemovalOperation)? = {
             guard validRepairSelection, let photo = current, let box = selectionBox,
                   items.contains(where: { $0.id == photo.id }) else { return nil }
@@ -91,7 +91,7 @@ extension WorkspaceStore {
                                                  "quality": try EngineClient.object($0.quality)] },
                     "reference_ids": referenceIDs, "undo_available": undoAvailable, "image_consent": sendImages]
                 if let repair { body["repair_selection"] = ["id": repair.id, "box": repair.operation.box] }
-                if provider == "anthropic" { body["api_key"] = apiKey }
+                credentials?.apply(to: &body)
                 struct Started: Decodable { var id: String }
                 let started: Started = try await engine.request("assistant", body: body)
                 assistantJobID = started.id
@@ -106,7 +106,7 @@ extension WorkspaceStore {
                         assistantApplying = true; assistantPhase = "正在应用调整"
                         let review: (([PhotoRecord]) async throws -> [AssistantChange])? = sendImages ? { prepared in
                             try await self.reviewAssistantChanges(prepared, originals: items, provider: provider,
-                                originalRequest: message, referenceIDs: referenceIDs, apiKey: apiKey)
+                                originalRequest: message, referenceIDs: referenceIDs, credentials: credentials)
                         } : nil
                         await applyAssistantResult(result, items: items,
                             referenceIDs: referenceIDs, scopes: scopes, only: only, repair: repair,
@@ -304,7 +304,7 @@ extension WorkspaceStore {
     }
 
     private func reviewAssistantChanges(_ photos: [PhotoRecord], originals: [PhotoRecord], provider: String,
-                                        originalRequest: String, referenceIDs: [String], apiKey: String) async throws -> [AssistantChange] {
+                                        originalRequest: String, referenceIDs: [String], credentials: APICredentials?) async throws -> [AssistantChange] {
         assistantPhase = "正在复看调整结果"
         // 开始请求时允许取消标记先落下；拿到任务 ID 后再通知引擎取消。
         assistantApplying = false
@@ -319,7 +319,7 @@ extension WorkspaceStore {
                 return ["id": photo.assetID, "source_id": source.assetID,
                         "params": try EngineClient.object(source.parameters), "quality": try EngineClient.object(source.quality)]
             }]
-        if provider == "anthropic" { body["api_key"] = apiKey }
+        credentials?.apply(to: &body)
         struct Started: Decodable { var id: String }
         let started: Started = try await engine.request("assistant", body: body)
         assistantJobID = started.id
@@ -345,5 +345,14 @@ extension WorkspaceStore {
     private func cancelAssistantJob(_ id: String) async {
         struct Cancelled: Decodable { var cancelled: Bool }
         let _: Cancelled? = try? await engine.request("assistant-cancel", body: ["id": id])
+    }
+
+    /// 从服务商读取模型名供挑选；不经过对话任务，也不发送照片。
+    func fetchModels(provider: String, key: String, baseURL: String) async throws -> [String] {
+        struct Models: Decodable { var models: [String] }
+        var body: [String: Any] = ["provider": provider, "api_key": key]
+        if !baseURL.isEmpty { body["base_url"] = baseURL }
+        let response: Models = try await engine.request("assistant-models", body: body)
+        return response.models
     }
 }
