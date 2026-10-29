@@ -11,12 +11,32 @@ from PIL import Image
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'script'))
 import expanded_visual_acceptance as runner
+import visual_acceptance as fixed_runner
 import retry_backlit_review as retry
 from review_constraints import review_allowed
 from copy import deepcopy
 
 
 class AcceptanceScriptTests(unittest.TestCase):
+    def test_fixed_cases_review_receives_before_and_after(self):
+        with TemporaryDirectory() as folder:
+            root=Path(folder);sample=root/'sample.png'
+            Image.new('RGB',(8,8),(80,100,120)).save(sample)
+            class FakeEngine:
+                def preview(self,key,params,quality=None):return {'preview':str(sample)}
+            requests=[]
+            def fake_invoke(engine,request):
+                requests.append(deepcopy(request))
+                if len(requests)==1:
+                    changed=deepcopy(request['targets'][0]['params']);changed['exposure']=.2
+                    return {'state':'done','changes':[{'params':changed,'operations':[]}]}
+                return {'state':'done','changes':[]}
+            with patch.object(fixed_runner,'invoke',side_effect=fake_invoke):
+                fixed_runner.execute_case(FakeEngine(),SimpleNamespace(id='photo'),('14','backlit','日出调暖'),root,True)
+            self.assertEqual(requests[1]['review_before'][0]['source_id'],'photo')
+            self.assertEqual(requests[1]['review_before'][0]['params']['exposure'],0)
+            self.assertEqual(requests[1]['targets'][0]['params']['exposure'],.2)
+
     def test_review_restricts_new_regions_and_unrequested_channels(self):
         base={'regions':{},'exposure':0.0}
         region={'mean':[60,1,2],'source_mean':[50,1,2],'chroma_scale':[1,1],

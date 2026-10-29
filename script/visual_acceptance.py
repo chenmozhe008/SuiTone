@@ -74,8 +74,9 @@ def execute_case(engine, asset, case, output, review):
         final=change['params']
         if review:
             second_target=dict(id=asset.id,params=final,quality=target['quality'])
-            second=invoke(engine,dict(provider='codex',message='请复看调整后的预览。原要求：'+prompt+'。若效果合适则不修改；只允许微调已有调整参数。',
-                                      targets=[second_target],image_consent=True,review_only=True))
+            second=invoke(engine,dict(provider='codex',message='请对照调整前后照片，检查原要求：'+prompt+'。若效果合适则不修改；只允许微调已有调整参数。',
+                                      targets=[second_target],image_consent=True,review_only=True,
+                                      review_before=[dict(id=asset.id,source_id=asset.id,params=original,quality=target['quality'])]))
             row['review']=second
             if second['state']=='done' and second.get('changes'):
                 revised=second['changes'][0]['params']
