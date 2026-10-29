@@ -223,6 +223,14 @@ private struct APISettingsSheet: View {
     @State private var manualModel = false
     @State private var result: (ok: Bool, text: String)?
 
+    private static let manualTag = "\u{0}manual"
+    /// 选「手动填写…」时显示输入框，其余选项直接作为模型名。
+    private var modelChoice: Binding<String> {
+        Binding(get: { manualModel ? Self.manualTag : trimmedModel },
+                set: { value in
+                    if value == Self.manualTag { manualModel = true } else { model = value; manualModel = false }
+                })
+    }
     private var savedKey: Bool { !(store.apiKeys[provider.id] ?? "").isEmpty }
     private var effectiveKey: String { key.isEmpty ? store.apiKeys[provider.id] ?? "" : cleanedKey }
     /// 去掉粘贴时混进来的空白和不可见字符，全角转半角；密钥只含 ASCII。
@@ -250,20 +258,19 @@ private struct APISettingsSheet: View {
                         TextField("接口地址", text: $baseURL, prompt: Text("https://…/v1"))
                     }
                     SecureField("API 密钥", text: $key, prompt: Text(savedKey ? "已保存，留空则不修改" : "粘贴密钥"))
-                    LabeledContent("模型") {
-                        Menu {
-                            if !provider.models.isEmpty {
-                                Section("常用看图模型") { ForEach(provider.models, id: \.self) { name in Button(name) { model = name; manualModel = false } } }
-                            }
-                            if !fetched.isEmpty {
-                                Section("服务商提供") { ForEach(fetched, id: \.self) { name in Button(name) { model = name; manualModel = false } } }
-                            }
-                            Divider()
-                            Button("手动填写…") { manualModel = true }
-                        } label: {
-                            Text(trimmedModel.isEmpty ? "选择模型" : trimmedModel).lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }.frame(width: 300)
+                    Picker("模型", selection: modelChoice) {
+                        if !provider.models.isEmpty {
+                            Section("常用看图模型") { ForEach(provider.models, id: \.self) { Text($0).tag($0) } }
+                        }
+                        let others = fetched.filter { !provider.models.contains($0) }
+                        if !others.isEmpty {
+                            Section("服务商提供") { ForEach(others, id: \.self) { Text($0).tag($0) } }
+                        }
+                        if !trimmedModel.isEmpty && !provider.models.contains(trimmedModel) && !fetched.contains(trimmedModel) {
+                            Text(trimmedModel).tag(trimmedModel)
+                        }
+                        Divider()
+                        Text("手动填写…").tag(Self.manualTag)
                     }
                     if manualModel {
                         TextField("模型名称", text: $model, prompt: Text("按服务商文档填写"))
