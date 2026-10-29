@@ -26,9 +26,39 @@ def _lama(img512, m512):
     y=_s.run(None,{'image':x,'mask':m})[0][0].transpose(1,2,0)
     if y.max()<=1.5: y=y*255
     return Image.fromarray(np.clip(y,0,255).astype(np.uint8))
-def build_mask(img, classes=None, box=None, mask=None, thr=0.35, grow=None, keep=None):
+def shape_mask(img, strokes=None, radius=None, polygon=None, point=None):
+    """手画选区：strokes＝画笔轨迹（比例坐标折线，radius 为笔刷半径占宽度比例）、polygon＝套索、point＝点选物体。"""
+    from PIL import ImageDraw
+    W,H=img.size; canvas=Image.new('L',(W,H),0); draw=ImageDraw.Draw(canvas)
+    for line in strokes or []:
+        r=max(1,(radius or .02)*W); pts=[(x*W,y*H) for x,y in line]
+        if len(pts)>1:draw.line(pts,fill=255,width=int(2*r),joint='curve')
+        for x,y in pts:draw.ellipse((x-r,y-r,x+r,y+r),fill=255)
+    if polygon and len(polygon)>=3:draw.polygon([(x*W,y*H) for x,y in polygon],fill=255)
+    m=np.asarray(canvas,float)/255
+    if point is not None:m=np.maximum(m,object_mask(img,point))
+    return m
+def object_mask(img, point):
+    """点一下：取该点所属类别中与点相连的那一块。大片背景（天空、地面、墙）不当作杂物。"""
+    import cv2
+    from segmentation import probabilities
+    p,labels=probabilities(img); label=p.argmax(0)
+    h,w=label.shape; x,y=point; target=label[min(int(y*h),h-1),min(int(x*w),w-1)]
+    same=(label==target).astype(np.uint8)
+    _,components=cv2.connectedComponents(same,connectivity=8)
+    piece=(components==components[min(int(y*h),h-1),min(int(x*w),w-1)]).astype(np.float32)
+    if piece.mean()>.25:raise ValueError('点到的是大片背景（'+labels[int(target)].split(', ')[0]+'），不像杂物。请改用画笔涂抹')
+    W,H=img.size
+    return (np.asarray(Image.fromarray(piece).resize((W,H),Image.BILINEAR))>.5)*1.0
+def build_mask(img, classes=None, box=None, mask=None, thr=0.35, grow=None, keep=None,
+               strokes=None, radius=None, polygon=None, point=None):
     """keep=['sky'] + box：框里除了 keep 类之外的东西都算要去掉（模型叫不出名字的物体，如信号塔被认成 building/streetlight）"""
     W,H=img.size; m=np.zeros((H,W))
+    if strokes or polygon or point is not None:
+        m=shape_mask(img,strokes,radius,polygon,point)
+        # 点选的物体边缘常带一圈识别不到的暗边或影子，外扩多一些；手画的选区已由用户留了余量。
+        g=grow or (max(W//100,8) if point is not None else max(W//300,4))
+        return Image.fromarray((m*255).astype(np.uint8)).filter(ImageFilter.MaxFilter(2*(g//2)+1))
     if keep and box is not None:
         l,t,r,b=box; L,T,R,B=int(W*l),int(H*t),int(W*r),int(H*b)
         crop=img.crop((L,T,R,B)); probability=seg_classes(crop,keep)
@@ -58,9 +88,10 @@ def build_mask(img, classes=None, box=None, mask=None, thr=0.35, grow=None, keep
         m=m*bx if (classes or mask is not None or keep) else bx
     g=grow or max(W//300,4)
     return Image.fromarray((m*255).astype(np.uint8)).filter(ImageFilter.MaxFilter(2*(g//2)+1)).filter(ImageFilter.MaxFilter(2*(g//2)+1))
-def remove(img, classes=None, box=None, mask=None, thr=0.35, win=640, keep=None):
+def remove(img, classes=None, box=None, mask=None, thr=0.35, win=640, keep=None, strokes=None, radius=None, polygon=None, point=None):
     """沿遮罩滑窗、接近原分辨率逐块修补（窗口 win 缩到 512，放大倍数小 → 不糊）；后一块能看到前一块的结果"""
-    img=img.convert('RGB'); W,H=img.size; M=build_mask(img,classes,box,mask,thr,keep=keep)
+    img=img.convert('RGB'); W,H=img.size
+    M=build_mask(img,classes,box,mask,thr,keep=keep,strokes=strokes,radius=radius,polygon=polygon,point=point)
     todo=np.asarray(M)>127
     if not todo.any(): return img, M
     out=img.copy(); left=todo.copy(); step=win//2

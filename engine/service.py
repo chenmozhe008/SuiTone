@@ -36,8 +36,28 @@ LIMITS = dict(water_var=(0, 2), dehaze_amt=(0, 1), sky_hue=(-180, 180), autumn=(
               whites=(-1,1),blacks=(-1,1),light=(-1,1),vibrance=(-1,1),texture=(0,1))
 
 
+def _coordinate(value):
+    return isinstance(value,(float,int)) and not isinstance(value,bool) and math.isfinite(value) and 0<=value<=1
+
+
+def shape_input(strokes=None,radius=None,polygon=None,point=None):
+    """画笔、套索、点选的坐标都是 0–1 比例；限制数量，防止异常请求拖垮修补。"""
+    if strokes is not None:
+        if not isinstance(strokes,list) or not 0<len(strokes)<=60:raise ValueError('画笔轨迹无效')
+        if sum(len(line) for line in strokes if isinstance(line,list))>6000:raise ValueError('画笔轨迹过长，请分几次涂抹')
+        for line in strokes:
+            if not isinstance(line,list) or not line or not all(isinstance(pt,list) and len(pt)==2 and all(map(_coordinate,pt)) for pt in line):
+                raise ValueError('画笔轨迹无效')
+        if not isinstance(radius,(int,float)) or isinstance(radius,bool) or not 0<radius<=.2:raise ValueError('笔刷大小无效')
+    if polygon is not None and (not isinstance(polygon,list) or not 3<=len(polygon)<=4000 or
+                                not all(isinstance(pt,list) and len(pt)==2 and all(map(_coordinate,pt)) for pt in polygon)):
+        raise ValueError('套索选区无效')
+    if point is not None and (not isinstance(point,list) or len(point)!=2 or not all(map(_coordinate,point))):
+        raise ValueError('点选位置无效')
+
+
 def repair_input(box,classes=None,keep=None):
-    if not isinstance(box,list) or len(box)!=4 or not all(isinstance(x,(float,int)) and math.isfinite(x) and 0<=x<=1 for x in box):
+    if not isinstance(box,list) or len(box)!=4 or not all(_coordinate(x) for x in box):
         raise ValueError('框选坐标无效')
     if box[0]>=box[2] or box[1]>=box[3]: raise ValueError('请先框出要去除的位置')
     for names in [classes,keep]:
@@ -323,13 +343,14 @@ class Engine:
             tiles[style['id']]=str(path)
         return dict(tiles=tiles)
 
-    def remove(self, key, box, classes=None, keep=None):
-        repair_input(box,classes,keep)
+    def remove(self, key, box, classes=None, keep=None, strokes=None, radius=None, polygon=None, point=None):
+        repair_input(box,classes,keep);shape_input(strokes,radius,polygon,point)
         from inpaint import remove
         asset=self.asset(key)
-        with Image.open(asset.image_path) as im: image,mask=remove(im,box=tuple(box),classes=classes,keep=keep)
+        with Image.open(asset.image_path) as im:
+            image,mask=remove(im,box=tuple(box),classes=classes,keep=keep,strokes=strokes,radius=radius,polygon=polygon,point=point)
         if not (np.asarray(mask)>127).any():
-            raise ValueError('框内没有识别到指定类别。请查看选区、调整框选位置或切换去除模式。')
+            raise ValueError('选区里没有找到要去掉的东西。请查看选区，或换一种选法。')
         new_key=uuid4().hex
         path=self.folder/(new_key+'-source.png'); save_new(image,path)
         mask_path=self.folder/(new_key+'-repair-mask.png'); mask.save(mask_path)
@@ -340,15 +361,16 @@ class Engine:
             pixels_path=self.folder/(new_key+'-pixels.npy')
             with pixels_path.open('xb') as handle:np.save(handle,pixels)
         self.assets[new_key]=Asset(new_key,asset.path,path,asset.original_path,asset.thumbnail,asset.fingerprint,
-                                  asset.operations+[dict(box=box,classes=classes,keep=keep)],pixels_path)
+                                  asset.operations+[{k:v for k,v in dict(box=box,classes=classes,keep=keep,strokes=strokes,
+                                                    radius=radius,polygon=polygon,point=point).items() if v is not None or k=='box'}],pixels_path)
         return dict(id=new_key,source=str(path),mask=str(mask_path))
 
-    def repair_mask(self,key,box,classes=None,keep=None):
-        repair_input(box,classes,keep)
+    def repair_mask(self,key,box,classes=None,keep=None,strokes=None,radius=None,polygon=None,point=None):
+        repair_input(box,classes,keep);shape_input(strokes,radius,polygon,point)
         from inpaint import build_mask
         asset=self.asset(key)
         with Image.open(asset.image_path) as source:
-            mask=build_mask(source,classes=classes,box=box,keep=keep)
+            mask=build_mask(source,classes=classes,box=box,keep=keep,strokes=strokes,radius=radius,polygon=polygon,point=point)
             m=np.asarray(mask,np.float32)/255*.55
             rgb=np.asarray(source.convert('RGB'),np.float32)/255
             overlay=Image.fromarray(np.uint8(np.clip(rgb*(1-m[...,None])+np.array([.85,.35,.35])*m[...,None],0,1)*255+.5))
@@ -458,8 +480,10 @@ def serve(root, token, watch_stdin=True):
                     elif self.path=='/style-tiles':result=engine.style_tiles(data['id'])
                     elif self.path=='/assistant':result=engine.assistant.start(data)
                     elif self.path=='/assistant-cancel':result=engine.assistant.cancel(data['id'])
-                    elif self.path=='/remove': result=engine.remove(data['id'],data['box'],data.get('classes'),data.get('keep'))
-                    elif self.path=='/repair-mask': result=engine.repair_mask(data['id'],data['box'],data.get('classes'),data.get('keep'))
+                    elif self.path=='/remove': result=engine.remove(data['id'],data['box'],data.get('classes'),data.get('keep'),
+                                                                    data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'))
+                    elif self.path=='/repair-mask': result=engine.repair_mask(data['id'],data['box'],data.get('classes'),data.get('keep'),
+                                                                              data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'))
                     elif self.path=='/export': result=engine.export(data['items'],data['destination'],data.get('options',{}))
                     elif self.path=='/restore':
                         p=parameters(data.get('params',{}))

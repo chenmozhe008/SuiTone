@@ -560,6 +560,27 @@ class EngineTests(unittest.TestCase):
         second=render_full(image,{'enabled':disabled},context,band=211)
         np.testing.assert_array_equal(np.asarray(first),np.asarray(second))
 
+    def test_brush_lasso_and_object_selection_masks(self):
+        from inpaint import build_mask
+        from service import shape_input
+        from unittest.mock import patch
+        image=Image.new('RGB',(200,100),(120,120,120))
+        brush=np.asarray(build_mask(image,box=(0,0,1,1),strokes=[[[.1,.5],[.4,.5]]],radius=.03))>127
+        self.assertTrue(brush[50,20:80].all());self.assertFalse(brush[10].any());self.assertFalse(brush[:,150:].any())
+        lasso=np.asarray(build_mask(image,box=(0,0,1,1),polygon=[[.6,.2],[.9,.2],[.9,.8],[.6,.8]]))>127
+        self.assertTrue(lasso[50,140]);self.assertFalse(lasso[50,60])
+        # 点选：左上角一小块是“人”，其余是天空；点人得到那一块，点天空拒绝。
+        p=np.zeros((2,10,10),np.float32);p[1]=1;p[0,1:3,1:3]=1;p[1,1:3,1:3]=0
+        labels={0:'person',1:'sky'}
+        with patch('segmentation.probabilities',return_value=(p,labels)):
+            obj=np.asarray(build_mask(image,box=(0,0,1,1),point=[.15,.15],grow=1))>127
+            self.assertTrue(obj[15,30]);self.assertFalse(obj[80,150])
+            with self.assertRaises(ValueError):build_mask(image,box=(0,0,1,1),point=[.8,.8])
+        for bad in [dict(strokes=[[[.1,1.5]]],radius=.02),dict(strokes=[[[.1,.1]]],radius=.5),
+                    dict(polygon=[[.1,.1],[.2,.2]]),dict(point=[.1]),dict(strokes=[[[.1,.1]]])]:
+            with self.assertRaises(ValueError):shape_input(**bad)
+        shape_input(strokes=[[[.1,.1],[.2,.2]]],radius=.02);shape_input(polygon=[[0,0],[1,0],[1,1]]);shape_input(point=[.5,.5])
+
     def test_cli_quota_error_fails_fast_instead_of_spinning(self):
         from assistant import AssistantBridge
         from threading import Event

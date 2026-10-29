@@ -130,6 +130,13 @@ struct RemovalOperation: Codable, Equatable, Sendable {
     var box: [Double]
     var classes: [String]?
     var keep: [String]?
+    /// 画笔轨迹（比例坐标折线）与笔刷半径（占画面宽度比例）
+    var strokes: [[[Double]]]? = nil
+    var radius: Double? = nil
+    /// 套索多边形
+    var polygon: [[Double]]? = nil
+    /// 点选物体的位置
+    var point: [Double]? = nil
 }
 
 struct EditSnapshot: Equatable {

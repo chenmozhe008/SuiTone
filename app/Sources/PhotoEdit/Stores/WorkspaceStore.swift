@@ -44,6 +44,12 @@ final class WorkspaceStore {
     var matchOnly = "all"
     var previewMilliseconds: Double?
     var selectionBox: [Double]?
+    /// 修复选法：brush 画笔 / lasso 套索 / object 点选物体 / box 方框
+    var repairTool = "brush"
+    var repairStrokes: [[[Double]]] = []
+    var repairPolygon: [[Double]] = []
+    var repairPoint: [Double]?
+    var brushSize = 0.025
     var repairMode = "box"
     var repairClasses = "railing, fence"
     var repairEnabled = false
@@ -179,7 +185,7 @@ final class WorkspaceStore {
     func activate(_ id: String?) {
         finishEditing()
         repairRevision += 1; repairDraft = nil; repairShowingBefore = false
-        currentID = id; analysis = nil; overlay = ""; selectionBox = nil; repairMaskOverlay = nil; localRegion = nil
+        currentID = id; analysis = nil; overlay = ""; clearRepairSelection(); localRegion = nil
         analysisTask?.cancel()
         guard current != nil else { return }
         styleTiles=[:]

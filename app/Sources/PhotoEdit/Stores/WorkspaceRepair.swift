@@ -8,9 +8,41 @@ extension WorkspaceStore {
     }
 
     func removalOperation(_ box: [Double]) -> RemovalOperation {
-        RemovalOperation(box: box,
-            classes: repairMode == "classes" ? repairClasses.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } : nil,
-            keep: repairMode == "keepSky" ? ["sky"] : nil)
+        switch repairTool {
+        case "brush" where !repairStrokes.isEmpty:
+            return RemovalOperation(box: box, strokes: repairStrokes, radius: brushSize)
+        case "lasso" where repairPolygon.count >= 3:
+            return RemovalOperation(box: box, polygon: repairPolygon)
+        case "object" where repairPoint != nil:
+            return RemovalOperation(box: box, point: repairPoint)
+        default:
+            return RemovalOperation(box: box,
+                classes: repairMode == "classes" ? repairClasses.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } : nil,
+                keep: repairMode == "keepSky" ? ["sky"] : nil)
+        }
+    }
+
+    /// 画笔、套索、点选画完后，用外接框作为选区范围（AI 修复和旧记录仍按框识别）。
+    func updateRepairBounds() {
+        repairMaskOverlay = nil
+        var points: [[Double]] = []; var margin = 0.0
+        switch repairTool {
+        case "brush": points = repairStrokes.flatMap { $0 }; margin = brushSize
+        case "lasso": points = repairPolygon
+        case "object": selectionBox = repairPoint == nil ? nil : [0, 0, 1, 1]; return
+        default: return
+        }
+        guard let first = points.first else { selectionBox = nil; return }
+        var box = [first[0], first[1], first[0], first[1]]
+        for p in points { box = [min(box[0], p[0]), min(box[1], p[1]), max(box[2], p[0]), max(box[3], p[1])] }
+        let photoRatio = current.map { Double($0.imported.width) / Double(max($0.imported.height, 1)) } ?? 1
+        selectionBox = [max(0, box[0] - margin), max(0, box[1] - margin * photoRatio),
+                        min(1, box[2] + margin), min(1, box[3] + margin * photoRatio)]
+    }
+
+    func clearRepairSelection() {
+        selectionBox = nil; repairMaskOverlay = nil
+        repairStrokes = []; repairPolygon = []; repairPoint = nil
     }
 
     func remove() {
@@ -38,7 +70,8 @@ extension WorkspaceStore {
     func cancelRepairPreview() {
         let hadDraft = repairDraft != nil
         repairRevision += 1
-        repairDraft = nil; repairShowingBefore = false; repairMaskOverlay = nil; selectionBox = nil
+        repairDraft = nil; repairShowingBefore = false
+        clearRepairSelection()
         if hadDraft { status = "已取消本次修复" }
     }
 
@@ -69,7 +102,7 @@ extension WorkspaceStore {
                 struct Mask: Decodable { var overlay: String; var pixels: Int }
                 var body = try EngineClient.object(operation); body["id"] = photo.assetID
                 let result: Mask = try await engine.request("repair-mask", body: body)
-                if currentID == photo.id { repairMaskOverlay = result.overlay; status = "红色为去除选区" }
+                if currentID == photo.id { repairMaskOverlay = result.overlay; status = "红色是将要去除的部分" }
             } catch { self.error = error.localizedDescription }
         }
     }
