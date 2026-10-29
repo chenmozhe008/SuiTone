@@ -10,9 +10,9 @@ photo-edit/
 ├── engine/                    ← 修图引擎（Python，入 git）；说明见 engine/README.md
 ├── app/                       ← SwiftUI 原生界面（SwiftPM，入 git）
 ├── script/                    ← 构建、运行与验收入口（入 git）
-├── docs/HANDOFF.md            ← 开发移交（产品方向+开发顺序，接手先读）
+├── docs/HANDOFF.md            ← 随心调色 App 开发移交：第 0 节＝当前进度与下一步，接手先读
 ├── docs/APP_SPEC.md           ← 数据边界与验收用例（第 5、6 节有效）
-├── docs/archive/              ← 旧审阅记录，只查历史证据
+├── docs/archive/              ← 旧审阅记录、阶段 2 评分过程，只查历史证据
 ├── cases/                     ← 每次修图一个目录：日期_地点/主题
 │   └── 2026-10-27_西吉震湖/
 │       ├── 原图/              ← 只放照片，视频不放
@@ -32,4 +32,5 @@ photo-edit/
 
 - Python：`~/.cache/photo-edit/venv/bin/python`；模型在 `~/.cache/photo-edit/`（不入 git，下载地址见 engine/README.md）。
 - 改了 engine 先跑 `cli.py grade` 冒烟测试，再跑 docs/APP_SPEC.md 第 6 节验收用例里相关的那几条。
+- 测试只用 `./script/test.sh`（Swift＋Python）；构建 `./script/build_and_run.sh --build-only`。本机没有 Xcode，直接 `swift test` 会失败，原因和截图验收方法见 HANDOFF 第 0 节「开发环境的坑」。
 - git 管 `engine/`、`app/`、`script/`、`docs/`、`.codex/` 和项目约定；`cases/`、`output/`、`tmp/`、`dist/`、构建缓存不入库。

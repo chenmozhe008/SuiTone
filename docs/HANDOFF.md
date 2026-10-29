@@ -1,11 +1,45 @@
 # 随心调色 · SuiTone 开发移交
 
-> **2026-10-29 关机前续接记录：先读 [RESUME_20261029.md](RESUME_20261029.md)，其中有后续变更、用户最新要求和未完成验收；本文其余内容保留原始基线。**
+> 2026-10-28 定稿，2026-10-29 更新进度。**接手开发以本文为准**，产品方向已和用户对齐。
+> 阅读顺序：`CLAUDE.md` → 本文第 0 节（现状和下一步）→ 第 1–8 节（方向与约束）→ `docs/APP_SPEC.md` 第 5、6 节（数据边界与验收用例）→ `engine/README.md`。
+> APP_SPEC 第 1–4 节的旧界面和优先级作废；旧审阅记录、阶段 2 逐条评分过程在 `docs/archive/`，只在需要查历史证据时看。
 
-> 2026-10-28 定稿。**接手开发以本文为准**，产品方向已和用户对齐。
-> 阅读顺序：`CLAUDE.md` → 本文 → `docs/APP_SPEC.md` 第 5、6 节（数据边界与验收用例）→ `engine/README.md`。
-> APP_SPEC 第 1–4 节的旧界面和优先级作废；旧审阅记录在 `docs/archive/`，只在需要查历史证据时看。
-> 代码基准：提交 `d93afac`（暂停前的完整实现快照）。
+---
+
+## 0. 当前进度与下一步（2026-10-29）
+
+### 已完成（代码已提交，测试通过；标“待试用”的界面用户还没逐项点过）
+
+| 内容 | 状态 | 要点 |
+|---|---|---|
+| 阶段 1 统一操作层 | 完成 | 第 6 节四个已知问题已修，有测试 |
+| 多家 API 接入 | 完成，DeepSeek 实测通过 | `engine/api_providers.py`：Claude 原生；OpenAI、Gemini、通义、豆包、DeepSeek、智谱、Kimi、自定义地址走 OpenAI 兼容。默认模型名只是起点，设置里「测试连接」可拉服务商模型列表。密钥存钥匙串（`Support/Keychain.swift`） |
+| 对话必须看图 | 完成 | 用户定：不同意看图就不能用对话；每个服务商同意一次后记住 |
+| 阶段 3 界面重排 | 完成，待试用 | 效果图 `output/mockups/stage3-20261029/`（用户确认）。右栏只剩对话／调整；修复、画质在画布工具栏；调整页＝风格（自然／出片／我的风格）→ 光线／颜色／质感三组 → 局部区域 → 参考图；去掉「整批／所选／当前」，选片条多选（含当前）＝所选，否则当前 |
+| 引擎新参数 | 完成 | `light`、`vibrance`、`texture`（暗角＋柔光＋颗粒）、`whites`、`blacks`、`local.{区域}.{exposure…feather}`、`/region-at`；分条导出无接缝有测试；AI 操作清单已同步 |
+| 修复四种选法 | 完成，待试用 | 画笔／套索／点选物体（大片背景拒绝）／方框；`RemovalOperation` 加 strokes、radius、polygon、point |
+| 参考图 | 完成，待试用 | 缩略图带 ✕；匹配强度按差异自动 45%–80% 并说明原因；AI 先判断参考是否合适 |
+| 其他 | 完成 | 左右滑动对比；缩略图铺满去黑边；回车发送（输入法选字不误发）；CLI 没额度运行中即报错；转圈显示秒数 |
+
+### 未完成 / 待验证
+
+1. **阶段 2 验收没收尾**：20 条固定案例里 04、08、12、20（能力边界）和 14（日出剪影调暖，用户判不通过）未过；原始评分 `output/stage2-score-audit-20261029.json` 是早期快照，后续重测记录在 `docs/archive/RESUME_20261029.md`。重测时区分“同一案例重测”和“换图／换话术的新证据”，不能把未通过改成通过。用户同意这些与后续并行补，不卡进度。
+2. **阶段 3 验收剩两条没测**：滑块暖缓存预览 < 1 秒；最小窗口下中文不竖排、按钮可达。对话页建议卡片仍是整行列表，未改成效果图里的标签样式。
+3. **AI 对新参数的使用**（局部、质感、参考图判断）只改了提示词和校验，还没用真实对话验证。
+4. 钥匙串：旧版临时签名存的密钥，新版读出后会自动重存一次以停止反复弹窗。若用户仍说每次弹，改成本机 0600 文件存储（先跟用户说清安全性差异）。
+
+### 下一步（按用户定的顺序）
+
+1. **阶段 4 风格库**：「出片」扩到 20 款以上，用 `texture`、褪黑、阴影高光染色做出颗粒、暗角、柔光的质感，不只调颜色；「我的风格」已能存和套用。做完在人像、夜景、逆光、RAW 上各出对比图给用户肉眼确认。
+2. 补阶段 2、3 剩余验收（上面 1–3 条）。
+3. 阶段 5 对外发行准备（见第 7 节）。
+
+### 开发环境的坑（本机只有命令行工具，没有 Xcode）
+
+- SDK 27 缺 SwiftUI 宏插件、也没有 XCTest：`script/swift_env.sh` 改用 26.5 SDK，测试已改写成 Swift Testing。**跑测试只用 `./script/test.sh`**，不要直接 `swift test`。编辑器里 SourceKit 报的 “StateMacro not found / Cannot find type” 是误报，以实际编译为准。
+- `build_and_run.sh` 用 Apple Development 证书签名（钥匙串靠固定签名认 App）；`--build-only` 不关正在用的 App。用户可能开着 App，**重启前先确认**。
+- 验收截图不抢鼠标：`open -n -g dist/SuiTone.app --args -assistantProvider codex -importOnLaunch "a.jpg|b.jpg" -selectCount 2 -openTab adjust -localRegion sky`（`-assistantProvider codex` 避免读钥匙串在用户屏幕上弹窗），再用 `swiftc` 编一个按 PID 取窗口号的小工具配合 `screencapture -l`。测试样片放项目 `tmp/`。
+- 命令行 `cli.py grade` 的默认参数还是湖水案例那套（水色目标、天空色相默认开启），看真实效果要传 `"enabled":{"water":false,"sky":false,"land":false}`，App 里用的是 `smart.neutral()`。
 
 ---
 
@@ -88,7 +122,7 @@
 | 方式 | 谁用 | 说明 |
 |---|---|---|
 | 自带账号（本机已登录的 Codex／Claude Code 等） | 用户本人日常；有订阅的用户 | 用用户自己的额度。保留现有 `engine/assistant.py` 实现，补上发图 |
-| API key（用户自填） | 没订阅的用户、对外发行版 | 先接一家效果好的视觉模型，再做 OpenAI 兼容层（覆盖国内多家） |
+| API key（用户自填） | 没订阅的用户、对外发行版 | 已实现（`engine/api_providers.py`）：Claude 原生＋OpenAI 兼容层覆盖国内外多家 |
 | 本机视觉小模型 | 后置实验，不进主线 | M2／16GB 上 2B–4B 能跑，但审美判断弱、和现有三个模型抢内存、下载 2–3GB 以上 |
 
 要求：
@@ -122,19 +156,20 @@
 |---|---|---|
 | 浮点调色、抖动量化、肤色保护、RAW、分条带原尺寸渲染 | `engine/grade.py`、`render.py`、`portrait.py`、`raw.py` | **保留** |
 | 区域识别 SegFormer、去杂物 LaMa、放大 Swin2SR、降噪 | `engine/segmentation.py`、`inpaint.py`、`enhance.py` | **保留** |
-| 参考匹配 | `engine/match.py` | 保留，入口改到对话（拖参考图） |
-| 16 款风格 | `engine/smart.py` | 保留为起点，阶段 4 重做成“自然／出片”两组并加质感 |
+| 参考匹配 | `engine/match.py` | 按差异自动定强度并说明原因；入口在调整页和对话输入框 |
+| 16 款风格 | `engine/smart.py` | 阶段 4 待重做：“出片”扩到 20 款以上并加质感 |
+| 局部调整、质感、光线／颜色总滑块 | `engine/grade.py`（`apply_local`、`apply_texture`） | 已实现 |
+| API 接入 | `engine/api_providers.py` | 已实现 |
 | HTTP 服务、分析与预览缓存 | `engine/service.py` | 保留，按操作清单整理接口 |
 | CLI 桥接、JSON Schema、校验、取消 | `engine/assistant.py` | 保留，改成引擎接口的一个实现；Schema 扩展为完整操作清单 |
 | 编辑事务、撤销重做、预览调度 | `app/.../Stores/WorkspaceStore.swift` | 保留，作为统一操作层的落点 |
-| AI 请求与应用 | `app/.../Stores/WorkspaceAssistant.swift` | 重写到统一操作层上 |
-| 修复、画质事务 | `Stores/WorkspaceRepair.swift`、`WorkspaceQuality.swift` | 保留逻辑，入口移到画布工具按钮 |
+| AI 请求与应用 | `app/.../Stores/WorkspaceAssistant.swift` | 已在统一操作层上 |
+| 修复、画质事务 | `Stores/WorkspaceRepair.swift`、`WorkspaceQuality.swift` | 入口在画布工具栏；修复四种选法 |
 | 导入、保存记录、导出 | `Stores/WorkspaceFiles.swift`、`Views/ExportSheet.swift` | 保留 |
-| 右栏“调色／修复／AI 对话”三页签 | `Views/QuickAdjustmentsView.swift`、`AssistantPanel.swift`、`RepairPanel.swift` | 按第 3 节重排 |
-| 节点、水／天空／土地／人物分区面板 | `Views/InspectorView.swift` | **从界面删除**，参数保留在引擎内由局部编辑和 AI 使用 |
-| 顶部作用范围三段开关 | `Views/ContentView.swift` | 删除，改为多选作用 |
+| 右栏 | `Views/InspectorView.swift`（对话／调整两页＋修复、画质模式）、`AdjustPanel.swift`、`AssistantPanel.swift`、`ChatInputField.swift`、`RepairPanel.swift` | 已按第 3 节重排 |
+| 节点、分区面板；顶部作用范围三段开关 | — | 已从界面删除；作用范围改为选片条多选 |
 
-### 已知问题（阶段 1 必须修）
+### 已知问题（阶段 1，均已修复，留作背景）
 1. **AI 撤销会连带退回画质**（读代码推断，未复现）：`WorkspaceAssistant.swift` 在发送时保存撤销前状态，返回时只比较调色参数、不比较画质。等待期间用户改了画质，撤销 AI 会把画质一起退回。先写测试复现。
 2. **撤销后对话卡片不更新**：仍显示“已调整 1 张”和旧数值（证据：`output/ai-product-review-20261028/04-chat-after-undo.png`）。
 3. **取消可能无效**：任务 ID 返回前点取消，`cancelChat()` 直接返回。
@@ -148,7 +183,7 @@
 
 **阶段 1 · 统一操作层 + 事务问题**
 - 建操作清单，UI 与 AI 共用；修第 6 节四个问题。
-- 验收：AI 能触发降噪、放大、修复（有选区时）、参考匹配；问题 1–3 各有一条自动测试且通过；`swift test` 与 Python 测试全部通过。
+- 验收：AI 能触发降噪、放大、修复（有选区时）、参考匹配；问题 1–3 各有一条自动测试且通过；`./script/test.sh` 全部通过。
 
 **阶段 2 · AI 看图 + 两种接入 + 建议卡片**
 - 引擎接口；自带账号补发图；接第一家 API；发图提示开关；执行后复看 1 轮；建议卡片。
@@ -187,8 +222,8 @@
 ```bash
 cd '/Users/forwardyan/Coding/Coding Project/photo-edit'
 ./script/test.sh                              # Swift + Python 测试；本机只有命令行工具，参数见 script/swift_env.sh
-/Users/forwardyan/.cache/photo-edit/venv/bin/python -B engine/tests/test_engine.py
-bash script/build_and_run.sh --verify        # 会停掉旧 App 并重启，先保存编辑记录
+bash script/build_and_run.sh --build-only    # 只编译签名，不关正在用的 App
+bash script/build_and_run.sh --verify        # 会停掉旧 App 并重启，先确认用户没有未保存的编辑
 /Users/forwardyan/.cache/photo-edit/venv/bin/python -B script/ai_acceptance.py   # 真实调用 CLI，消耗额度
 ```
 

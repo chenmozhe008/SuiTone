@@ -1,6 +1,6 @@
 # photo-edit engine
 
-本地修图引擎。纯 Python，全部本地推理（ONNX，CPU），不联网、不上传照片。
+本地修图引擎。纯 Python，全部本地推理（ONNX，CPU）。只有用户在 App 里开启 AI 对话并同意看图时，才把缩小的预览发给所选 AI 服务。
 
 ## 安装
 
@@ -24,8 +24,11 @@ python3 -m venv ~/.cache/photo-edit/venv
 
 | 文件 | 功能 | 主要函数 |
 |---|---|---|
-| `grade.py` | 节点式分区调色：黑白点、去雾、对比、水/天/土地分区 | `grade(img, water, dehaze_amt, ...)`、`load()`、`seg_classes()` |
-| `inpaint.py` | 去杂物（LaMa，滑窗按接近原分辨率修补） | `remove(img, classes, box, keep)` |
+| `grade.py` | 节点式分区调色：黑白点、去雾、对比、水/天/土地分区；光线／颜色／质感总滑块、白色黑色、按区域局部调整 | `grade(img, water, dehaze_amt, ...)`、`apply_local()`、`apply_texture()`、`load()` |
+| `inpaint.py` | 去杂物（LaMa，滑窗按接近原分辨率修补）；选区可为方框、画笔轨迹、套索、点选物体 | `remove(img, classes, box, keep, strokes, radius, polygon, point)` |
+| `match.py` | 参考图分区反推；按参考与照片的差异自动定强度并给说明 | `match()`、`suggested_strength()` |
+| `assistant.py`、`api_providers.py` | AI 对话：本机 Codex／Claude Code 或各家 API（OpenAI 兼容层），输出受限的参数操作清单并校验 | `AssistantBridge`、`invoke()`、`list_models()` |
+| `service.py` | App 用的本机 HTTP 服务（随机凭证），含预览缓存、`/region-at` 点选区域 | `serve()` |
 | `portrait.py` | 肤色保护、轻修饰 | `skin_mask()`、`protect_skin()`、`retouch()` |
 | `lut.py` | 从「原图→调后」学出 3D LUT（.cube） | `fit()`、`write_cube()`、`read_cube()`、`apply()` |
 | `raw.py` | 读 RAW（DNG/CR2/NEF/ARW…），保留高光余量 | `load_raw()` |
