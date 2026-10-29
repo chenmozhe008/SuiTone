@@ -560,6 +560,25 @@ class EngineTests(unittest.TestCase):
         second=render_full(image,{'enabled':disabled},context,band=211)
         np.testing.assert_array_equal(np.asarray(first),np.asarray(second))
 
+    def test_cli_quota_error_fails_fast_instead_of_spinning(self):
+        from assistant import AssistantBridge
+        from threading import Event
+        from time import monotonic
+        from unittest.mock import patch
+        import tempfile
+        # 模拟 CLI：打印额度用完后不退出（真实 Codex 会反复重试）。
+        script=Path(tempfile.mkdtemp())/'fake-cli'
+        script.write_text('#!/bin/sh\ncat >/dev/null\necho "ERROR: You have hit your usage limit" >&2\nsleep 60\n')
+        script.chmod(0o755)
+        bridge=AssistantBridge(SimpleNamespace(folder=Path(tempfile.mkdtemp())))
+        start=monotonic()
+        with patch('assistant.executable',return_value=str(script)):
+            with self.assertRaises(ValueError) as error:bridge._invoke_once('codex','提示 quota 不算',Event(),monotonic()+30)
+        self.assertLess(monotonic()-start,5)
+        self.assertIn('额度',str(error.exception))
+        from assistant import early_failure
+        self.assertIsNone(early_failure('codex','用户说：0.4291 401 429'))
+
     def test_texture_and_local_have_no_stripe_seams(self):
         from render import render_full
         rgb=np.broadcast_to(np.linspace(.2,.8,300)[None,:,None],(600,300,3)).copy()

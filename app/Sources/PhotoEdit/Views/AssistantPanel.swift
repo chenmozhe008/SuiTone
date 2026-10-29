@@ -63,11 +63,11 @@ struct AssistantPanel: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("为这张照片建议").font(.callout.weight(.semibold))
                                 Text("根据画面内容，选择一项即可调整。")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .font(.callout).foregroundStyle(.secondary)
                                 ForEach(store.suggestions) { card in
                                     Button { store.applySuggestion(card) } label: {
                                         HStack { Text(card.title); Spacer(); Image(systemName: "plus") }
-                                            .font(.caption).padding(10).background(Color(white: 0.21))
+                                            .font(.callout).padding(10).background(Color(white: 0.21))
                                     }.buttonStyle(.plain).disabled(store.controlsBlocked || store.chatting)
                                 }
                             }
@@ -76,7 +76,7 @@ struct AssistantPanel: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("描述你需要的调整").font(.callout)
                                 Text("询问调色建议，或直接调整当前照片和整组照片。调整结果可继续编辑和撤销。")
-                                    .font(.caption).foregroundStyle(.secondary).lineSpacing(4)
+                                    .font(.callout).foregroundStyle(.secondary).lineSpacing(4)
                             }.padding(.top, 4)
                         }
                         ForEach(store.chatMessages) { message in
@@ -91,26 +91,26 @@ struct AssistantPanel: View {
                                                 .font(.caption.weight(.medium))
                                         }
                                         ForEach(Array(message.affectedPhotos.prefix(3).enumerated()), id: \.offset) { _, name in
-                                            Text(name).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                            Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                         }
                                         if message.affectedPhotos.count > 3 {
-                                            Text("另 \(message.affectedPhotos.count - 3) 张").font(.caption2).foregroundStyle(.secondary)
+                                            Text("另 \(message.affectedPhotos.count - 3) 张").font(.caption).foregroundStyle(.secondary)
                                         }
                                     }
                                 }
                                 if !message.notes.isEmpty {
                                     DisclosureGroup("查看实际调整 · 可撤销") {
                                         ForEach(Array(message.notes.enumerated()), id: \.offset) { _, line in
-                                            Text(line).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                                            Text(line).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                                         }
-                                    }.font(.caption)
+                                    }.font(.callout)
                                 }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(12).background(Color(white: message.role == "user" ? 0.23 : 0.17))
                                 .id(message.id)
                         }
                         if store.chatting {
-                            HStack { ProgressView().controlSize(.small); Text(store.assistantPhase).font(.caption).foregroundStyle(.secondary) }
+                            HStack { ProgressView().controlSize(.small); Text(store.assistantPhase).font(.callout).foregroundStyle(.secondary) }
                                 .id("thinking")
                         }
                     }.padding(16)
@@ -118,34 +118,42 @@ struct AssistantPanel: View {
                 .onChange(of: store.chatMessages.count) { _, _ in if let last = store.chatMessages.last { proxy.scrollTo(last.id, anchor: .bottom) } }
                 .onChange(of: store.chatting) { _, running in if running { proxy.scrollTo("thinking", anchor: .bottom) } }
             }
-            Divider()
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("作用于 \(store.scopeLabel)").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    if store.chatting { Button("取消") { store.cancelChat() }.font(.caption) }
-                }
+            VStack(alignment: .leading, spacing: 8) {
                 if store.validRepairSelection {
                     HStack {
-                        Text("已选择当前照片中的修复区域").font(.caption).foregroundStyle(.secondary)
+                        Text("已选择当前照片中的修复区域").font(.callout).foregroundStyle(.secondary)
                         Spacer()
-                        Button("取消选区") { store.selectionBox = nil }.font(.caption)
+                        Button("取消选区") { store.selectionBox = nil }
                     }
                 }
-                ZStack(alignment: .topLeading) {
-                    if store.chatDraft.isEmpty {
-                        Text("输入调整要求…").font(.callout).foregroundStyle(.tertiary).padding(.horizontal, 5).padding(.top, 8)
-                    }
-                    TextEditor(text: $store.chatDraft).font(.callout).scrollContentBackground(.hidden)
-                        .frame(minHeight: 65, maxHeight: 110).accessibilityLabel("修图对话输入")
-                }.padding(6).background(Color(white: 0.1))
-                HStack {
-                    Text("⌘↩ 发送").font(.caption2).foregroundStyle(.tertiary)
-                    Spacer()
-                    Button("发送", systemImage: "arrow.up") { store.sendChat() }
-                        .buttonStyle(.borderedProminent).keyboardShortcut(.return, modifiers: .command)
-                        .disabled(store.chatting || store.controlsBlocked || store.targets.isEmpty || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.assistantReady || !store.visionEnabled)
-                }
+                VStack(alignment: .leading, spacing: 8) {
+                    ChatInputField(text: $store.chatDraft, placeholder: "说一句要求，或先在照片上框一块再说…",
+                                   onSubmit: { if canSend { store.sendChat() } })
+                        .frame(minHeight: 44, maxHeight: 120).accessibilityLabel("修图对话输入")
+                    HStack(spacing: 12) {
+                        Button { store.chooseImport(reference: true) } label: {
+                            Label(store.references.isEmpty ? "参考图" : "参考图 \(store.references.count)", systemImage: "photo.badge.plus")
+                        }.buttonStyle(.plain).foregroundStyle(.secondary).help("添加一张参考图，说“照参考图调”")
+                        Text("作用于\(store.scopeLabel)").foregroundStyle(.secondary)
+                        Spacer()
+                        if store.chatting {
+                            Button { store.cancelChat() } label: {
+                                Image(systemName: "stop.fill").font(.system(size: 11, weight: .bold))
+                                    .frame(width: 28, height: 28).background(Color(white: 0.85), in: Circle()).foregroundStyle(.black)
+                            }.buttonStyle(.plain).help("停止")
+                        } else {
+                            Button { store.sendChat() } label: {
+                                Image(systemName: "arrow.up").font(.system(size: 13, weight: .bold))
+                                    .frame(width: 28, height: 28)
+                                    .background(canSend ? Color(white: 0.92) : Color(white: 0.35), in: Circle())
+                                    .foregroundStyle(canSend ? .black : Color(white: 0.6))
+                            }.buttonStyle(.plain).disabled(!canSend).help("发送（回车）")
+                        }
+                    }.font(.callout)
+                }.padding(12)
+                    .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(white: 0.28), lineWidth: 1))
+                Text("回车发送，Shift＋回车换行").font(.caption).foregroundStyle(.tertiary)
             }.padding(16)
         }
         .onChange(of: store.assistantProvider) { _, provider in
@@ -169,6 +177,11 @@ struct AssistantPanel: View {
                 APISettingsSheet(store: store, provider: provider) { showingAPISettings = false }
             }
         }
+    }
+
+    private var canSend: Bool {
+        !store.chatting && !store.controlsBlocked && !store.targets.isEmpty && store.assistantReady && store.visionEnabled
+            && !store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var visionDestination: String {

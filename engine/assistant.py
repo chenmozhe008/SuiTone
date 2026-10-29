@@ -80,15 +80,27 @@ def cli_failure(provider,output):
     """只返回固定诊断，避免把 CLI 日志中的凭证、路径或用户输入暴露到界面。"""
     name='Codex' if provider=='codex' else 'Claude Code'
     text=output.lower()
-    if any(word in text for word in ['usage limit','rate limit','quota exceeded','insufficient_quota','429']):
-        return CLIRequestError(name+' 当前额度或调用频率受限，请稍后重试或切换对话引擎')
-    if any(word in text for word in ['unauthorized','not logged in','invalid api key','token expired','refresh token','401']):
+    if any(word in text for word in ['usage limit','rate limit','rate_limit','quota','insufficient_quota','429','too many requests','credit balance','billing']):
+        return CLIRequestError(name+' 额度已用完或调用太频繁，请稍后再试，或在上方换一个对话引擎')
+    if any(word in text for word in ['unauthorized','not logged in','please log in','please login','invalid api key','token expired','refresh token','401']):
         return CLIRequestError(name+' 登录已失效，请在该 CLI 中重新登录后重试')
     if any(word in text for word in ['unexpected argument','unrecognized option','unsupported model','model_not_found']):
         return CLIRequestError(name+' 的版本或模型配置不兼容，请切换对话引擎并检查 CLI 配置')
     if any(word in text for word in ['stream disconnected','connection reset','connection refused','network error','timed out','error sending request','502 bad gateway','503 service unavailable']):
         return CLIRequestError(name+' 连接暂时中断，请重试或切换对话引擎',retryable=True)
     return CLIRequestError(name+' 未完成此次请求，可重试或切换对话引擎；本地调整未改变')
+
+
+# CLI 运行中一出现这些字样就停下报错：没额度、限流、未登录时 CLI 往往会反复重试而不退出。
+# 只认文字，不认 429/401 这类裸数字（提示词里的数值可能撞上）。
+FATAL_SIGNS=['usage limit','quota','insufficient_quota','rate limit','rate_limit','too many requests',
+             'unauthorized','not logged in','please log in','please login','invalid api key','token expired',
+             'credit balance','billing']
+
+
+def early_failure(provider,output):
+    text=output.lower()
+    return cli_failure(provider,text) if any(sign in text for sign in FATAL_SIGNS) else None
 
 
 def executable(provider):
@@ -332,9 +344,16 @@ class AssistantBridge:
                             child.stdin.close()
                         except (OSError,ValueError) as exc:input_errors.append(exc)
                     writer=Thread(target=send_input,daemon=True);writer.start()
+                    checked=0
                     while child.poll() is None:
                         if cancel.wait(.2):raise InterruptedError()
-                        if monotonic()>deadline:raise ValueError('AI 对话超时，本地调整未改变。可以重试或切换另一个 CLI')
+                        if monotonic()>deadline:raise ValueError('AI 对话超时，本地调整未改变。可以重试或切换另一个对话引擎')
+                        checked+=1
+                        if checked%3==0:
+                            # pread 不移动文件偏移，不会打乱 CLI 正在写的输出。
+                            seen=b''.join(os.pread(f.fileno(),256*1024,0) for f in (stderr,stdout)).decode(errors='replace')
+                            failure=early_failure(provider,seen.replace(prompt,''))
+                            if failure:raise failure
                     writer.join(timeout=1)
                     if child.returncode:
                         stdout.seek(0);stderr.seek(0)

@@ -3,6 +3,18 @@ import SwiftUI
 struct FilmstripView: View {
     @Bindable var store: WorkspaceStore
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+        HStack(spacing: 12) {
+            if store.targets.count > 1 {
+                Text("已选 \(store.targets.count) 张").fontWeight(.semibold)
+                Text("改动作用于所选照片").foregroundStyle(.secondary)
+                Button("把当前调整同步到所选") { store.synchronize() }.buttonStyle(.link).disabled(store.controlsBlocked)
+            } else {
+                Text("改动作用于当前照片").foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("⌘ 点按可多选").foregroundStyle(.secondary)
+        }.font(.callout).padding(.horizontal, 18).padding(.top, 10)
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 10) {
@@ -12,7 +24,13 @@ struct FilmstripView: View {
                                 LocalPhoto(path: store.showOriginal ? photo.imported.thumbnail : photo.previewPath ?? photo.imported.thumbnail, fill: true)
                                     .frame(width: 112, height: 76)
                                     .background(Color(white: 0.1))
-                                    .overlay(Rectangle().stroke(store.selectedIDs.contains(photo.id) ? Color(white: 0.72) : .clear, lineWidth: 2))
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(photo.id == store.currentID ? Color(white: 0.92) : store.targets.contains(where: { $0.id == photo.id }) ? Color(white: 0.55) : .clear, lineWidth: 2))
+                                    .overlay(alignment: .topLeading) {
+                                        if store.targets.count > 1 && store.targets.contains(where: { $0.id == photo.id }) {
+                                            Image(systemName: "checkmark.circle.fill").font(.callout).foregroundStyle(.white, Color(red: 0.36, green: 0.55, blue: 1)).padding(4)
+                                        }
+                                    }
                                     .overlay(alignment: .topTrailing) {
                                         if photo.starred { Image(systemName: "star.fill").font(.caption2).padding(4).background(Color(white: 0.12)) }
                                     }
@@ -37,6 +55,7 @@ struct FilmstripView: View {
                 }.padding(.horizontal, 18).padding(.top, 12)
             }.scrollIndicators(.hidden)
                 .onChange(of: store.currentID) { _, id in if let id { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) } } }
+        }
         }.background(Color(white: 0.12))
     }
 }

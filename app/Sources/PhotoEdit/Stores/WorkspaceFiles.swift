@@ -33,8 +33,8 @@ extension WorkspaceStore {
                             if !references.contains(where: { $0.id == item.id }) { references.append(item) }
                         } else if !photos.contains(where: { $0.id == item.id }) {
                             let record = PhotoRecord(imported: item, assetID: item.id)
-                            originals[item.id] = record.snapshot; photos.append(record); selectedIDs.insert(item.id)
-                            if currentID == nil { currentID = item.id }
+                            originals[item.id] = record.snapshot; photos.append(record)
+                            if currentID == nil { currentID = item.id; selectedIDs = [item.id] }
                             do {
                                 let look: SmartResponse = try await engine.request("smart", body: ["id": item.id, "style": "smart"])
                                 if let i = photos.firstIndex(where: { $0.id == item.id }) {
@@ -128,7 +128,7 @@ extension WorkspaceStore {
                     record.lookName = "已保存的调整"; record.ready = true; records.append(record)
                 }
                 photos = records; exportOptions = project.options; undoChanges = []; redoChanges = []
-                selectedIDs = Set(records.map(\.id)); activate(records.first?.id); grid = records.count > 1; refreshGrid()
+                selectedIDs = Set(records.prefix(1).map(\.id)); activate(records.first?.id); grid = records.count > 1; refreshGrid()
                 if !result.errors.isEmpty { error = result.errors.joined(separator: "\n") }
             } catch { self.error = error.localizedDescription }
         }

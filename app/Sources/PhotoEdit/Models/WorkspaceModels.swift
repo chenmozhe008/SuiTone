@@ -1,8 +1,10 @@
 import Foundation
 
-enum AdjustmentScope:String,CaseIterable {
-    case all,selected,current
-    var title:String {switch self {case .all:return "整批";case .selected:return "所选";case .current:return "当前"}}
+/// 用户存下的风格：一整套参数，可套用到所选照片。
+struct MyStyle: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var parameters: AdjustmentParameters
 }
 
 struct WorkspaceChange {

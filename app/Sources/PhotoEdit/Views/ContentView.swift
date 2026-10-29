@@ -15,7 +15,7 @@ struct ContentView: View {
                         if store.grid { ComparisonGrid(store: store) }
                         else { PhotoCanvas(store: store) }
                         Divider()
-                        FilmstripView(store: store).frame(height: 128)
+                        FilmstripView(store: store).frame(height: 150)
                     }.frame(minWidth: 560)
                     InspectorView(store: store).frame(minWidth: 320, idealWidth: 350, maxWidth: 390)
                 }
@@ -54,16 +54,6 @@ private struct WorkspaceHeader: View {
                         .help("重做").disabled(!store.canRedo || store.controlsBlocked)
                 }
                 Divider().frame(height: 22)
-                if store.inspectorTab == "repair" {
-                    Text("修复当前照片").font(.caption).foregroundStyle(.secondary).fixedSize()
-                } else {
-                Text("应用范围").font(.caption).foregroundStyle(.secondary).fixedSize()
-                Picker("应用范围", selection: $store.scope) {
-                    Text("整批").tag(AdjustmentScope.all)
-                    Text("所选").tag(AdjustmentScope.selected)
-                    Text("当前").tag(AdjustmentScope.current)
-                }.pickerStyle(.segmented).labelsHidden().frame(width: 172).disabled(store.controlsBlocked)
-                }
                 Button("导出 \(store.targets.count) 张…") { store.showExportOptions = true }
                     .buttonStyle(.borderedProminent).disabled(store.targets.isEmpty || store.controlsBlocked)
             }
@@ -74,6 +64,11 @@ private struct WorkspaceHeader: View {
 
 private struct CanvasHeader: View {
     @Bindable var store: WorkspaceStore
+    /// 修复、画质是工具模式：点一下进入，再点一下（或面板里的「完成」）回到原来的页。
+    private func tool(_ name: String) -> Binding<Bool> {
+        Binding(get: { store.inspectorTab == name },
+                set: { store.inspectorTab = $0 ? name : store.lastMainTab })
+    }
     var body: some View {
         HStack(spacing: 12) {
             Text(store.grid ? "整批预览" : store.current?.imported.name ?? "")
@@ -86,6 +81,10 @@ private struct CanvasHeader: View {
                 .toggleStyle(.button).help("拖动画面上的分隔线比较原图和调整后").disabled(store.grid)
             Toggle(isOn: $store.showOriginal) { Label("原图", systemImage: "circle.lefthalf.filled") }
                 .toggleStyle(.button).help("按 \\ 切换整张原图")
+            Toggle(isOn: tool("repair")) { Label("修复", systemImage: "bandage") }
+                .toggleStyle(.button).help("移除杂物").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
+            Toggle(isOn: tool("quality")) { Label("画质", systemImage: "wand.and.stars") }
+                .toggleStyle(.button).help("降噪与放大").disabled(store.current == nil || store.controlsBlocked)
             Picker("预览方式", selection: $store.grid) {
                 Image(systemName: "rectangle").tag(false)
                 Image(systemName: "square.grid.2x2").tag(true)

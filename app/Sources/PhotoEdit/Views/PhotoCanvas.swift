@@ -33,7 +33,11 @@ struct PhotoCanvas: View {
                 }
                 .frame(width:w,height:h)
                 .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance:0).onChanged {value in
+                .gesture(DragGesture(minimumDistance:0).onEnded {value in
+                    // 调整页里点一下照片：选中所在区域做局部调整。
+                    guard store.inspectorTab == "adjust", !splitActive, hypot(value.translation.width,value.translation.height)<4 else {return}
+                    store.pickRegion(x:min(1,max(0,value.location.x/w)),y:min(1,max(0,value.location.y/h)))
+                }.onChanged {value in
                     if splitActive {store.splitPosition=min(1,max(0,value.location.x/w));return}
                     guard value.translation != .zero, store.repairEnabled, !store.busy, store.repairDraft == nil else {return}
                     store.repairMaskOverlay=nil

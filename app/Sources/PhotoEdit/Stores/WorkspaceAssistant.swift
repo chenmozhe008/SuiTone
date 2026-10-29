@@ -82,6 +82,7 @@ extension WorkspaceStore {
         }()
         let history = chatMessages.suffix(12).map { ["role": $0.role, "text": $0.text] }
         chatMessages.append(ChatMessage(role: "user", text: message))
+        let startedAt = Date()
         chatDraft = ""; chatting = true; assistantCancellationRequested = false; assistantPhase = "准备图片分析摘要"
         assistantTask = Task {
             defer { chatting = false; assistantJobID = nil; assistantTask = nil; assistantApplying = false; assistantPhase = "" }
@@ -116,7 +117,8 @@ extension WorkspaceStore {
                     }
                     if result.state == "error" { throw EngineError(message: result.error ?? "AI 未完成请求") }
                     if result.state == "cancelled" { chatMessages.append(ChatMessage(role: "assistant", text: "已取消，本次没有应用调整。")); return }
-                    assistantPhase = result.state == "preparing" ? "准备图片分析摘要" : "\(providers.first(where: { $0.id == assistantProvider })?.title ?? "AI") 正在思考"
+                    let seconds = Int(Date().timeIntervalSince(startedAt))
+                    assistantPhase = result.state == "preparing" ? "准备图片分析摘要" : "\(providers.first(where: { $0.id == assistantProvider })?.title ?? "AI") 正在思考 · \(seconds) 秒"
                     try? await Task.sleep(for: .milliseconds(600))
                 }
             } catch {

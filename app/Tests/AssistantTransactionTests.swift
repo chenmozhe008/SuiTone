@@ -199,6 +199,36 @@ import Testing
         store.assistantProvider = "codex"
     }
 
+    @Test @MainActor func testTargetsFollowMultiSelectionAndDefaultToCurrent() {
+        let store = WorkspaceStore()
+        let photos = ["a", "b", "c"].map { id in
+            PhotoRecord(imported: ImportedPhoto(id: id, path: "/\(id).jpg", name: id, thumbnail: "/t", original: "/o",
+                                                width: 10, height: 10, similarTo: nil), assetID: id)
+        }
+        store.photos = photos; store.currentID = "a"; store.selectedIDs = ["a"]
+        #expect(store.targets.map(\.id) == ["a"])
+        store.selectedIDs = ["a", "c"]
+        #expect(store.targets.map(\.id) == ["a", "c"])
+        #expect(store.scopeLabel == "所选 2 张")
+        store.selectedIDs = ["b", "c"]  // 当前照片不在所选里时只改当前
+        #expect(store.targets.map(\.id) == ["a"])
+    }
+
+    @Test func testLocalAdjustmentsEncodeForEngine() throws {
+        var params = AdjustmentParameters()
+        params.local["sky"] = LocalAdjustment()
+        params.local["sky"]?.exposure = -0.3
+        params.texture = 0.4
+        let object = try EngineClient.object(params)
+        let local = try #require(object["local"] as? [String: Any])
+        let sky = try #require(local["sky"] as? [String: Any])
+        #expect(sky["exposure"] as? Double == -0.3)
+        #expect(sky["feather"] as? Double == 0.5)
+        #expect(object["texture"] as? Double == 0.4)
+        let decoded = try JSONDecoder().decode(AdjustmentParameters.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(decoded.local["sky"]?.exposure == -0.3)
+    }
+
     @MainActor private func fixture() -> WorkspaceStore {
         let store = WorkspaceStore()
         let image = ImportedPhoto(id: "photo", path: "/fixture.jpg", name: "fixture.jpg", thumbnail: "/thumb.png",

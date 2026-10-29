@@ -11,6 +11,31 @@ struct RegionAdjustment: Codable, Equatable, Sendable {
     var referenceCount: Int
 }
 
+/// 某个区域（天空、水面、地面、人物）的局部光线和颜色；数值含义与引擎 grade.LOCAL_FIELDS 一致。
+struct LocalAdjustment: Codable, Equatable, Sendable {
+    var exposure = 0.0
+    var contrast = 0.0
+    var highlights = 0.0
+    var temperature = 0.0
+    var saturation = 0.0
+    var hue = 0.0
+    var feather = 0.5
+
+    init() {}
+    enum CodingKeys: String, CodingKey { case exposure, contrast, highlights, temperature, saturation, hue, feather }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        exposure = try c.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
+        contrast = try c.decodeIfPresent(Double.self, forKey: .contrast) ?? 0
+        highlights = try c.decodeIfPresent(Double.self, forKey: .highlights) ?? 0
+        temperature = try c.decodeIfPresent(Double.self, forKey: .temperature) ?? 0
+        saturation = try c.decodeIfPresent(Double.self, forKey: .saturation) ?? 0
+        hue = try c.decodeIfPresent(Double.self, forKey: .hue) ?? 0
+        feather = try c.decodeIfPresent(Double.self, forKey: .feather) ?? 0.5
+    }
+    var isNeutral: Bool { [exposure, contrast, highlights, temperature, saturation, hue].allSatisfy { $0 == 0 } }
+}
+
 struct AdjustmentParameters: Codable, Equatable, Sendable {
     var water: [Double] = [54, -17, -7]
     var waterVar = 0.6
@@ -36,14 +61,21 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
     var smooth = 0.0
     var bright = 0.0
     var matchStrength = 1.0
+    var whites = 0.0
+    var blacks = 0.0
+    var light = 0.0
+    var vibrance = 0.0
+    var texture = 0.0
     var enabled: [String: Bool] = ["water":false,"sky":false,"land":false]
     var regions: [String: RegionAdjustment] = [:]
+    var local: [String: LocalAdjustment] = [:]
 
     init() {}
     enum CodingKeys:String,CodingKey {
         case water,waterVar,dehazeAmt,autoDehaze,skyHue,autumn,blackWhite,contrast,exposure,saturation
         case temperature,tint,highlights,shadows,effectStrength,skinProtect,smooth,bright,matchStrength,enabled,regions
         case shadowHue,shadowChroma,highlightHue,highlightChroma,fade
+        case whites,blacks,light,vibrance,texture,local
     }
     init(from decoder:Decoder) throws {
         self.init()
@@ -74,6 +106,12 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
         smooth=try c.decodeIfPresent(Double.self,forKey:.smooth) ?? smooth
         bright=try c.decodeIfPresent(Double.self,forKey:.bright) ?? bright
         matchStrength=try c.decodeIfPresent(Double.self,forKey:.matchStrength) ?? matchStrength
+        whites=try c.decodeIfPresent(Double.self,forKey:.whites) ?? 0
+        blacks=try c.decodeIfPresent(Double.self,forKey:.blacks) ?? 0
+        light=try c.decodeIfPresent(Double.self,forKey:.light) ?? 0
+        vibrance=try c.decodeIfPresent(Double.self,forKey:.vibrance) ?? 0
+        texture=try c.decodeIfPresent(Double.self,forKey:.texture) ?? 0
+        local=try c.decodeIfPresent([String:LocalAdjustment].self,forKey:.local) ?? [:]
     }
 }
 
@@ -227,6 +265,6 @@ struct ProjectPhoto: Codable {
 enum RegionNames {
     static let all = ["water", "sky", "land", "person"]
     static func title(_ key: String) -> String {
-        ["water": "水", "sky": "天空", "land": "土地", "person": "人物", "skin": "肤色"][key] ?? key
+        ["water": "水面", "sky": "天空", "land": "地面", "person": "人物", "skin": "肤色"][key] ?? key
     }
 }

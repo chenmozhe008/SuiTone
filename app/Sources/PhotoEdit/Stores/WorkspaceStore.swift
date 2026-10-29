@@ -24,8 +24,17 @@ final class WorkspaceStore {
     var rendering = false
     var progressDone = 0
     var progressTotal = 0
-    var scope: AdjustmentScope = .all
-    var inspectorTab = "start"
+    /// 右栏：chat / adjust 两页常驻；repair / quality 由画布工具栏进入，完成后回到 lastMainTab。
+    var inspectorTab = "chat"
+    var lastMainTab = "chat"
+    /// 调整页「局部」里选中的区域（water / sky / land / person）。
+    var localRegion: String?
+    var myStyles: [MyStyle] = {
+        guard let data = UserDefaults.standard.data(forKey: "myStyles") else { return [] }
+        return (try? JSONDecoder().decode([MyStyle].self, from: data)) ?? []
+    }() {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(myStyles), forKey: "myStyles") }
+    }
     var styleFamily = "creative"
     var styleTiles: [String:String] = [:]
     var styleTileTask: Task<Void,Never>?
@@ -69,7 +78,13 @@ final class WorkspaceStore {
 
     func loadAPIKey() {
         guard usesAPI, apiKeys[assistantProvider] == nil else { return }
-        apiKeys[assistantProvider] = Keychain.read(assistantProvider) ?? ""
+        let key = Keychain.read(assistantProvider) ?? ""
+        apiKeys[assistantProvider] = key
+        // 旧版（临时签名）存的条目只认旧程序，每次启动都会弹授权框；读出后用当前签名重存一次，之后不再询问。
+        let migrated = "keychainResaved." + assistantProvider
+        if !key.isEmpty && !UserDefaults.standard.bool(forKey: migrated) && Keychain.save(key, for: assistantProvider) {
+            UserDefaults.standard.set(true, forKey: migrated)
+        }
     }
 
     func saveAPISettings(provider: String, key: String?, model: String, baseURL: String) {
@@ -113,14 +128,13 @@ final class WorkspaceStore {
     var current: PhotoRecord? { currentIndex.map { photos[$0] } }
     var selected: [PhotoRecord] { photos.filter { selectedIDs.contains($0.id) && !$0.excluded } }
     var included: [PhotoRecord] { photos.filter { !$0.excluded } }
+    /// 默认只改当前照片；在选片条里多选（含当前照片）后，改动作用于所选。
     var targets: [PhotoRecord] {
-        switch scope {
-        case .all: return included
-        case .selected: return selected
-        case .current: return current.map { $0.excluded ? [] : [$0] } ?? []
-        }
+        guard let current, !current.excluded else { return [] }
+        let chosen = selected
+        return chosen.count > 1 && selectedIDs.contains(current.id) ? chosen : [current]
     }
-    var scopeLabel: String { "\(scope.title) \(targets.count) 张" }
+    var scopeLabel: String { targets.count > 1 ? "所选 \(targets.count) 张" : "当前照片" }
     var canUndo: Bool { !undoChanges.isEmpty }
     var canRedo: Bool { !redoChanges.isEmpty }
     var controlsBlocked: Bool { busy || importing || batchWorking || repairDraft != nil }
@@ -137,13 +151,35 @@ final class WorkspaceStore {
             if !providers.contains(where: { $0.id == assistantProvider && $0.available }),
                let first = providers.first(where: \.available) { assistantProvider = first.id }
             loadAPIKey()
+            applyLaunchOptions()
         } catch { self.error = error.localizedDescription; status = "引擎未就绪" }
+    }
+
+    /// 验收截图用：`open SuiTone.app --args -importOnLaunch "a.jpg|b.jpg" -openTab adjust -selectCount 2 -localRegion sky`。
+    /// 参数只来自本次启动命令行（NSArgumentDomain），不写入偏好设置。
+    func applyLaunchOptions() {
+        let options = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        guard let paths = options["importOnLaunch"] as? String else { return }
+        importURLs(paths.split(separator: "|").map { URL(fileURLWithPath: String($0)) })
+        Task {
+            for _ in 0..<120 where !(photos.count >= 1 && photos.allSatisfy(\.ready) && !importing) {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            grid = false
+            if let count = Int(options["selectCount"] as? String ?? ""), count > 1 {
+                selectedIDs = Set(photos.prefix(count).map(\.id)); activate(photos.first?.id)
+            }
+            if let tab = options["openTab"] as? String { inspectorTab = tab }
+            if let region = options["localRegion"] as? String {
+                loadAnalysis(); try? await Task.sleep(for: .seconds(2)); selectLocalRegion(region)
+            }
+        }
     }
 
     func activate(_ id: String?) {
         finishEditing()
         repairRevision += 1; repairDraft = nil; repairShowingBefore = false
-        currentID = id; analysis = nil; overlay = ""; selectionBox = nil; repairMaskOverlay = nil
+        currentID = id; analysis = nil; overlay = ""; selectionBox = nil; repairMaskOverlay = nil; localRegion = nil
         analysisTask?.cancel()
         guard current != nil else { return }
         styleTiles=[:]
