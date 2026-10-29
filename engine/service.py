@@ -468,6 +468,9 @@ def serve(root, token, watch_stdin=True):
             if not self.authorized(): return self.response(403,{'error':'当前会话未授权'})
             if self.path=='/progress':return self.response(200,engine.progress)
             if self.path=='/assistant-providers':return self.response(200,dict(providers=engine.assistant.providers()))
+            if self.path=='/styles':
+                from smart import STYLES
+                return self.response(200,dict(styles=[{k:style[k] for k in ['id','title','detail','family']} for style in STYLES]))
             if self.path.startswith('/assistant-status?'):
                 from urllib.parse import parse_qs,urlsplit
                 job=parse_qs(urlsplit(self.path).query).get('id',[''])[0]

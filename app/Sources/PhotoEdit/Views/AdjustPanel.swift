@@ -7,7 +7,7 @@ struct AdjustPanel: View {
     @State private var expanded: Set<String> = []
 
     private var styles: [StylePreset] {
-        StylePreset.all.filter { $0.creative == (store.styleFamily == "creative") }
+        store.styles.filter { $0.creative == (store.styleFamily == "creative") }
     }
     private var availableRegions: [String] {
         RegionNames.all.filter { store.analysis?.regions[$0]?.available == true }
@@ -68,7 +68,7 @@ struct AdjustPanel: View {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 8), count: 3), spacing: 8) {
                     ForEach(expandedStyles ? styles : Array(styles.prefix(6))) { style in
                         Button { store.applyStyle(style.id) } label: {
-                            styleTile(title: style.title, tile: store.styleTiles[style.id], icon: style.icon,
+                            styleTile(title: style.title, tile: store.styleTiles[style.id], icon: "camera.filters",
                                       selected: store.current?.lookName == style.title)
                         }.buttonStyle(.plain).help(style.detail + "，应用到" + store.scopeLabel)
                     }

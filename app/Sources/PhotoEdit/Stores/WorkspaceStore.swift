@@ -36,6 +36,7 @@ final class WorkspaceStore {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(myStyles), forKey: "myStyles") }
     }
     var styleFamily = "creative"
+    var styles: [StylePreset] = []
     var styleTiles: [String:String] = [:]
     var styleTileTask: Task<Void,Never>?
     var status = "正在检查本地引擎…"
@@ -154,6 +155,8 @@ final class WorkspaceStore {
             struct Providers: Decodable { var providers: [AssistantProvider] }
             let response: Providers = try await engine.get("assistant-providers")
             providers = response.providers
+            struct Styles: Decodable { var styles: [StylePreset] }
+            styles = (try await engine.get("styles") as Styles).styles
             if !providers.contains(where: { $0.id == assistantProvider && $0.available }),
                let first = providers.first(where: \.available) { assistantProvider = first.id }
             loadAPIKey()

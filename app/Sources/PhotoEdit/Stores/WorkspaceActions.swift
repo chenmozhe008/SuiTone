@@ -16,7 +16,7 @@ extension WorkspaceStore {
 
     func applyStyle(_ style: String) {
         runPhotoOperation(.style(style), items: targets,
-            label: "应用\(StylePreset.all.first(where: { $0.id == style })?.title ?? "风格")")
+            label: "应用\(styles.first(where: { $0.id == style })?.title ?? "风格")")
     }
 
     func saveMyStyle() {

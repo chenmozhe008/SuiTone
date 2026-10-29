@@ -45,9 +45,7 @@ SYSTEM='''你是随心调色 SuiTone 的修图助手。理解用户任意自然�
 如果用户要求轻微、自然或保留特定区域，则按要求克制调整，不夸大效果；暗部无法恢复的细节要如实说明。
 “稍微”约束风格力度，不等于变化可以难以察觉；应根据照片中目标区域的实际问题，调整到前后预览可辨认，同时避免破坏雾气、边缘和亮部渐变。
 用户明确要求变化能看出来时，自然与可见须同时满足：重点区域要有可辨认的改善，同时保留色彩、质感和高光细节。
-preset=keep 保留现有设置；smart/clean/soft/warm/cool/mono 为自然微调。
-vivid鲜明、airy轻盈也属于自然微调；golden金色时刻、bleach银幕冷调属于创作风格。
-cinema青橙电影、film暖胶片、neon霓虹夜色、vintage复古褪色、editorial低饱和叙事、noir高反差黑白为明显创作风格。
+preset=keep 保留现有设置；其余 preset 见文末风格清单（自然＝微调求真，出片＝明显风格并带质感）。
 shadow_hue/highlight_hue[-180,180]、shadow_chroma/highlight_chroma[0,30] 可分离阴影高光染色，fade[0,1]褪黑。
 adjustments 为 set/add/multiply 数值操作：exposure[-3,3]EV、contrast[0,2]、saturation[0,2]、
 temperature[-1,1]正暖负冷、tint[-1,1]正洋红负绿、highlights/shadows[-1,1]、black_white[0,1]、
@@ -69,6 +67,11 @@ undo 的 value 为 0，只能在 undo_available 为 true 时单独使用，prese
 视觉上若用户对当前画面颜色、明暗或主体的事实判断与预览明显不一致，要礼貌指出所见及不确定性；若方向因此不明确，先问用户想变暖还是变冷等具体问题，actions=[]。如果用户明确指定了创作方向，即使原片本来偏暖或偏冷也可按指定方向调整，不要擅自反转。
 不要把中间色或微弱变化描述成饱和的具体色彩，也不要在目标方向、区域或变化幅度没有把握时说已经符合要求。
 reply 用中文描述建议，不要提前宣称已完成；缺关键审美方向时可以问一个具体问题，actions 留空。'''
+
+
+STYLE_GUIDE='风格清单：\n'+'\n'.join(
+    f"{style['id']}｜{style['title']}｜{'自然' if style['family']=='natural' else '出片'}｜{style['detail']}" for style in STYLES)
+SYSTEM+='\n'+STYLE_GUIDE
 
 
 class CLIRequestError(ValueError):
