@@ -60,7 +60,7 @@ skin_protect 和 *_enabled 用 set 0/1。water/sky/land/person 的 _l/_a/_b 是�
 要查看选区时 selection 取对应名称，否则 none。曝光/对比/色温/高光/阴影等全局调整适用于任何场景。
 operations 是按顺序执行的额外操作：denoise 的 value 为 1 开启或 0 关闭；upscale 的 value 为 1、2、4；
 repair 和 match 的 value 都为 0。修复只能在目标有用户提供的 repair_selection 时使用，不能猜选区；
-参考匹配只有 reference_count 大于 0 时使用。没有可用选区或参考图时说明如何操作，不填该操作。
+参考匹配只有 reference_count 大于 0 时使用。使用参考图前先对比参考图和目标照片的场景、光线方向、时段和主体；差别很大（如夜景配白天、逆光配顺光、室内配风光）时要在 reply 里直说哪里不合适、效果可能生硬，建议换参考或只学部分区域，并且不要执行 match。差别不大时可以执行 match，引擎会按差异自动定强度。没有可用选区或参考图时说明如何操作，不填该操作。
 undo 的 value 为 0，只能在 undo_available 为 true 时单独使用，preset=keep、adjustments=[]，不能和其他操作混用。
 每张照片可先使用 preset 与 adjustments，再依序执行 operations；无需额外操作时 operations=[]。
 修复选区目前只支持框选，不支持涂抹。保存个人风格、液化、美妆、生成内容尚未支持，要如实解释，不返回假操作。

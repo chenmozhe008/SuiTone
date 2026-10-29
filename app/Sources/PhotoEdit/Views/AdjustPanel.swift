@@ -246,6 +246,7 @@ struct ReferencePanel: View {
                             VStack(spacing: 3) {
                                 LocalPhoto(path: reference.thumbnail, fill: true).frame(width: 76, height: 52)
                                     .clipShape(RoundedRectangle(cornerRadius: 5))
+                                    .overlay(alignment: .topTrailing) { RemoveReferenceButton(store: store, id: reference.id) }
                                 Text(store.referenceScopes[reference.id].map { $0 == "all" ? "全部区域" : "只学" + RegionNames.title($0) } ?? "全部区域")
                                     .font(.caption).foregroundStyle(.secondary)
                             }.help(reference.name).contextMenu {
@@ -266,8 +267,29 @@ struct ReferencePanel: View {
                     }.labelsHidden()
                     Button("匹配\(store.scopeLabel)") { store.match() }.disabled(store.targets.isEmpty)
                 }
+                if let photo = store.current, !photo.parameters.regions.isEmpty {
+                    ValueSlider(title: "强度", value: Binding(get: { store.current?.parameters.matchStrength ?? 1 }, set: { value in
+                        store.beginEditing("参考强度"); store.update { $0.matchStrength = value }
+                    }), range: 0...1, reset: 0.7, display: { String(format: "%.0f", $0 * 100) }, onEnd: store.finishEditing)
+                    if photo.lookName == "参考匹配", let advice = photo.notes.first(where: { $0.contains("强度") }) {
+                        Text(advice).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 Text("只学颜色与影调，光线方向不变。").font(.callout).foregroundStyle(.secondary)
             }
         }.dropDestination(for: URL.self) { urls, _ in store.importURLs(urls, reference: true); return true }
+    }
+}
+
+/// 参考图缩略图右上角的移除按钮。
+struct RemoveReferenceButton: View {
+    @Bindable var store: WorkspaceStore
+    let id: String
+    var body: some View {
+        Button {
+            store.references.removeAll { $0.id == id }; store.referenceScopes[id] = nil
+        } label: {
+            Image(systemName: "xmark.circle.fill").font(.system(size: 15)).foregroundStyle(.white, .black.opacity(0.6))
+        }.buttonStyle(.plain).padding(3).help("移除这张参考图")
     }
 }

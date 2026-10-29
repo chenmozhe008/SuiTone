@@ -35,6 +35,7 @@ def match(target, references, params=None, only=None, reference_regions=None):
     summary = target.summary()
     notes = []
     learned = []
+    gaps = {}
     names = {'water': '水', 'sky': '天空', 'land': '土地', 'person': '人物'}
     for region in ([only] if only else REGIONS):
         if not summary[region]['available']:
@@ -73,11 +74,30 @@ def match(target, references, params=None, only=None, reference_regions=None):
             'strength': 1.0, 'reference_count': len(refs),
         }
         learned.append(region)
+        gaps[region] = (float(mean[0]-source['mean'][0]), float(np.hypot(*(mean[1:]-source['mean'][1:]))))
     if learned:
         output['regions'] = adjustments
-        output['match_strength'] = 1.0
+        output['match_strength'], advice = suggested_strength(gaps, names)
+        notes.extend(advice)
     return {'params': output, 'learned': learned, 'notes': notes,
             'boundary': '只学习颜色与影调；光线方向和光比不会改变。结果可继续微调。'}
+
+
+def suggested_strength(gaps, names):
+    """参考图和照片差得越多，越不能照搬：按最大差异把强度压到 0.45–0.8，并说明原因。"""
+    worst = max(max(abs(dl) / 30, dc / 35) for dl, dc in gaps.values())
+    strength = float(np.clip(.8 - .25 * max(worst - .5, 0), .45, .8))
+    advice = []
+    for region, (dl, dc) in gaps.items():
+        if abs(dl) >= 18:
+            advice.append(f'参考图的{names[region]}比这张{"亮" if dl > 0 else "暗"}很多')
+        elif dc >= 25:
+            advice.append(f'参考图的{names[region]}颜色和这张差别较大')
+    if advice:
+        advice = ['，'.join(advice) + f'，照搬会显得生硬，已按 {strength*100:.0f}% 强度匹配，可拖「参考强度」调整']
+    else:
+        advice = [f'已按 {strength*100:.0f}% 强度匹配，可拖「参考强度」调整']
+    return strength, advice
 
 
 def _curve(values, x, y):

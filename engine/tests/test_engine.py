@@ -560,6 +560,14 @@ class EngineTests(unittest.TestCase):
         second=render_full(image,{'enabled':disabled},context,band=211)
         np.testing.assert_array_equal(np.asarray(first),np.asarray(second))
 
+    def test_reference_strength_drops_when_reference_differs_a_lot(self):
+        from match import suggested_strength
+        names={'sky':'天空','water':'水'}
+        close,advice=suggested_strength({'sky':(3.,5.)},names)
+        far,warning=suggested_strength({'sky':(-40.,10.),'water':(2.,40.)},names)
+        self.assertLessEqual(close,.8);self.assertGreaterEqual(far,.45);self.assertLess(far,close)
+        self.assertIn('天空比这张暗很多',warning[0]);self.assertIn('水颜色',warning[0]);self.assertNotIn('暗很多',advice[0])
+
     def test_brush_lasso_and_object_selection_masks(self):
         from inpaint import build_mask
         from service import shape_input

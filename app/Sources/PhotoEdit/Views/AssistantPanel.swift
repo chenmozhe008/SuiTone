@@ -127,6 +127,18 @@ struct AssistantPanel: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
+                    if !store.references.isEmpty {
+                        ScrollView(.horizontal) {
+                            HStack(spacing: 6) {
+                                ForEach(store.references) { reference in
+                                    LocalPhoto(path: reference.thumbnail, fill: true).frame(width: 52, height: 36)
+                                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                                        .overlay(alignment: .topTrailing) { RemoveReferenceButton(store: store, id: reference.id) }
+                                        .help("参考图：" + reference.name)
+                                }
+                            }
+                        }.scrollIndicators(.hidden)
+                    }
                     ChatInputField(text: $store.chatDraft, placeholder: "说一句要求，或先在照片上框一块再说…",
                                    onSubmit: { if canSend { store.sendChat() } })
                         .frame(minHeight: 44, maxHeight: 120).accessibilityLabel("修图对话输入")
