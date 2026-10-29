@@ -141,20 +141,29 @@ def clean_temporary(tmp, cache_limit=500*1024*1024):
     import shutil
     for folder in tmp.glob('app-session-*'):
         try:pid=int((folder/'owner.pid').read_text())
-        except (OSError,ValueError):pid=None
-        if pid is None or not _alive(pid):shutil.rmtree(folder,ignore_errors=True)
-    files=sorted((f for f in (tmp/'app-cache').rglob('*') if f.is_file()),key=lambda f:f.stat().st_mtime)
-    total=sum(f.stat().st_size for f in files)
-    for f in files:
+        except (OSError,ValueError):
+            try:pid=int(folder.name.removeprefix('app-session-').split('-',1)[0])
+            except ValueError:continue
+        if pid > 0 and not _alive(pid):shutil.rmtree(folder,ignore_errors=True)
+    files=[]
+    for f in (tmp/'app-cache').rglob('*'):
+        try:
+            if f.is_file():
+                stat=f.stat();files.append((stat.st_mtime,stat.st_size,f))
+        except OSError:continue
+    files.sort(key=lambda item:item[0])
+    total=sum(size for _,size,_ in files)
+    for _,size,f in files:
         if total<=cache_limit:break
-        total-=f.stat().st_size;f.unlink(missing_ok=True)
+        try:f.unlink(missing_ok=True);total-=size
+        except OSError:continue
 
 
 class Engine:
     def __init__(self, root):
         self.root = Path(root).resolve()
         clean_temporary(self.root/'tmp')
-        self.folder = self.root/'tmp'/('app-session-'+uuid4().hex)
+        self.folder = self.root/'tmp'/('app-session-'+str(os.getpid())+'-'+uuid4().hex)
         self.folder.mkdir(parents=True)
         (self.folder/'owner.pid').write_text(str(os.getpid()))
         segmentation.cache_dir = self.root/'tmp/app-cache/segmentation'

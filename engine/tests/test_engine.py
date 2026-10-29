@@ -569,11 +569,14 @@ class EngineTests(unittest.TestCase):
         dead=tmp/'app-session-dead';dead.mkdir();(dead/'owner.pid').write_text('999999');(dead/'x.png').write_bytes(b'1')
         legacy=tmp/'app-session-legacy';legacy.mkdir()
         live=tmp/'app-session-live';live.mkdir();(live/'owner.pid').write_text(str(os.getpid()))
+        starting=tmp/('app-session-'+str(os.getpid())+'-starting');starting.mkdir()
+        interrupted=tmp/'app-session-999999-starting';interrupted.mkdir()
         cache=tmp/'app-cache/segmentation';cache.mkdir(parents=True)
         for i in range(3):
             f=cache/f'{i}.npz';f.write_bytes(b'x'*100);os.utime(f,(i,i))
         clean_temporary(tmp,cache_limit=150)
-        self.assertFalse(dead.exists());self.assertFalse(legacy.exists());self.assertTrue(live.exists())
+        self.assertFalse(dead.exists());self.assertTrue(legacy.exists());self.assertTrue(live.exists())
+        self.assertTrue(starting.exists());self.assertFalse(interrupted.exists())
         self.assertEqual(sorted(f.name for f in cache.iterdir()),['2.npz'])
 
     def test_reference_strength_drops_when_reference_differs_a_lot(self):
