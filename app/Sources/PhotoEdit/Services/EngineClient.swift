@@ -5,6 +5,30 @@ struct EngineError: LocalizedError {
     var errorDescription: String? { message }
 }
 
+struct EnginePaths {
+    let root: URL
+    let script: URL
+    let python: URL
+
+    static func resolve(explicitRoot: URL?, resourceRoot: URL?, projectRoot: String?, home: URL) -> EnginePaths {
+        if let explicitRoot {
+            return EnginePaths(root: explicitRoot, script: explicitRoot.appendingPathComponent("engine/service.py"),
+                               python: home.appendingPathComponent(".cache/photo-edit/venv/bin/python"))
+        }
+        if let resources = resourceRoot {
+            let script = resources.appendingPathComponent("engine/service.py")
+            let python = resources.appendingPathComponent("python/bin/python3")
+            if FileManager.default.fileExists(atPath: script.path) || FileManager.default.fileExists(atPath: python.path) {
+                return EnginePaths(root: home.appendingPathComponent("Library/Application Support/SuiTone", isDirectory: true),
+                                   script: script, python: python)
+            }
+        }
+        let root = URL(fileURLWithPath: projectRoot ?? FileManager.default.currentDirectoryPath)
+        return EnginePaths(root: root, script: root.appendingPathComponent("engine/service.py"),
+                           python: home.appendingPathComponent(".cache/photo-edit/venv/bin/python"))
+    }
+}
+
 actor EngineClient {
     private var process: Process?
     private var input: Pipe?
@@ -17,27 +41,27 @@ actor EngineClient {
         return URLSession(configuration:config)
     }()
     let root: URL
+    private let paths: EnginePaths
 
     init(root explicitRoot: URL? = nil) {
-        if let explicitRoot {
-            root = explicitRoot
-        } else if let path = Bundle.main.object(forInfoDictionaryKey: "PhotoEditProjectRoot") as? String {
-            root = URL(fileURLWithPath: path)
-        } else {
-            root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        }
+        let paths = EnginePaths.resolve(explicitRoot: explicitRoot, resourceRoot: Bundle.main.resourceURL,
+                                        projectRoot: Bundle.main.object(forInfoDictionaryKey: "PhotoEditProjectRoot") as? String,
+                                        home: FileManager.default.homeDirectoryForCurrentUser)
+        self.paths = paths
+        root = paths.root
     }
 
     func start() throws {
         if process?.isRunning == true { return }
-        let python = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache/photo-edit/venv/bin/python")
+        let python = paths.python
         guard FileManager.default.isExecutableFile(atPath: python.path) else {
             throw EngineError(message: "找不到专用 Python 环境：\(python.path)。请按 engine/README.md 配置。")
         }
-        let script = root.appendingPathComponent("engine/service.py")
+        let script = paths.script
         guard FileManager.default.fileExists(atPath: script.path) else {
             throw EngineError(message: "找不到项目引擎，请通过项目的一键运行脚本启动。")
         }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let task = Process()
         task.executableURL = python
         task.arguments = ["-B", script.path, "--root", root.path]
