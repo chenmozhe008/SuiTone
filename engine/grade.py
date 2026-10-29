@@ -113,7 +113,8 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
                 exposure=0.0, saturation=1.0, enabled=None, regions=None,
                 match_strength=1.0, skin_protect=False, smooth=0.0, bright=0.0, analysis=None,auto_dehaze=False,
                 temperature=0.0,tint=0.0,highlights=0.0,shadows=0.0,effect_strength=1.0,
-                shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.):
+                shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.,
+                whites=0.,blacks=0.,light=0.,vibrance=0.,texture=0.,local=None):
     if auto_dehaze:
         if analysis is None:
             from analysis import Analysis
@@ -143,9 +144,9 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
     # 3 对比
     if on('contrast'):
         old=L.copy()
-        local=analysis.contrast_blur if getattr(analysis,'global_fields',False) else blur(L,40)
-        if analysis is not None and not getattr(analysis,'global_fields',False): analysis.contrast_blur=local
-        L=L+0.15*(L-local); L=100*np.interp(L/100,[0,0.1,0.3,0.5,0.7,0.9,1],[0,0.09,0.28,0.5,0.72,0.91,1]); L=old+(L-old)*contrast
+        local_blur=analysis.contrast_blur if getattr(analysis,'global_fields',False) else blur(L,40)
+        if analysis is not None and not getattr(analysis,'global_fields',False): analysis.contrast_blur=local_blur
+        L=L+0.15*(L-local_blur); L=100*np.interp(L/100,[0,0.1,0.3,0.5,0.7,0.9,1],[0,0.09,0.28,0.5,0.72,0.91,1]); L=old+(L-old)*contrast
         L=_protect_contrast_highlights(old,L)
     # 4 水：绝对目标色
     if on('water') and getattr(analysis,'water_active',wm.sum()>W*H*0.01):
@@ -166,8 +167,12 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
     shd=land*(1-ss(L,25,55))*(1-ss(C0,8,16)); B=B+4*shd; A=A+0.5*shd; L=L+3*shd   # 去雾后暗坡发紫 -> 回暖
     sat=saturation if on('color') else 1
     if on('light'):
+        # 「光线」总滑块：只推中间调，两端不动，避免拉过头变灰或爆白。
+        if light:L=L+light*16*np.sin(np.pi*np.clip(L,0,100)/100)
         L=L+shadows*18*(1-ss(L,12,62))*ss(L,0,8)
         L=L+highlights*18*ss(L,42,85)*(1-ss(L,96,100))
+        if whites:L=L+whites*12*ss(L,55,96)
+        if blacks:L=L+blacks*12*(1-ss(L,4,40))
     if on('color'):
         mid=.3+.7*np.clip(1-np.abs(L-50)/50,0,1)
         A=A+tint*7*mid; B=B+temperature*10*mid
@@ -178,12 +183,22 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
             B=B+shadow*np.sin(np.deg2rad(shadow_hue))+highlight*np.sin(np.deg2rad(highlight_hue))
     if fade and on('light'):L=L+fade*14*(1-ss(L,0,58))
     lab=np.stack([L,A*sat,B*sat],-1)
+    if vibrance and on('color'):
+        # 「颜色」总滑块：加色时优先补淡的颜色，已经很浓的少动；减色时整体收。
+        C=np.hypot(lab[...,1],lab[...,2])
+        f=1+vibrance*(.8*(1-ss(C,10,60)) if vibrance>0 else .7)
+        lab[...,1]*=f;lab[...,2]*=f
     if regions and on('match'):
         from match import apply_regions
         if analysis is None:
             from analysis import Analysis
             analysis=Analysis(img)
         lab=apply_regions(lab,analysis,regions,match_strength)
+    if local:
+        if analysis is None:
+            from analysis import Analysis
+            analysis=Analysis(img)
+        lab=apply_local(lab,analysis,local,W)
     if on('portrait') and (skin_protect or smooth or bright):
         if analysis is None:
             from analysis import Analysis
@@ -191,10 +206,63 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
         if analysis.skin.any():
             from portrait import adjust_lab
             lab=adjust_lab(analysis.lab,lab,analysis.skin,skin_protect,smooth,bright)
+    if texture:lab=apply_texture(lab,analysis,texture,W,H)
     if effect_strength<1:
         original=analysis.lab if analysis is not None else rgb2lab(np.asarray(img,np.float64)/255)
         lab=original+(lab-original)*effect_strength
     return lab2rgb(lab)
+
+
+LOCAL_FIELDS=dict(exposure=(-1,1),contrast=(-1,1),highlights=(-1,1),temperature=(-1,1),
+                  saturation=(-1,1),hue=(-180,180),feather=(0,1))
+
+
+def local_mask(analysis,name,feather,W):
+    """区域遮罩按羽化程度放宽边缘；分条渲染时直接取预览算好的那一份。"""
+    cache=analysis.__dict__.setdefault('local_masks',{})
+    key=(name,round(float(feather),3))
+    if getattr(analysis,'global_fields',False):return cache[key]
+    if key not in cache:
+        if len(cache)>=8:cache.clear()
+        m=analysis.region(name)
+        cache[key]=np.clip(blur(m,max(2,feather*W/25)),0,1) if feather>.02 else m
+    return cache[key]
+
+
+def apply_local(lab,analysis,local,W):
+    """局部光线和颜色：只在识别到的区域里生效，边缘随羽化过渡。"""
+    L,A,B=lab[...,0].copy(),lab[...,1].copy(),lab[...,2].copy()
+    for name,v in local.items():
+        g=lambda k:float(v.get(k,0))
+        if not any(g(k) for k in LOCAL_FIELDS if k!='feather'):continue
+        m=local_mask(analysis,name,g('feather'),W)
+        L=L+g('exposure')*18*m
+        L=L+g('contrast')*.4*(L-50)*m
+        L=L+g('highlights')*18*ss(L,42,85)*m
+        B=B+g('temperature')*12*m
+        if g('hue'):
+            t=np.deg2rad(g('hue'))*m;A,B=A*np.cos(t)-B*np.sin(t),A*np.sin(t)+B*np.cos(t)
+        f=1+g('saturation')*m;A,B=A*f,B*f
+    return np.stack([L,A,B],-1)
+
+
+def apply_texture(lab,analysis,amount,W,H):
+    """「质感」总滑块：暗角、柔光、颗粒一起加。按整幅坐标计算，分条渲染无接缝。"""
+    top,full_h,full_w=getattr(analysis,'frame',(0,H,W)) if analysis is not None else (0,H,W)
+    L=lab[...,0].copy()
+    y=((np.arange(H)+top)/full_h-.5)[:,None]*2;x=(np.arange(W)/full_w-.5)[None,:]*2
+    r=np.sqrt(x*x+y*y)/np.sqrt(2)
+    if analysis is not None and getattr(analysis,'global_fields',False):glow=analysis.glow_field
+    else:
+        glow=blur(ss(L,65,95),max(4,W/50))
+        if analysis is not None:analysis.glow_field=glow
+    L=L+amount*10*glow*(1-L/100)
+    L=L*(1-amount*.32*ss(r,.35,1.))
+    # 颗粒：按整幅像素坐标取确定性噪声，粒径随画幅缩放，预览和导出观感一致。
+    cy=np.floor((np.arange(H)+top)*1600/full_w)[:,None];cx=np.floor(np.arange(W)*1600/full_w)[None,:]
+    n=np.modf(np.sin(cx*12.9898+cy*78.233)*43758.5453)[0]
+    L=L+amount*3.2*(np.abs(n)-.5)*2*(1-np.abs(L-50)/60).clip(0,1)
+    return np.stack([L,lab[...,1],lab[...,2]],-1)
 
 
 def quantize(rgb,rng=None):

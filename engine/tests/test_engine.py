@@ -560,6 +560,38 @@ class EngineTests(unittest.TestCase):
         second=render_full(image,{'enabled':disabled},context,band=211)
         np.testing.assert_array_equal(np.asarray(first),np.asarray(second))
 
+    def test_texture_and_local_have_no_stripe_seams(self):
+        from render import render_full
+        rgb=np.broadcast_to(np.linspace(.2,.8,300)[None,:,None],(600,300,3)).copy()
+        image=Image.fromarray(np.uint8(rgb*255+.5))
+        preview=image.resize((75,150));z=np.zeros((150,75));sky=z.copy();sky[:60]=1
+        def context():
+            c=SimpleNamespace(image=preview,rgb=np.asarray(preview,dtype=float)/255,
+                              water=z,sky=sky,land=z,person=z,skin=z,dehazed=None)
+            c.region=lambda name:getattr(c,name)
+            return c
+        disabled={key:False for key in ['levels','dehaze','contrast','water','sky','land','match','portrait']}
+        params={'enabled':disabled,'texture':.8,'local':{'sky':{'exposure':-.5,'temperature':-.6,'feather':.6}}}
+        first=np.asarray(render_full(image,params,context(),band=97),int)
+        second=np.asarray(render_full(image,params,context(),band=211),int)
+        self.assertLessEqual(np.abs(first-second).max(),1)
+        plain=np.asarray(render_full(image,{'enabled':disabled},context(),band=211),int)
+        # 局部：天空在上方，变暗变冷；底部远离天空的地方不受影响（暗角和颗粒另算）。
+        self.assertLess(first[:150].mean(),plain[:150].mean()-5)
+        self.assertGreater(first[:150,:,2].mean()-first[:150,:,0].mean(),plain[:150,:,2].mean()-plain[:150,:,0].mean())
+
+    def test_local_only_changes_selected_region(self):
+        from grade import apply_local
+        lab=np.full((40,40,3),50.);lab[...,1]=5;lab[...,2]=10
+        c=SimpleNamespace(sky=np.zeros((40,40)));c.sky[:20]=1;c.region=lambda name:getattr(c,name)
+        out=apply_local(lab,c,{'sky':{'exposure':.5,'saturation':-.5,'feather':0}},40)
+        self.assertGreater(out[:20,:,0].mean(),55);np.testing.assert_allclose(out[20:],lab[20:])
+        self.assertLess(abs(out[:20,:,2]).mean(),10)
+        with self.assertRaises(ValueError):parameters({'local':{'face':{'exposure':.2}}})
+        with self.assertRaises(ValueError):parameters({'local':{'sky':{'exposure':3}}})
+        with self.assertRaises(ValueError):parameters({'local':{'sky':{'glow':1}}})
+        self.assertEqual(parameters({'local':{'sky':{'exposure':.2}}})['local']['sky']['exposure'],.2)
+
     def test_reference_without_water_preserves_existing_parameters(self):
         from match import match
         image=Image.new('RGB',(64,64),(110,110,110));rgb=np.asarray(image,dtype=float)/255;z=np.zeros((64,64))

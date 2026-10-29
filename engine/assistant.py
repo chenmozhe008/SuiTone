@@ -20,6 +20,9 @@ PARAMETERS=['exposure','contrast','saturation','temperature','tint','highlights'
             'water_enabled','sky_enabled','land_enabled','portrait_enabled']
 PARAMETERS += ['shadow_hue','shadow_chroma','highlight_hue','highlight_chroma','fade']
 PARAMETERS += [r+'_'+c for r in ['water','sky','land','person'] for c in ['l','a','b']]
+PARAMETERS += ['whites','blacks','light','vibrance','texture']
+PARAMETERS += ['local_'+r+'_'+f for r in ['water','sky','land','person']
+               for f in ['exposure','contrast','highlights','temperature','saturation','hue','feather']]
 SCHEMA=dict(type='object',additionalProperties=False,required=['reply','selection','actions'],properties=dict(
     reply=dict(type='string'),selection=dict(type='string',enum=['none','water','sky','land','person','skin']),
     actions=dict(type='array',items=dict(type='object',additionalProperties=False,required=['id','preset','adjustments','operations'],properties=dict(
@@ -49,6 +52,8 @@ shadow_hue/highlight_hue[-180,180]、shadow_chroma/highlight_chroma[0,30] 可分
 adjustments 为 set/add/multiply 数值操作：exposure[-3,3]EV、contrast[0,2]、saturation[0,2]、
 temperature[-1,1]正暖负冷、tint[-1,1]正洋红负绿、highlights/shadows[-1,1]、black_white[0,1]、
 dehaze_amt[0,1]、effect_strength[0,1]、match_strength[0,1]、smooth/bright[0,1]。
+light[-1,1] 光线总滑块（只推中间调）、vibrance[-1,1] 颜色总滑块（优先补淡色）、texture[0,1] 质感（暗角＋柔光＋颗粒，出片感）、
+whites/blacks[-1,1] 白色和黑色。局部调整用 local_<区域>_<项>，区域为 water/sky/land/person，项为 exposure/contrast/highlights/temperature/saturation[-1,1]、hue[-180,180]、feather[0,1]（羽化），只在该区域生效，适合“天空太灰”“人脸偏暗”这类要求，优先于 _l/_a/_b 区域目标色。
 contrast 是引擎对比增强的强度，0 为无调整；小数值如 0.08 往往非常轻，不能把它误当成常规照片软件里 8% 的可见对比提升。根据画面需求选择力度，不要为了明显而牺牲高光或制造色阶断层。
 skin_protect 和 *_enabled 用 set 0/1。water/sky/land/person 的 _l/_a/_b 是对应区域 Lab 目标，可用 add 微调现有区域，
 只在确实存在可靠区域时使用。L[0,100]、a/b[-100,100]，a负绿正红，b负蓝正黄。

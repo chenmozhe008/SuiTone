@@ -26,12 +26,14 @@ DEFAULTS = dict(water=[54., -17., -7.], water_var=.6, dehaze_amt=1., sky_hue=-10
                 autumn=.25, black_white=.5, contrast=1., exposure=0., saturation=1.,
                 skin_protect=True, smooth=0., bright=0., match_strength=1., enabled={}, regions={},auto_dehaze=True,
                 temperature=0.,tint=0.,highlights=0.,shadows=0.,effect_strength=1.,
-                shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.)
+                shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.,
+                whites=0.,blacks=0.,light=0.,vibrance=0.,texture=0.,local={})
 LIMITS = dict(water_var=(0, 2), dehaze_amt=(0, 1), sky_hue=(-180, 180), autumn=(0, 1),
               black_white=(0, 1), contrast=(0, 2), exposure=(-3, 3), saturation=(0, 2),
               smooth=(0, 1), bright=(0, 1), match_strength=(0, 1),temperature=(-1,1),tint=(-1,1),
               highlights=(-1,1),shadows=(-1,1),effect_strength=(0,1),
-              shadow_hue=(-180,180),shadow_chroma=(0,30),highlight_hue=(-180,180),highlight_chroma=(0,30),fade=(0,1))
+              shadow_hue=(-180,180),shadow_chroma=(0,30),highlight_hue=(-180,180),highlight_chroma=(0,30),fade=(0,1),
+              whites=(-1,1),blacks=(-1,1),light=(-1,1),vibrance=(-1,1),texture=(0,1))
 
 
 def repair_input(box,classes=None,keep=None):
@@ -86,6 +88,12 @@ def parameters(raw):
             raise ValueError('影调曲线必须单调递增')
         number(region.get('reference_luma_mean'),0,100)
         number(region.get('strength',1),0,1)
+    from grade import LOCAL_FIELDS
+    if not isinstance(p['local'], dict) or set(p['local'])-{'water','sky','land','person'}:
+        raise ValueError('未知局部区域')
+    for name, values in p['local'].items():
+        if not isinstance(values, dict) or set(values)-set(LOCAL_FIELDS):raise ValueError('局部参数格式不正确')
+        for key, value in values.items():number(value, *LOCAL_FIELDS[key])
     return p
 
 
@@ -204,6 +212,16 @@ class Engine:
             overlays[name]=str(path)
         return dict(regions=a.summary(),overlays=overlays,cache_hit=cached,
                     analysis_ms=(perf_counter()-start)*1000,inference_count=segmentation.inference_count)
+
+    def region_at(self, key, x, y):
+        """在照片上点一下：返回该点所属的可靠区域，没有把握时返回空。"""
+        if not all(isinstance(v,(int,float)) and not isinstance(v,bool) and 0<=v<=1 for v in (x,y)):
+            raise ValueError('点选位置无效')
+        a,_=self.analysis(key); summary=a.summary()
+        H,W=a.water.shape; row,col=min(int(y*H),H-1),min(int(x*W),W-1)
+        scores={name:float(a.region(name)[row,col]) for name in ['water','sky','land','person'] if summary[name]['available']}
+        best=max(scores,key=scores.get,default='')
+        return dict(region=best if best and scores[best]>=.5 else '')
 
     def suggestions(self, key):
         from suggestions import local_suggestions
@@ -431,6 +449,7 @@ def serve(root, token, watch_stdin=True):
                     elif self.path=='/analyze': result=engine.analyze(data['id'])
                     elif self.path=='/preview': result=engine.preview(data['id'],data.get('params',{}),data.get('quality'))
                     elif self.path=='/suggestions': result=engine.suggestions(data['id'])
+                    elif self.path=='/region-at': result=engine.region_at(data['id'],data['x'],data['y'])
                     elif self.path=='/suggestion-apply': result=engine.apply_suggestion(data['id'],data['card_id'],data.get('params',{}),data.get('quality'))
                     elif self.path=='/recommendation-start':result=engine.ai_recommendations.start(data)
                     elif self.path=='/recommendation-cancel':result=engine.ai_recommendations.cancel(data['id'])

@@ -78,6 +78,10 @@ def suggest(analysis,style='smart'):
     return dict(params=p,title=title,notes=notes,analysis=stats)
 
 
+REGION_TITLES=dict(water='水面',sky='天空',land='地面',person='人物')
+LOCAL_TITLES=dict(exposure='曝光',contrast='对比',highlights='高光',temperature='色温',saturation='饱和',hue='色相',feather='羽化')
+
+
 def apply_operations(params,operations,analysis):
     """AI 只给数值操作；没有执行任意代码、文件或 shell 的入口。"""
     from service import parameters,LIMITS
@@ -86,7 +90,8 @@ def apply_operations(params,operations,analysis):
             'tint':'色调','highlights':'高光','shadows':'阴影','black_white':'黑白点',
             'dehaze_amt':'去雾','effect_strength':'整体强度','smooth':'磨皮','bright':'肤色提亮',
             'match_strength':'参考强度','sky_hue':'天空色相','autumn':'土地饱和','water_var':'水色变化',
-            'shadow_hue':'阴影色相','shadow_chroma':'阴影染色','highlight_hue':'高光色相','highlight_chroma':'高光染色','fade':'褪黑'}
+            'shadow_hue':'阴影色相','shadow_chroma':'阴影染色','highlight_hue':'高光色相','highlight_chroma':'高光染色','fade':'褪黑',
+            'whites':'白色','blacks':'黑色','light':'光线','vibrance':'颜色','texture':'质感'}
     notes=[]
     if len(operations)>48:raise ValueError('单次调整过多')
     for operation in operations:
@@ -99,6 +104,18 @@ def apply_operations(params,operations,analysis):
             p[key]=float(np.clip(result,*LIMITS[key]))
             if key=='dehaze_amt':p['auto_dehaze']=False
             notes.append(f'{labels.get(key,key)} {old:.2f} → {p[key]:.2f}')
+        elif key.startswith('local_'):
+            from grade import LOCAL_FIELDS
+            name,field=key[6:].split('_',1)
+            if name not in ['water','sky','land','person'] or field not in LOCAL_FIELDS:raise ValueError('AI 请求了尚未支持的参数')
+            if not analysis.summary()[name]['available']:
+                notes.append(REGION_TITLES[name]+'：没有可靠区域，保持不变');continue
+            values=p['local'].setdefault(name,{})
+            old=values.get(field,0.)
+            result=value if mode=='set' else old+value if mode=='add' else old*value
+            values[field]=float(np.clip(result,*LOCAL_FIELDS[field]))
+            if field!='feather' and 'feather' not in values:values['feather']=.5
+            notes.append(f'{REGION_TITLES[name]}{LOCAL_TITLES[field]} {old:.2f} → {values[field]:.2f}')
         elif key in ['skin_protect','water_enabled','sky_enabled','land_enabled','portrait_enabled']:
             if mode!='set' or value not in [0,1]:raise ValueError('节点开关操作无效')
             if key=='skin_protect':p[key]=bool(value)

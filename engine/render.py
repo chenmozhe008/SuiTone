@@ -47,6 +47,9 @@ def render_full(image,params,preview,pixels=None,band=384):
         if params.get('dehaze_amt',1) and enabled.get('dehaze',True) and enabled.get('light',True):
             transmission=rows(preview.dehaze_t,width,height,top,bottom)[...,None]
             context.dehazed=np.clip((rgb-preview.dehaze_A)/transmission+preview.dehaze_A,0,1)
+        context.frame=(top,height,width)
+        context.local_masks={key:rows(mask,width,height,top,bottom) for key,mask in getattr(preview,'local_masks',{}).items()}
+        if params.get('texture'):context.glow_field=rows(preview.glow_field,width,height,top,bottom)
         rgb_out=grade_array(tile,analysis=context,**params)
         rendered=quantize(rgb_out[core_top-top:core_bottom-top],rng=rng)
         output.paste(rendered,(0,core_top))
