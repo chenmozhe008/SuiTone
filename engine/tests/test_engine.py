@@ -560,6 +560,20 @@ class EngineTests(unittest.TestCase):
         second=render_full(image,{'enabled':disabled},context,band=211)
         np.testing.assert_array_equal(np.asarray(first),np.asarray(second))
 
+    def test_startup_cleans_finished_sessions_and_caps_cache(self):
+        from service import clean_temporary
+        import tempfile,os
+        tmp=Path(tempfile.mkdtemp())
+        dead=tmp/'app-session-dead';dead.mkdir();(dead/'owner.pid').write_text('999999');(dead/'x.png').write_bytes(b'1')
+        legacy=tmp/'app-session-legacy';legacy.mkdir()
+        live=tmp/'app-session-live';live.mkdir();(live/'owner.pid').write_text(str(os.getpid()))
+        cache=tmp/'app-cache/segmentation';cache.mkdir(parents=True)
+        for i in range(3):
+            f=cache/f'{i}.npz';f.write_bytes(b'x'*100);os.utime(f,(i,i))
+        clean_temporary(tmp,cache_limit=150)
+        self.assertFalse(dead.exists());self.assertFalse(legacy.exists());self.assertTrue(live.exists())
+        self.assertEqual(sorted(f.name for f in cache.iterdir()),['2.npz'])
+
     def test_reference_strength_drops_when_reference_differs_a_lot(self):
         from match import suggested_strength
         names={'sky':'天空','water':'水'}

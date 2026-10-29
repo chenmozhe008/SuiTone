@@ -129,11 +129,34 @@ class Asset:
     pixels_path: Path | None = None
 
 
+def _alive(pid):
+    try:os.kill(pid,0)
+    except ProcessLookupError:return False
+    except PermissionError:return True
+    return True
+
+
+def clean_temporary(tmp, cache_limit=500*1024*1024):
+    """启动时清理：已退出的会话文件夹整个删掉（还在运行的其他窗口不动）；识别缓存超过上限时从最旧的删。"""
+    import shutil
+    for folder in tmp.glob('app-session-*'):
+        try:pid=int((folder/'owner.pid').read_text())
+        except (OSError,ValueError):pid=None
+        if pid is None or not _alive(pid):shutil.rmtree(folder,ignore_errors=True)
+    files=sorted((f for f in (tmp/'app-cache').rglob('*') if f.is_file()),key=lambda f:f.stat().st_mtime)
+    total=sum(f.stat().st_size for f in files)
+    for f in files:
+        if total<=cache_limit:break
+        total-=f.stat().st_size;f.unlink(missing_ok=True)
+
+
 class Engine:
     def __init__(self, root):
         self.root = Path(root).resolve()
+        clean_temporary(self.root/'tmp')
         self.folder = self.root/'tmp'/('app-session-'+uuid4().hex)
         self.folder.mkdir(parents=True)
+        (self.folder/'owner.pid').write_text(str(os.getpid()))
         segmentation.cache_dir = self.root/'tmp/app-cache/segmentation'
         self.assets = {}
         self.analyses = OrderedDict()
