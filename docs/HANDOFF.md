@@ -40,8 +40,19 @@
 
 - SDK 27 缺 SwiftUI 宏插件、也没有 XCTest：`script/swift_env.sh` 改用 26.5 SDK，测试已改写成 Swift Testing。**跑测试只用 `./script/test.sh`**，不要直接 `swift test`。编辑器里 SourceKit 报的 “StateMacro not found / Cannot find type” 是误报，以实际编译为准。
 - `build_and_run.sh` 用 Apple Development 证书签名（钥匙串靠固定签名认 App）；`--build-only` 不关正在用的 App。用户可能开着 App，**重启前先确认**。
-- 验收截图不抢鼠标：`open -n -g dist/SuiTone.app --args -assistantProvider codex -importOnLaunch "a.jpg|b.jpg" -selectCount 2 -openTab adjust -localRegion sky -windowSize 1050x720`（`-assistantProvider codex` 避免读钥匙串在用户屏幕上弹窗），再用 `swiftc` 编一个按 PID 取窗口号的小工具配合 `screencapture -l`。测试样片放项目 `tmp/`。
+- 验收截图不抢鼠标：`open -n -g dist/SuiTone.app --args -assistantProvider codex -importOnLaunch "a.jpg|b.jpg" -selectCount 2 -openTab adjust -localRegion sky -windowSize 1050x720`（`-assistantProvider codex` 避免读钥匙串在用户屏幕上弹窗），等约 20 秒导入完成后用 `script/window_id.swift`（文件头有编译和用法）取窗口号，`screencapture -l` 截图，再 `kill` 掉这个测试进程。测试样片、截图放项目 `tmp/`，用完移到废纸篓。
 - 命令行 `cli.py grade` 的默认参数还是湖水案例那套（水色目标、天空色相默认开启），看真实效果要传 `"enabled":{"water":false,"sky":false,"land":false}`，App 里用的是 `smart.neutral()`。
+
+### 和用户协作（这个项目里用户反复提过的）
+
+- 用户不写代码，语音输入常有错别字，能推断就直接做；界面问题按截图说话，**改界面前先出效果图对齐**，确认后再写代码。
+- 界面审美：字别太小（正文至少 callout），提示要醒目（未完成的设置用黄色提示框），一行只说一件事、不用「·」串信息，文案像专业软件不像 AI。
+- 不要在用户屏幕上弹钥匙串授权、不要关掉用户开着的 App；需要用户额度的真实 AI 测试留给用户，或先问。
+- 用户现在用 DeepSeek API（`deepseek-flash`）测对话；Codex 额度曾用完。
+- 公开测试样片可以自己下载使用（用户 2026-10-29 授权），私人照片不发出去。
+- 做完一段就提交 git（本地，不 push），汇报区分「实测通过」「代码推断」「待用户试用」。
+
+交接时代码基准：提交 `43edc95` 之后的 HEAD，工作区干净。
 
 ---
 
