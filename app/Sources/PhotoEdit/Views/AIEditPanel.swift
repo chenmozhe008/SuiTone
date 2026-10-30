@@ -50,11 +50,11 @@ struct AIEditPanel: View {
                     Text("最多 \(limit) 张").font(.caption).foregroundStyle(.secondary)
                 ) : nil) {
                     if limit == 0 {
-                        Text(store.imageModelName.isEmpty ? "先在设置里选择 AI 改图服务和模型，再添加参考图。" : "当前的 \(store.imageModelName) 按官方文档不能附加参考图。需要参考别的图时，可以在设置里换个模型。")
+                        Text(store.imageModelName.isEmpty ? "先在设置里选择 AI 改图服务和模型，再添加参考图。" : "当前的 \(store.imageModelName) 按官方文档不能附加参考图。如需使用参考图，请在设置中更换模型。")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     } else if referencePaths.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("可添加图片，参考其姿势、风格或物品。")
+                            Text("添加参考图，借鉴其中的元素、色彩或风格。")
                                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             Button("添加参考图…", systemImage: "plus") { addReferences() }
                         }
@@ -206,7 +206,7 @@ struct AIEditPanel: View {
         panel.canChooseDirectories = false; panel.canChooseFiles = true
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.image]
-        panel.message = "选择参考图（姿势、风格、物品），还可加 \(room) 张"
+        panel.message = "选择参考图，还可添加 \(room) 张"
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
             let path = url.path
@@ -222,7 +222,7 @@ struct AIEditPanel: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
             MentionEditor(model: editor,
-                          placeholder: "比如：照图2 的姿势，把图1 换成雪山背景",
+                          placeholder: "例如：把背景换成雪山，保留人物和构图",
                           onMention: { if !figures.isEmpty { showMention = true } },
                           onTyping: { if showMention { showMention = false } })
                 .frame(height: showMention ? 54 : 74)
