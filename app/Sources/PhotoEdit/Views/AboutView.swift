@@ -268,30 +268,58 @@ struct AboutView: View {
         // 先把上次拿到的记录显示出来，网络慢或失败时也不至于空白。
         if history.isEmpty, let cached = UserDefaults.standard.data(forKey: Keys.releases),
            let rows = Self.parseReleases(cached), !rows.isEmpty { history = rows }
-        guard let url = URL(string: "https://api.github.com/repos/\(repo)/releases?per_page=100") else { return }
-        do {
-            var request = URLRequest(url: url, timeoutInterval: 20)
-            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            guard code == 200, let rows = Self.parseReleases(data) else {
-                let why = (code == 403 || code == 429) ? "GitHub 限制了查询频率，过一会儿再试" : "GitHub 返回 \(code)"
-                historyMessage = "没能刷新线上记录：\(why)。下面显示的是已缓存的记录和应用自带的更新记录。"
-                return
-            }
+        switch await fetchReleases() {
+        case .ok(let data):
             UserDefaults.standard.set(data, forKey: Keys.releases)
+            let rows = Self.parseReleases(data) ?? []
             history = rows
             historyMessage = rows.isEmpty ? "线上还没有发布记录，下面是应用自带的更新记录。" : nil
-        } catch {
-            let reason: String
-            switch (error as? URLError)?.code {
-            case .timedOut: reason = "连接超时"
-            case .notConnectedToInternet: reason = "本机没有网络"
-            case .cannotFindHost, .cannotConnectToHost, .networkConnectionLost: reason = "连不上 api.github.com，可能需要代理"
-            default: reason = error.localizedDescription
-            }
+        case .failed(let reason):
             historyMessage = "没能刷新线上记录（\(reason)）。下面显示的是已缓存的记录和应用自带的更新记录。"
         }
+    }
+
+    private enum FetchResult { case ok(Data); case failed(String) }
+
+    /// 不走任何代理的会话：很多人开着本地代理，出口被 GitHub 限流成 403，
+    /// 而本机直连其实是通的，所以失败时要能绕开代理再试一次。
+    private static let directSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.connectionProxyDictionary = [:]
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 30
+        return URLSession(configuration: config)
+    }()
+
+    private func fetchReleases() async -> FetchResult {
+        guard let url = URL(string: "https://api.github.com/repos/\(repo)/releases?per_page=100") else {
+            return .failed("地址无效")
+        }
+        var reasons: [String] = []
+        // 先按系统设置（含代理）请求，不成功再用直连会话重试。
+        for (index, session) in [URLSession.shared, Self.directSession].enumerated() {
+            let route = index == 0 ? "经代理" : "直连"
+            var request = URLRequest(url: url, timeoutInterval: 20)
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            do {
+                let (data, response) = try await session.data(for: request)
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if code == 200 { return .ok(data) }
+                reasons.append(code == 403 || code == 429
+                    ? "\(route)被 GitHub 拒绝（\(code)，多为代理出口限流）"
+                    : "\(route)返回 \(code)")
+            } catch {
+                let reason: String
+                switch (error as? URLError)?.code {
+                case .timedOut: reason = "连接超时"
+                case .notConnectedToInternet: reason = "本机没有网络"
+                case .cannotFindHost, .cannotConnectToHost, .networkConnectionLost: reason = "连不上 api.github.com"
+                default: reason = error.localizedDescription
+                }
+                reasons.append(route + reason)
+            }
+        }
+        return .failed(reasons.joined(separator: "；"))
     }
 
     private enum Keys { static let releases = "aboutReleases" }

@@ -68,17 +68,29 @@ final class UpdateChecker: ObservableObject {
     /// Asks GitHub now. Returns nil when offline or GitHub did not answer.
     @discardableResult
     func check() async -> Release? {
-        var request = URLRequest(url: Self.latestAPI, timeoutInterval: 15)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode ?? 200 == 200,
-              let release = Self.parse(data) else { return nil }
-        let defaults = UserDefaults.standard
-        defaults.set(Date(), forKey: Keys.lastCheck)
-        defaults.set(try? JSONEncoder().encode(release), forKey: Keys.latest)
-        show(release)
-        return release
+        // 本地代理常把 api.github.com 的出口拦成 403，而直连是通的：两路都试一次。
+        for session in [URLSession.shared, Self.directSession] {
+            var request = URLRequest(url: Self.latestAPI, timeoutInterval: 15)
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            guard let (data, response) = try? await session.data(for: request),
+                  (response as? HTTPURLResponse)?.statusCode ?? 200 == 200,
+                  let release = Self.parse(data) else { continue }
+            let defaults = UserDefaults.standard
+            defaults.set(Date(), forKey: Keys.lastCheck)
+            defaults.set(try? JSONEncoder().encode(release), forKey: Keys.latest)
+            show(release)
+            return release
+        }
+        return nil
     }
+
+    /// 绕开系统代理的会话，用于代理出口被限流（403）时兜底。
+    private static let directSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.connectionProxyDictionary = [:]
+        config.timeoutIntervalForRequest = 15
+        return URLSession(configuration: config)
+    }()
 
     nonisolated static func parse(_ data: Data) -> Release? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
