@@ -6,6 +6,7 @@ import Testing
     @Test @MainActor func testSuggestionUsesSelectionAndSkipsUnavailableRegions() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let fixture = root.appendingPathComponent("tmp/suggestion-fixture-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: fixture) }
         let engineDir = fixture.appendingPathComponent("engine")
         try FileManager.default.createDirectory(at: engineDir, withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.outputFormatting = .withoutEscapingSlashes
@@ -62,6 +63,7 @@ import Testing
         let sample = root.appendingPathComponent("output/stage2-20261028/city-public.jpg")
         guard FileManager.default.fileExists(atPath: sample.path) else { return }
         let fixture = root.appendingPathComponent("tmp/variants-fixture-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: fixture) }
         let engineDir = fixture.appendingPathComponent("engine")
         try FileManager.default.createDirectory(at: engineDir, withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.outputFormatting = .withoutEscapingSlashes
@@ -109,6 +111,7 @@ import Testing
         let sample = root.appendingPathComponent("output/stage2-20261028/city-public.jpg")
         guard FileManager.default.fileExists(atPath: sample.path) else { /* 跳过：缺少公开城市样片 */ return }
         let fixture = root.appendingPathComponent("tmp/claude-chat-fixture-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: fixture) }
         let engineDir = fixture.appendingPathComponent("engine")
         try FileManager.default.createDirectory(at: engineDir, withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.outputFormatting = .withoutEscapingSlashes
