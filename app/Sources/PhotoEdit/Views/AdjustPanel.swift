@@ -198,7 +198,18 @@ struct AdjustPanel: View {
                 Button("完成") { store.selectLocalRegion(nil) }.buttonStyle(.borderedProminent)
             }
             regionChips(selected: region)
-            Text("只改\(name)，边缘自动过渡。").font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Text("只改\(name)，边缘自动过渡。")
+                    .font(.callout).foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    store.showLocalOverlay(store.overlay == region ? nil : region)
+                } label: {
+                    Label(store.overlay == region ? "隐藏选区" : "显示选区",
+                          systemImage: store.overlay == region ? "eye.slash" : "eye")
+                }.buttonStyle(.bordered).controlSize(.regular)
+                    .help("显示或隐藏照片上的选区遮罩")
+            }
             VStack(alignment: .leading, spacing: 10) {
                 Text("光线").font(.headline)
                 localSlider(region, "曝光", \.exposure, -1...1)
@@ -221,8 +232,6 @@ struct AdjustPanel: View {
                         store.selectLocalRegion(nil)
                     }
                 }
-                Toggle("显示选区", isOn: Binding(get: { store.overlay == region }, set: { store.showLocalOverlay($0 ? region : nil) }))
-                    .toggleStyle(.button)
             }
         }
     }

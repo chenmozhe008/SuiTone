@@ -71,13 +71,28 @@ extension WorkspaceStore {
         }
     }
 
-    func selectLocalRegion(_ region: String?) {
+    func selectLocalRegion(_ region: String?, previewDuration: Duration = .seconds(2)) {
         localRegion = region
         showLocalOverlay(region)
         if region != nil && analysis == nil { loadAnalysis() }
+        guard let region, let photo = current else { return }
+        overlayPreviewTask = Task {
+            // 从遮罩真正可见时开始计时，避免模型加载慢时还没看到就消失。
+            while !Task.isCancelled && current?.id == photo.id && localRegion == region && overlay == region {
+                let ready = region.hasPrefix("selection-") ? manualOverlay != nil : analysis?.overlays[region] != nil
+                if ready {
+                    do { try await Task.sleep(for: previewDuration) } catch { return }
+                    guard !Task.isCancelled, current?.id == photo.id, localRegion == region, overlay == region else { return }
+                    overlay = ""; manualOverlay = nil
+                    return
+                }
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+            }
+        }
     }
 
     func showLocalOverlay(_ region: String?) {
+        overlayPreviewTask?.cancel(); overlayPreviewTask = nil
         overlay = region ?? ""; manualOverlay = nil
         guard let region, region.hasPrefix("selection-"), let photo = current else { return }
         Task {

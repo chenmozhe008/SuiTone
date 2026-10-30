@@ -16,6 +16,27 @@ import Testing
         return store
     }
 
+    @Test @MainActor func testSelectionPreviewHidesAndManualDisplayStaysVisible() async throws {
+        let store = fixture()
+        store.analysis = AnalysisResponse(regions: [:], overlays: ["sky": "/mask.png", "water": "/water.png"],
+                                          cacheHit: true, analysisMs: 0, inferenceCount: 0)
+        store.selectLocalRegion("sky", previewDuration: .milliseconds(40))
+        #expect(store.overlay == "sky")
+        try await Task.sleep(for: .milliseconds(90))
+        #expect(store.overlay.isEmpty && store.localRegion == "sky")
+        store.selectLocalRegion("water", previewDuration: .milliseconds(40))
+        store.showLocalOverlay("water")
+        try await Task.sleep(for: .milliseconds(90))
+        #expect(store.overlay == "water")
+        store.showLocalOverlay(nil)
+        #expect(store.overlay.isEmpty)
+        store.selectLocalRegion("sky", previewDuration: .milliseconds(40))
+        store.selectLocalRegion("water", previewDuration: .milliseconds(150))
+        try await Task.sleep(for: .milliseconds(90))
+        #expect(store.overlay == "water")
+        store.selectLocalRegion(nil)
+    }
+
     @Test @MainActor func testCancelLeavesPhotoAndHistoryUntouched() async {
         let store = fixture(), before = store.current!.snapshot
         #expect(store.controlsBlocked)
