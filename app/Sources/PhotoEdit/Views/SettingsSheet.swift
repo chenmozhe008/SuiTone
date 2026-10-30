@@ -3,13 +3,18 @@ import SwiftUI
 /// 统一的设置窗口：对话和看图（调色用）、AI 改图（生成新图用）。所有「设置」入口都打开这里。
 struct SettingsSheet: View {
     @Bindable var store: WorkspaceStore
+    @State private var selectedProvider = ""
     private var tab: Binding<String> { Binding(get: { store.settingsTab ?? "chat" }, set: { store.settingsTab = $0 }) }
     private func close() { store.settingsTab = nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("设置").font(.title2.weight(.semibold))
+                HStack {
+                    Text("设置").font(.title2.weight(.semibold))
+                    Spacer()
+                    Button("完成", action: close).keyboardShortcut(.cancelAction)
+                }
                 Picker("类别", selection: tab) {
                     Text("对话和看图").tag("chat")
                     Text("AI 改图").tag("image")
@@ -23,7 +28,7 @@ struct SettingsSheet: View {
                 }
             }.padding([.horizontal, .top], 24)
             if tab.wrappedValue == "chat" { chat } else { ImageServiceSheet(store: store, done: close) }
-        }.frame(width: 600)
+        }.frame(width: 780)
         .preferredColorScheme(.dark)  // 弹出窗口不随主窗口自动变深色，要单独指定
     }
 
@@ -44,25 +49,75 @@ struct SettingsSheet: View {
     }
 
     @ViewBuilder private var chat: some View {
-        Picker("对话引擎", selection: $store.assistantProvider) {
-            Section("本机账号") {
-                ForEach(store.providers.filter { !$0.isAPI }) { provider in
-                    Text(provider.title + (provider.available ? "" : " · 未安装")).tag(provider.id).disabled(!provider.available)
+        HStack(alignment: .top, spacing: 0) {
+            // 左边：全部服务和状态；右边：选中服务的设置。
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    group("本机账号（用你的订阅）", store.providers.filter { !$0.isAPI })
+                    group("API 密钥（按用量付费）", store.providers.filter(\.isAPI))
+                }.padding(12)
+            }.frame(width: 220).background(Color(white: 0.13))
+            Divider()
+            VStack(alignment: .leading, spacing: 0) {
+                if let provider = store.providers.first(where: { $0.id == selectedProvider }) {
+                    detail(provider)
                 }
+                Spacer(minLength: 0)
+            }.frame(maxWidth: .infinity)
+        }.frame(height: 470).padding(.top, 16)
+        .onAppear { if selectedProvider.isEmpty { selectedProvider = store.assistantProvider } }
+    }
+
+    private func group(_ title: String, _ providers: [AssistantProvider]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 8).padding(.top, 8)
+            ForEach(providers) { provider in
+                Button { selectedProvider = provider.id } label: {
+                    HStack {
+                        Text(provider.title).font(.callout)
+                        Spacer()
+                        Text(state(provider).text).font(.caption.weight(.medium)).foregroundStyle(state(provider).color)
+                    }.padding(.horizontal, 8).padding(.vertical, 6)
+                        .background(selectedProvider == provider.id ? Color(white: 0.26) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain)
             }
-            Section("API 密钥") { ForEach(store.providers.filter(\.isAPI)) { Text($0.title).tag($0.id) } }
-        }.padding(.horizontal, 24).padding(.top, 16)
-            .onChange(of: store.assistantProvider) { _, _ in store.loadAPIKey() }
-        if let provider = store.currentProvider, provider.isAPI {
-            APISettingsSheet(store: store, provider: provider, done: close).id(provider.id)
+        }
+    }
+
+    private func state(_ provider: AssistantProvider) -> (text: String, color: Color) {
+        if provider.id == store.assistantProvider && store.assistantReady { return ("当前使用", .green) }
+        if !provider.available { return ("未安装", .secondary) }
+        if !provider.isAPI || store.apiKeySaved(provider.id) { return ("已配置", .primary) }
+        return ("未配置", .secondary)
+    }
+
+    @ViewBuilder private func detail(_ provider: AssistantProvider) -> some View {
+        HStack {
+            Text(provider.title).font(.headline)
+            Spacer()
+            if provider.id == store.assistantProvider && store.assistantReady {
+                Label("当前使用", systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.green)
+            } else if provider.available && (!provider.isAPI || store.apiKeySaved(provider.id)) {
+                Button("使用这个") { use(provider) }.buttonStyle(.borderedProminent)
+            }
+        }.padding(.horizontal, 24)
+        if provider.isAPI {
+            APISettingsSheet(store: store, provider: provider, done: close, onSave: { use(provider) }).id(provider.id)
         } else {
             VStack(alignment: .leading, spacing: 12) {
-                Text("使用本机已登录的 \(store.currentProvider?.title ?? "")，用你自己的订阅额度，不需要密钥。")
+                Text(provider.available ? "使用本机已登录的 \(provider.title)，用你自己的订阅额度，不需要密钥。"
+                                        : "这台电脑上没有找到 \(provider.title)。安装并登录后重新打开随心调色即可使用。")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
-                Text(store.visionEnabled ? "已允许它看照片预览。" : "第一次对话时会请你允许它看照片预览。")
-                    .font(.callout).foregroundStyle(.secondary)
-                HStack { Spacer(); Button("完成", action: close).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction) }
+                if provider.id == store.assistantProvider {
+                    Text(store.visionEnabled ? "已允许它看照片预览。" : "第一次对话时会请你允许它看照片预览。")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
             }.padding(24)
         }
+    }
+
+    private func use(_ provider: AssistantProvider) {
+        store.assistantProvider = provider.id; store.loadAPIKey()
     }
 }

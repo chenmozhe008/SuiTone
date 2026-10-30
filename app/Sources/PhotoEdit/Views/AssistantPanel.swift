@@ -5,53 +5,19 @@ struct AssistantPanel: View {
     @State private var showingVisionConsent = false
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("对话调整").font(.headline).fixedSize()
-                Spacer()
-                Picker("对话引擎", selection: $store.assistantProvider) {
-                    Section("本机账号") {
-                        ForEach(store.providers.filter { !$0.isAPI }) { provider in
-                            Text(provider.title + (provider.available ? "" : " · 未安装")).tag(provider.id).disabled(!provider.available)
-                        }
-                    }
-                    Section("API 密钥") {
-                        ForEach(store.providers.filter(\.isAPI)) { provider in Text(provider.title).tag(provider.id) }
-                    }
-                }.labelsHidden().frame(width: 150).disabled(store.chatting)
-                Button { store.settingsTab = "chat" } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.borderless).help("设置 AI 服务（⌘,）")
-            }.padding(16)
-            if !(store.currentProvider?.available ?? false) {
-                Text("此引擎暂不可用，请换一个").font(.callout).foregroundStyle(.secondary)
-                    .padding(.horizontal, 16).padding(.bottom, 12)
-            }
-            if store.usesAPI && !store.assistantReady {
-                HStack(spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle.fill").font(.title3).foregroundStyle(.yellow)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("尚未完成 API 设置").font(.body.weight(.semibold)).foregroundStyle(.yellow)
-                        Text("填写密钥并选择模型后才能对话").font(.callout).foregroundStyle(.secondary)
-                    }
+            // 这里只显示正在用哪个服务；选择和配置都在设置窗口里（一个地方管）。
+            VStack(alignment: .leading, spacing: 8) {
+                Text("对话调整").font(.headline)
+                HStack(spacing: 8) {
+                    Image(systemName: store.assistantReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(store.assistantReady ? Color.green : Color.yellow)
+                    Text(engineSummary).font(.callout).foregroundStyle(store.assistantReady ? Color.secondary : Color.yellow)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    Button("去设置") { store.settingsTab = "chat" }.buttonStyle(.borderedProminent).disabled(store.chatting)
-                }.padding(14)
-                    .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.yellow.opacity(0.45), lineWidth: 1))
-                    .padding(.horizontal, 16).padding(.bottom, 12)
-            } else if store.usesAPI {
-                HStack {
-                    Label((store.apiCredentials?.model ?? "") + {
-                        switch store.visionChecks[store.assistantProvider + "|" + (store.apiCredentials?.model ?? "")] {
-                        case true?: return "　能看图"
-                        case false?: return "　看不了图"
-                        default: return "　看图未验证"
-                        }
-                    }(), systemImage: "key")
-                        .font(.callout).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
-                    Button("设置…") { store.settingsTab = "chat" }.disabled(store.chatting)
-                }.padding(.horizontal, 16).padding(.bottom, 12)
-            }
+                    Button(store.assistantReady ? "更换" : "去设置") { store.settingsTab = "chat" }
+                        .buttonStyle(.bordered).disabled(store.chatting)
+                }
+            }.padding(16)
             if (store.currentProvider?.available ?? false) && !store.visionEnabled {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("对话调整需要 AI 看到照片", systemImage: "eye").font(.callout.weight(.medium))
@@ -228,6 +194,22 @@ struct AssistantPanel: View {
             && !store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var engineSummary: String {
+        guard let provider = store.currentProvider else { return "还没选对话服务" }
+        guard provider.available else { return provider.title + " 没有安装，请换一个" }
+        guard store.assistantReady else { return provider.title + " 还没设置好密钥或模型" }
+        guard provider.isAPI else { return "正在使用 " + provider.title + "（本机账号）" }
+        let model = store.apiCredentials?.model ?? ""
+        let vision: String = {
+            switch store.visionChecks[provider.id + "|" + model] {
+            case true?: return "，能看图"
+            case false?: return "，看不了图"
+            default: return "，看图未验证"
+            }
+        }()
+        return "正在使用 \(provider.title)（\(model)）" + vision
+    }
+
     private var visionDestination: String {
         switch store.assistantProvider {
         case "codex": return "Codex / OpenAI"
@@ -272,6 +254,8 @@ struct APISettingsSheet: View {
     @Bindable var store: WorkspaceStore
     var provider: AssistantProvider
     var done: () -> Void
+    /// 保存成功后调用（设置窗口里用来把它设为当前使用）
+    var onSave: () -> Void = {}
     @State private var key = ""
     @State private var model = ""
     @State private var baseURL = ""
@@ -297,8 +281,17 @@ struct APISettingsSheet: View {
                     if value == Self.manualTag { manualModel = true } else { model = value; manualModel = false }
                 })
     }
-    private var savedKey: Bool { !(store.apiKeys[provider.id] ?? "").isEmpty }
+    private var savedKey: Bool { store.apiKeySaved(provider.id) }
+    /// 显示和按钮状态只看「存过密钥」标记；真正要用密钥（测试、保存）时才读钥匙串
+    private var hasKey: Bool { !key.isEmpty || savedKey }
     private var effectiveKey: String { key.isEmpty ? store.apiKeys[provider.id] ?? "" : cleanedKey }
+    private func resolvedKey() -> String {
+        if !key.isEmpty { return cleanedKey }
+        if let cached = store.apiKeys[provider.id], !cached.isEmpty { return cached }
+        let stored = Keychain.read(provider.id) ?? ""
+        store.apiKeys[provider.id] = stored
+        return stored
+    }
     /// 去掉粘贴时混进来的空白和不可见字符，全角转半角；密钥只含 ASCII。
     private var cleanedKey: String {
         String(String.UnicodeScalarView(key.precomposedStringWithCompatibilityMapping.unicodeScalars.filter {
@@ -308,7 +301,7 @@ struct APISettingsSheet: View {
     private var trimmedModel: String { model.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var trimmedURL: String { baseURL.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var canSave: Bool {
-        !effectiveKey.isEmpty && !trimmedModel.isEmpty && (!provider.needsBaseUrl || !trimmedURL.isEmpty)
+        hasKey && !trimmedModel.isEmpty && (!provider.needsBaseUrl || !trimmedURL.isEmpty)
     }
 
     var body: some View {
@@ -346,7 +339,7 @@ struct APISettingsSheet: View {
                 Section {
                     HStack(spacing: 10) {
                         Button(fetching ? "正在测试…" : "测试连接") { testConnection() }
-                            .disabled(fetching || effectiveKey.isEmpty || (provider.needsBaseUrl && trimmedURL.isEmpty))
+                            .disabled(fetching || !hasKey || (provider.needsBaseUrl && trimmedURL.isEmpty))
                         if fetching { ProgressView().controlSize(.small) }
                         if let result {
                             Label(result.text, systemImage: result.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
@@ -356,7 +349,7 @@ struct APISettingsSheet: View {
                     }
                     HStack(spacing: 10) {
                         Button(checkingVision ? "正在测试…" : "看图测试") { testVision() }
-                            .disabled(checkingVision || effectiveKey.isEmpty || trimmedModel.isEmpty || (provider.needsBaseUrl && trimmedURL.isEmpty))
+                            .disabled(checkingVision || !hasKey || trimmedModel.isEmpty || (provider.needsBaseUrl && trimmedURL.isEmpty))
                         if checkingVision { ProgressView().controlSize(.small) }
                         if let vision = visionResult {
                             Label(vision.text, systemImage: vision.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -373,11 +366,10 @@ struct APISettingsSheet: View {
                     Button("删除密钥") { store.saveAPISettings(provider: provider.id, key: "", model: trimmedModel, baseURL: trimmedURL); done() }
                 }
                 Spacer()
-                Button("取消", action: done).keyboardShortcut(.cancelAction)
-                Button("保存") {
+                Button("保存并使用") {
                     store.saveAPISettings(provider: provider.id, key: key.isEmpty ? nil : cleanedKey,
                                           model: trimmedModel, baseURL: trimmedURL)
-                    key = ""; done()
+                    key = ""; onSave()
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(!canSave)
             }.padding(.horizontal, 24).padding(.bottom, 20)
         }
@@ -391,7 +383,7 @@ struct APISettingsSheet: View {
 
     private func testVision() {
         checkingVision = true; visionResult = nil
-        let secret = key.isEmpty ? effectiveKey : cleanedKey, name = trimmedModel
+        let secret = resolvedKey(), name = trimmedModel
         Task {
             defer { checkingVision = false }
             do {
@@ -404,18 +396,18 @@ struct APISettingsSheet: View {
 
     private func testConnection() {
         fetching = true; result = nil
-        let secret = key.isEmpty ? effectiveKey : cleanedKey
+        let secret = resolvedKey()
         let address = provider.needsBaseUrl ? trimmedURL : ""
         Task {
             defer { fetching = false }
             do {
                 let models = try await store.fetchModels(provider: provider.id, key: secret, baseURL: address)
-                guard (key.isEmpty ? effectiveKey : cleanedKey) == secret,
+                guard resolvedKey() == secret,
                       (provider.needsBaseUrl ? trimmedURL : "") == address else { return }
                 fetched = models
                 result = (true, models.isEmpty ? "接口已响应，模型能力未验证" : "已获取 \(models.count) 个模型，能力未验证")
             } catch {
-                guard (key.isEmpty ? effectiveKey : cleanedKey) == secret,
+                guard resolvedKey() == secret,
                       (provider.needsBaseUrl ? trimmedURL : "") == address else { return }
                 result = (false, error.localizedDescription)
             }

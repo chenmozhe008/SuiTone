@@ -127,6 +127,7 @@ final class WorkspaceStore {
         guard usesAPI, apiKeys[assistantProvider] == nil else { return }
         let key = Keychain.read(assistantProvider) ?? ""
         apiKeys[assistantProvider] = key
+        if !key.isEmpty { UserDefaults.standard.set(true, forKey: "apiKeySaved." + assistantProvider) }
         // 旧版（临时签名）存的条目只认旧程序，每次启动都会弹授权框；读出后用当前签名重存一次，之后不再询问。
         let migrated = "keychainResaved." + assistantProvider
         if !key.isEmpty && !UserDefaults.standard.bool(forKey: migrated) && Keychain.save(key, for: assistantProvider) {
@@ -134,8 +135,16 @@ final class WorkspaceStore {
         }
     }
 
+    /// 哪些 API 服务存过密钥（只看标记，不读钥匙串，避免为显示状态弹授权框）
+    func apiKeySaved(_ provider: String) -> Bool {
+        UserDefaults.standard.bool(forKey: "apiKeySaved." + provider) || !(apiKeys[provider] ?? "").isEmpty
+    }
+
     func saveAPISettings(provider: String, key: String?, model: String, baseURL: String) {
-        if let key { Keychain.save(key, for: provider); apiKeys[provider] = key }
+        if let key {
+            Keychain.save(key, for: provider); apiKeys[provider] = key
+            UserDefaults.standard.set(!key.isEmpty, forKey: "apiKeySaved." + provider)
+        }
         apiModels[provider] = model
         if provider == "custom" { customBaseURL = baseURL }
     }
