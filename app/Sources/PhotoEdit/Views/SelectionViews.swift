@@ -20,9 +20,14 @@ struct SelectionToolbar: View {
                 Slider(value: $store.brushSize, in: 0.005...0.08).frame(width: 80).controlSize(.small)
             }
             Divider().frame(height: 20)
-            Button { store.undoSelectionPart() } label: { Label("撤销一笔", systemImage: "arrow.uturn.backward") }
-                .disabled(store.selectionParts.isEmpty)
-            Button("清除") { store.clearRepairSelection() }.disabled(store.selectionParts.isEmpty)
+            Button { store.undoSelectionPart() } label: { Label("撤销", systemImage: "arrow.uturn.backward").fixedSize() }
+                .buttonStyle(.bordered).disabled(store.selectionParts.isEmpty).help("去掉最后画的一笔")
+            Button { store.clearRepairSelection() } label: { Label("清除", systemImage: "trash").fixedSize() }
+                .buttonStyle(.bordered).disabled(store.selectionParts.isEmpty).help("清掉全部选区，重新画")
+            Divider().frame(height: 20)
+            Button { store.inspectorTab = store.lastMainTab } label: {
+                Image(systemName: "xmark").font(.callout.weight(.semibold)).frame(width: 22, height: 22)
+            }.buttonStyle(.borderless).help("关闭选区工具（画好的选区保留）")
         }
         .font(.callout).buttonStyle(.borderless)
         .padding(.horizontal, 12).padding(.vertical, 7)

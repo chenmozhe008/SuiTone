@@ -67,8 +67,9 @@ private struct WorkspaceHeader: View {
 
 private struct CanvasHeader: View {
     @Bindable var store: WorkspaceStore
-    @ViewBuilder private func toolButtons(labels: Bool) -> some View {
-        HStack(spacing: 8) {
+    @ViewBuilder private func toolButtons(spacing: CGFloat) -> some View {
+        let labels = true
+        HStack(spacing: spacing) {
             toggle("对比", "rectangle.split.2x1", $store.splitCompare, labels, help: "拖动画面上的分隔线比较原图和调整后").disabled(store.grid)
             toggle("原图", "circle.lefthalf.filled", $store.showOriginal, labels, help: "按 \\ 切换整张原图")
             Divider().frame(height: 18)
@@ -90,25 +91,28 @@ private struct CanvasHeader: View {
         Binding(get: { store.inspectorTab == name }, set: { store.inspectorTab = $0 ? name : store.lastMainTab })
     }
     var body: some View {
-        HStack(spacing: 12) {
-            Text(store.grid ? "整批预览" : store.current?.imported.name ?? "")
-                .font(.callout.weight(.medium)).lineLimit(1)
-            if !store.grid, let photo = store.current {
-                Text(photo.lookName).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            // 宽度够时显示文字，窄窗口自动只留图标（悬停看名字）。
-            ViewThatFits(in: .horizontal) {
-                toolButtons(labels: true)
-                toolButtons(labels: false)
-            }
-            Picker("预览方式", selection: $store.grid) {
-                Image(systemName: "rectangle").tag(false)
-                Image(systemName: "square.grid.2x2").tag(true)
-            }.pickerStyle(.segmented).labelsHidden().frame(width: 72).disabled(store.inspectorTab == "repair")
-                .onChange(of: store.grid) { _, value in if value { store.refreshGrid() } }
-                .help("单张／整批预览")
+        // 工具按钮始终带文字；窗口窄时先藏照片名，再把按钮间距收紧，不退化成看不懂的纯图标。
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { title; Spacer(minLength: 12); toolButtons(spacing: 8); gridPicker }
+            HStack(spacing: 10) { Spacer(minLength: 0); toolButtons(spacing: 6); gridPicker }
+            HStack(spacing: 6) { Spacer(minLength: 0); toolButtons(spacing: 4).controlSize(.small); gridPicker }
         }.padding(.horizontal, 18).frame(height: 54)
+    }
+
+    @ViewBuilder private var title: some View {
+        HStack(spacing: 8) {
+            Text(store.grid ? "整批预览" : store.current?.imported.name ?? "").font(.callout.weight(.medium)).lineLimit(1)
+            if !store.grid, let photo = store.current { Text(photo.lookName).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+        }.fixedSize()
+    }
+
+    private var gridPicker: some View {
+        Picker("预览方式", selection: $store.grid) {
+            Image(systemName: "rectangle").tag(false)
+            Image(systemName: "square.grid.2x2").tag(true)
+        }.pickerStyle(.segmented).labelsHidden().frame(width: 72).disabled(store.inspectorTab == "repair")
+            .onChange(of: store.grid) { _, value in if value { store.refreshGrid() } }
+            .help("单张／整批预览")
     }
 }
 
