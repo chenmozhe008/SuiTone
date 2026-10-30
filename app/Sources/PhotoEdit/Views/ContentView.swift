@@ -43,7 +43,7 @@ struct ContentView: View {
                 store.confirmCropSwitch(apply: true)
                 return true
             }
-            guard store.inspectorTab == "crop", !store.controlsBlocked else { return false }
+            guard store.inspectorTab == "crop", store.cropEditing, !store.controlsBlocked else { return false }
             guard event.keyCode == 36 || event.keyCode == 76 else { return false }
             guard event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return false }
             // 正在打字（输入框、重命名）时回车归输入框，不要抢。

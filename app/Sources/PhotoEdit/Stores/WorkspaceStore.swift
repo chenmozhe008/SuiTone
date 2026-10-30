@@ -144,6 +144,9 @@ final class WorkspaceStore {
     var angleDraft: Double?
     /// 裁切页正在框的范围（0–1 比例）；裁切比例选的是哪一档
     var cropDraft: [Double]?
+    /// 是否正在框选：确定、按回车、离开裁切页或换照片之后都算「裁完」，框收起来。
+    /// 框一直压在画面上，看起来像「点了确定没生效」。
+    var cropEditing = false
     var cropAspect = "original"
     /// 裁切框没应用就要换照片时，先挂起目标，弹一句「应用还是不应用」
     var pendingCropSwitchTarget: String?
@@ -389,10 +392,18 @@ final class WorkspaceStore {
         // AI 改图页开着的时候最明显——切了图集画面还是旧照片。
         versionPreview = nil
         let firstSelected = selected.count > 1 && id.map { selectedIDs.contains($0) } == true ? selected.first?.id : id
+        let changedPhoto = currentID != firstSelected
+        if changedPhoto && inspectorTab == "crop" {
+            cropEditing = false
+            cropDraft = nil
+            inspectorTab = lastMainTab
+        }
         currentID = firstSelected; analysis = nil; overlay = ""; clearRepairSelection(); localRegion = nil
         analysisTask?.cancel(); analysisTask = nil; analysisAssetID = nil; analysisError = nil
         // 裁切框跟着照片一起换：不重置的话，上一张框好的范围会画在新照片上。
         cropDraft = current.map { $0.parameters.crop ?? [0, 0, 1, 1] }
+        // 换到新照片时框收起来：这张还没开始裁，别一上来就压着上一张的框。
+        cropEditing = false
         guard current != nil else { return }
         styleTiles=[:]
         if current?.ready == true { schedulePreview(); loadStyleTiles(); loadAnalysis() }
@@ -435,10 +446,10 @@ final class WorkspaceStore {
                     let start = Date()
                     var previewParams = photo.parameters
                     // 裁切页要看到完整画面（含将被裁掉的部分），框才不会错位。
-                    let cropMode = inspectorTab == "crop"
+                    let cropMode = cropPreviewing
                     if cropMode { previewParams.crop = nil }
                     let response: PreviewResponse = try await engine.request("preview", body: ["id": photo.assetID, "params": try EngineClient.object(previewParams), "quality": try EngineClient.object(photo.quality)])
-                    if currentID == photo.id, current?.assetID == photo.assetID, (inspectorTab == "crop") == cropMode,
+                    if currentID == photo.id, current?.assetID == photo.assetID, cropPreviewing == cropMode,
                        let i = currentIndex, photos[i].quality == photo.quality {
                         photos[i].previewPath = response.preview
                         if photos[i].parameters.autoDehaze == true { photos[i].parameters.dehazeAmt = response.dehazeAmt }

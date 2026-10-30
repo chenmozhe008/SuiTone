@@ -41,6 +41,7 @@ struct InspectorView: View {
         }.background(Color(white: 0.15))
             .onChange(of: store.inspectorTab) { old, tab in
                 store.finishRepairTransition(to: tab)
+                if old == "cutout" { store.clearRepairSelection() }
                 store.repairEnabled = ["repair", "cutout", "selection"].contains(tab)
                 store.cutoutPreview = nil; store.cutoutSnapshot = nil
                 if tab == "cutout" { store.repairTool = "object" }
@@ -48,8 +49,13 @@ struct InspectorView: View {
                 if tab == "chat" || tab == "adjust" { store.lastMainTab = tab }
                 if Self.titles[tab] != nil { store.grid = false }
                 if tab == "adjust" { store.loadStyleTiles(); if store.analysis == nil { store.loadAnalysis() } }
-                // 从裁切页退出来就算确认，不用再单独点一次。
-                if tab != "crop", store.cropDraft != nil { store.commitCrop() }
+                // 离开裁切页：还框着就先按框应用，然后把框整个撤掉——
+                // 换到别的页还留着裁切框，会让人以为裁切还开着、点一下又进去了。
+                if old == "crop", tab != "crop" {
+                    if store.cropEditing { store.commitCrop() }
+                    store.cropEditing = false
+                    store.cropDraft = nil
+                }
                 // 离开 AI 改图页：那一轮的选区和临时版本预览都撤掉，回到正常画面。
                 // 切到选区／移除页不算离开——这几个页签共用同一批选区。
                 if old == "aiedit", !["selection", "repair"].contains(tab) { store.leaveAIEdit() }

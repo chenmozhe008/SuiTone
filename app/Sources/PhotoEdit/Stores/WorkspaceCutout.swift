@@ -46,6 +46,10 @@ extension WorkspaceStore {
                     _ = try SubjectCutout.cutout(image: source, point: CGPoint(x: point[0], y: point[1]), output: url)
                 }.value
                 try? FileManager.default.removeItem(at: source)
+                // 存完就算这一轮抠图结束：预览和红点一起撤掉，
+                // 否则画面上还留着「已抠出来 + 一个红点」，看着像还没点确定。
+                cutoutPreview = nil; cutoutSnapshot = nil
+                repairPoint = nil; selectionBox = nil
                 status = "已保存透明 PNG：" + url.lastPathComponent
             } catch { self.error = error.localizedDescription; status = "保存未完成" }
         }

@@ -28,9 +28,6 @@ struct PhotoCanvas: View {
                         }.frame(width:w,height:h)
                     }
                     LocalPhoto(path:displayPath(photo)).frame(width:w,height:h)
-                        // 自由旋转拖动中：本地先转，松手才由引擎重算，手感即时
-                        .rotationEffect(.degrees(liveAngle))
-                        .scaleEffect(coverScale(w: w, h: h, angle: liveAngle))
                     if splitActive {
                         let x=w*store.splitPosition
                         LocalPhoto(path:photo.imported.original).frame(width:w,height:h)
@@ -61,13 +58,16 @@ struct PhotoCanvas: View {
                     if (store.repairEnabled || (store.inspectorTab == "chat" && store.repairTool != "box")) && store.repairDraft == nil && store.repairMaskOverlay == nil {
                         repairShapes(w:w,h:h)
                     }
-                    if let box=store.selectionBox,((store.repairEnabled || store.inspectorTab == "chat") && store.repairTool == "box"),store.repairDraft == nil {
+                    // 只有对话页还需要这个白框标出「这次会改哪一块」；
+                    // 选区／移除页画完的框已经合成了红色选区图，再压一个白框就是多余的那道线。
+                    if store.inspectorTab == "chat", let box=store.selectionBox, store.repairTool == "box",
+                       store.repairDraft == nil, store.selectionOverlay == nil, store.repairMaskOverlay == nil {
                         Rectangle().stroke(.white,lineWidth:1).background(.white.opacity(0.08))
                             .frame(width:w*(box[2]-box[0]),height:h*(box[3]-box[1]))
                             .position(x:w*(box[0]+box[2])/2,y:h*(box[1]+box[3])/2)
                     }
-                    // 裁切页：框出要留下的范围，外面压暗。
-                    if store.inspectorTab == "crop" {
+                    // 裁切页：框出要留下的范围，外面压暗。确定之后框收起来，画面就是裁好的样子。
+                    if store.inspectorTab == "crop", store.cropEditing {
                         CropOverlay(size: CGSize(width: w, height: h),
                                     box: store.cropDraft ?? [0, 0, 1, 1],
                                     pixels: PhotoSize.pixels(displayPath(photo)))
@@ -95,6 +95,10 @@ struct PhotoCanvas: View {
                         } else if store.repairTool == "brush" || store.repairTool == "lasso" {
                             drawing=false;store.updateRepairBounds()
                         }
+                        return
+                    }
+                    if store.inspectorTab == "chat", tap, store.selectionBox != nil {
+                        store.clearRepairSelection()
                         return
                     }
                     // 调整页里点一下照片：选中所在区域做局部调整。
@@ -137,7 +141,7 @@ struct PhotoCanvas: View {
                 // 裁切页的拖动层：铺满整块画布，从照片外的灰底起手也照样能拖（PS 也是这样）。
                 // 只挂在照片矩形上的话，手一偏落在灰底上就完全没反应，看起来就是「框拖不动」。
                 .overlay {
-                    if store.inspectorTab == "crop" {
+                    if store.inspectorTab == "crop", store.cropEditing {
                         cropDragLayer(origin: CGPoint(x: (geometry.size.width - w) / 2, y: (geometry.size.height - h) / 2),
                                       size: CGSize(width: w, height: h))
                     }
@@ -182,26 +186,12 @@ struct PhotoCanvas: View {
     }
 
     /// 画面显示比例：按裁切和旋转后实际要出的形状算，裁切页里仍显示完整画面以便重新框。
-    /// 拖动自由旋转时相对已提交角度的增量
-    private var liveAngle: Double {
-        guard store.inspectorTab == "crop", let angle = store.angleDraft else { return 0 }
-        return angle - (store.current?.parameters.angle ?? 0)
-    }
-
-    /// 转过之后要放大一点，画面才不会露出空白角。
-    private func coverScale(w: CGFloat, h: CGFloat, angle: Double) -> CGFloat {
-        guard abs(angle) > 0.01, w > 1, h > 1 else { return 1 }
-        let radians = abs(angle) * .pi / 180
-        let cosine = abs(cos(radians)), sine = abs(sin(radians))
-        return max(1, max((w * cosine + h * sine) / w, (w * sine + h * cosine) / h))
-    }
-
     private func displayRatio(_ photo: PhotoRecord) -> CGFloat {
         // 以渲染出来的预览为准：旋转、自由旋转、裁切都已经算进这张图里了，
         // 自己再按原图比例推一遍，转到 90° 时裁切框就会跑到画面外面（框和照片对不上）。
         if let path = photo.previewPath, let ratio = PhotoSize.ratio(path) { return ratio }
         var width = Double(photo.imported.width), height = Double(photo.imported.height)
-        if store.inspectorTab != "crop" {
+        if !store.cropPreviewing {
             if let crop = photo.parameters.crop, crop[2] > 0, crop[3] > 0 {
                 width *= crop[2]; height *= crop[3]
             }
@@ -229,7 +219,8 @@ struct PhotoCanvas: View {
                 if !drawing {path.closeSubpath();context.fill(path,with:.color(red.opacity(0.3)))}
                 context.stroke(path,with:.color(.white),style:StrokeStyle(lineWidth:1.5,dash:[5,4]))
             }
-            if let p=store.repairPoint {
+            // 抠图预览出来之后就不再画这个点：主体已经抠出来了，红点留在画面上像是没完成。
+            if let p=store.repairPoint, !(store.inspectorTab == "cutout" && store.cutoutPreview != nil) {
                 let r=CGRect(x:p[0]*w-7,y:p[1]*h-7,width:14,height:14)
                 context.fill(Path(ellipseIn:r),with:.color(red));context.stroke(Path(ellipseIn:r),with:.color(.white),lineWidth:2)
             }
@@ -289,6 +280,7 @@ struct PhotoCanvas: View {
 
     /// 裁切页左下角的一行提示：先把「框怎么动」讲清楚，第一次进来的人不用猜。
     private var cropHint: String {
+        guard store.cropEditing else { return "裁切已应用 · 点右栏「重新框选」再裁一次" }
         let box = store.cropDraft ?? [0, 0, 1, 1]
         let full = box[0] < 0.002 && box[1] < 0.002 && box[2] > 0.998 && box[3] > 0.998
         return full ? "在照片上拖一下，框出要保留的范围"

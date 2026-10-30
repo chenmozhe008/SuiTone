@@ -6,16 +6,18 @@ extension WorkspaceStore {
     func beginCrop() {
         guard let photo = current else { return }
         cropDraft = photo.parameters.crop ?? [0, 0, 1, 1]
+        cropEditing = true
         cropAspect = "free"
         if photo.ready { schedulePreview() }
     }
 
-    var cropPreviewing: Bool { inspectorTab == "crop" }
+    var cropPreviewing: Bool { inspectorTab == "crop" && cropEditing }
 
     /// 选比例：在当前框里取一个居中的、这个比例的最大框。原来框得小，换了比例不会突然跳回整张。
     func applyCropAspect(_ ratio: Double?) {
         guard let photo = current else { return }
         if cropAspect == "free" { return }
+        cropEditing = true
         var width = Double(photo.imported.width), height = Double(photo.imported.height)
         if Int(photo.parameters.rotation) % 180 == 90 { swap(&width, &height) }
         guard width > 0, height > 0 else { return }
@@ -60,7 +62,7 @@ extension WorkspaceStore {
     /// 松手才应用：整段拖动只记一条历史、只重算一次画面。
     func applyAngle(_ angle: Double) {
         let value = CropGeometry.snappedAngle(angle)
-        change(abs(value) < 0.01 ? "取消旋转" : String(format: "拉直 %.1f°", value)) { $0.angle = value }
+        change(abs(value) < 0.01 ? "取消旋转" : String(format: "拉直 %.1f°", -value)) { $0.angle = value }
     }
 
     func straightenPreview(_ angle: Double) {
@@ -73,16 +75,18 @@ extension WorkspaceStore {
         finishEditing()
     }
 
-    /// 「确定」：把框定的范围写进照片，但仍然留在裁切页——
-    /// 裁完往往还要接着拉直、转一下，跳走反而要再点回来；想换页自己去点上面的页签。
+    /// 「确定」：把框定的范围写进照片，然后把框收起来——框一直压着画面，
+    /// 看起来就像「点了确定什么都没发生」。人仍然留在裁切页，想再裁一次点「重新框选」。
     func finishCrop() {
         commitCrop()
-        status = "裁切已应用，还能接着转、拉直，或者点上面的页签换一页"
+        cropEditing = false
+        schedulePreview()
+        status = "裁切已应用"
     }
 
     /// 画布上的框跟已经应用的范围不一样（有还没应用的改动）。
     var cropDirty: Bool {
-        guard inspectorTab == "crop", let draft = cropDraft else { return false }
+        guard cropEditing, inspectorTab == "crop", let draft = cropDraft else { return false }
         let full = draft[0] < 0.001 && draft[1] < 0.001 && draft[2] > 0.999 && draft[3] > 0.999
         guard let existing = current?.parameters.crop else { return !full }
         return !zip(draft, existing).allSatisfy { abs($0 - $1) < 0.0005 }
@@ -106,6 +110,7 @@ extension WorkspaceStore {
         cropSwitchPrompt = false
         if apply { commitCrop() }
         cropDraft = nil
+        cropEditing = false
         selectedIDs = target.map { Set([$0]) } ?? Set<String>()
         performActivate(target)
         status = apply ? "裁切已应用" : "已放弃裁切"
@@ -140,6 +145,7 @@ extension WorkspaceStore {
     func resetGeometry() {
         guard current != nil else { return }
         cropDraft = [0, 0, 1, 1]
+        cropEditing = true
         cropAspect = "free"
         change("恢复原始构图") { parameters in
             parameters.rotation = 0; parameters.angle = 0; parameters.flip = ""; parameters.crop = nil
@@ -171,6 +177,8 @@ extension WorkspaceStore {
                 clearRepairSelection()
                 analysis = nil; overlay = ""; styleTiles = [:]
                 cropDraft = [0, 0, 1, 1]
+                // 已经烘进画面了，没有框可调，收起来。
+                cropEditing = false
                 recordChange("应用裁切与旋转", before: before)
                 status = "裁切与旋转已应用，可以继续画选区了"
                 schedulePreview(); loadAnalysis()
@@ -281,14 +289,16 @@ struct CropSwitchDialog: View {
 struct CropPanel: View {
     @Bindable var store: WorkspaceStore
     /// 拖动滑杆时的临时角度：这时不重算画面，松手才应用
-    @State private var angleDraft: Double?
     private let aspects: [(String, String, Double?)] = [
         ("free", "自由", nil), ("original", "原始", nil), ("1:1", "1:1", 1), ("4:3", "4:3", 4.0 / 3),
         ("5:4", "5:4", 5.0 / 4), ("3:2", "3:2", 3.0 / 2), ("16:9", "16:9", 16.0 / 9),
         ("9:16", "9:16", 9.0 / 16), ("4:5", "4:5", 4.0 / 5)
     ]
 
-    private var angle: Double { angleDraft ?? store.current?.parameters.angle ?? 0 }
+    private var angle: Double {
+        let value = store.current?.parameters.angle ?? 0
+        return value == 0 ? 0 : -value
+    }
 
     var body: some View {
         ScrollView {
@@ -331,17 +341,12 @@ struct CropPanel: View {
                     HStack(spacing: 10) {
                         stepButton("−", help: "逆时针 0.5°") { nudge(-0.5) }
                         StraightenSlider(value: angle, range: -45...45) { value in
-                            // 拖动时只在本地转，不每一步都让引擎重算，手感才跟手。
-                            angleDraft = value
-                            store.angleDraft = value
-                        } onEnd: { value in
-                            store.applyAngle(value)
-                            angleDraft = nil
-                            store.angleDraft = nil
+                            store.straightenPreview(-value)
+                        } onEnd: { _ in
+                            store.finishStraighten()
                         } onReset: {
+                            store.finishStraighten()
                             store.applyAngle(0)
-                            angleDraft = nil
-                            store.angleDraft = nil
                         }
                         stepButton("+", help: "顺时针 0.5°") { nudge(0.5) }
                     }
@@ -354,15 +359,24 @@ struct CropPanel: View {
                         Spacer()
                         Text("+45°").font(.caption2).foregroundStyle(.tertiary)
                     }
-                    Text("拖动时画面实时跟着转，松手才精确裁掉空白边；双击滑杆归零。")
+                    Text("拖动时预览拉直效果，双击滑杆归零。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
-                Button { store.finishCrop() } label: {
-                    Label("确定", systemImage: "checkmark").frame(maxWidth: .infinity)
-                }.buttonStyle(.borderedProminent).disabled(store.controlsBlocked)
-                    .keyboardShortcut(.defaultAction)
-                    .help("也可以直接按回车")
+                if store.cropEditing {
+                    Button { store.finishCrop() } label: {
+                        Label("确定", systemImage: "checkmark").frame(maxWidth: .infinity)
+                    }.buttonStyle(.borderedProminent).disabled(store.controlsBlocked)
+                        .keyboardShortcut(.defaultAction)
+                        .help("应用框内的范围，并把框收起来（也可以直接按回车）")
+                } else {
+                    Button { store.beginCrop() } label: {
+                        Label("重新框选", systemImage: "crop").frame(maxWidth: .infinity)
+                    }.buttonStyle(.borderedProminent).disabled(store.controlsBlocked)
+                        .help("在照片上重新拖一个框；已经应用的裁切不会丢")
+                    Text("裁切已应用，框已收起。要再裁一次就点「重新框选」，比例、旋转、拉直随时能接着调。")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
 
                 Button("恢复原始构图") { store.resetGeometry() }
                     .buttonStyle(.link).disabled(store.controlsBlocked || !(store.current?.parameters.hasGeometry ?? false))
@@ -373,8 +387,7 @@ struct CropPanel: View {
 
     private func nudge(_ delta: Double) {
         let value = min(45, max(-45, angle + delta))
-        angleDraft = nil
-        store.applyAngle(value)
+        store.applyAngle(-value)
     }
 
     private func textButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {

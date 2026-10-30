@@ -110,6 +110,20 @@ import Testing
         #expect(store.undoChanges.count == count)
     }
 
+    @Test @MainActor func straightenUpdatesDuringDragAndCreatesOneUndoStep() {
+        let store = fixture()
+        store.straightenPreview(-3)
+        #expect(store.current?.parameters.angle == -3)
+        store.straightenPreview(-5)
+        #expect(store.current?.parameters.angle == -5)
+        #expect(store.undoChanges.isEmpty)
+        store.finishStraighten()
+        #expect(store.undoChanges.count == 1)
+        store.undo()
+        #expect(store.current?.parameters.angle == 0)
+        store.previewTask?.cancel()
+    }
+
     @Test @MainActor func reenteringCropShowsTheCommittedBox() {
         let store = fixture()
         store.cropDraft = [0.1, 0.2, 0.3, 0.4]
@@ -129,6 +143,7 @@ import Testing
     @Test @MainActor func switchingPhotoWithUnappliedCropAsksFirst() {
         let store = fixture()
         addSecond(store)
+        store.cropEditing = true
         store.cropDraft = [0.2, 0.2, 0.5, 0.5]
         #expect(store.cropDirty)
         store.activate("photo2")
@@ -141,10 +156,12 @@ import Testing
     @Test @MainActor func applyingThenSwitchingWritesCropAndResetsTheBox() throws {
         let store = fixture()
         addSecond(store)
+        store.cropEditing = true
         store.cropDraft = [0.2, 0.2, 0.5, 0.5]
         store.activate("photo2")
         store.confirmCropSwitch(apply: true)
         #expect(store.currentID == "photo2")
+        #expect(store.inspectorTab == "adjust")
         let written = try #require(store.photos.first?.parameters.crop)
         #expect(zip(written, [0.2, 0.2, 0.5, 0.5]).allSatisfy { abs($0 - $1) < 0.0001 })
         // 新照片没有裁切，框回到整张，不会把上一张的框带过来。
@@ -154,6 +171,7 @@ import Testing
     @Test @MainActor func discardingThenSwitchingLeavesThePhotoUntouched() {
         let store = fixture()
         addSecond(store)
+        store.cropEditing = true
         store.cropDraft = [0.2, 0.2, 0.5, 0.5]
         store.activate("photo2")
         store.confirmCropSwitch(apply: false)
@@ -164,6 +182,7 @@ import Testing
     @Test @MainActor func cancelKeepsThePhotoAndTheBox() {
         let store = fixture()
         addSecond(store)
+        store.cropEditing = true
         store.cropDraft = [0.3, 0.3, 0.4, 0.4]
         store.activate("photo2")
         store.cancelCropSwitch()
@@ -172,10 +191,40 @@ import Testing
         #expect(!store.cropSwitchPrompt)
     }
 
+    /// 按「确定」之后，画面里的框必须收起来——留着的话，人会觉得点了没生效，
+    /// 而且下一张照片一切换就会被当成「有未应用的裁切」弹窗。
+    @Test @MainActor func confirmingHidesTheBox() {
+        let store = fixture()
+        store.beginCrop()
+        store.cropDraft = [0.2, 0.15, 0.5, 0.6]
+        #expect(store.cropEditing)
+        store.finishCrop()
+        #expect(!store.cropEditing)
+        #expect(!store.cropDirty)
+        #expect(!store.cropPreviewing)
+        #expect(store.current?.parameters.crop == [0.2, 0.15, 0.5, 0.6])
+    }
+
+    /// 确定之后切照片：不该再弹「裁切还没应用」。
+    @Test @MainActor func confirmedCropSwitchesWithoutAsking() {
+        let store = fixture()
+        addSecond(store)
+        store.beginCrop()
+        store.cropDraft = [0.2, 0.15, 0.5, 0.6]
+        store.finishCrop()
+        store.activate("photo2")
+        #expect(store.currentID == "photo2")
+        #expect(!store.cropSwitchPrompt)
+        #expect(store.inspectorTab == "adjust")
+        // 框跟着收起来，新照片上也不会画出上一张的框。
+        #expect(!store.cropEditing)
+    }
+
     /// 框跟已应用的一样，就不该拦人。
     @Test @MainActor func cleanCropSwitchesWithoutAsking() {
         let store = fixture()
         addSecond(store)
+        store.cropEditing = true
         store.cropDraft = [0.1, 0.1, 0.4, 0.4]
         store.commitCrop()
         #expect(!store.cropDirty)
