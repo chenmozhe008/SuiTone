@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// 对话里的「生成新图」确认卡：写清发给谁、发什么、可能收费、结果是新图；点「生成」才发送。
@@ -84,6 +85,15 @@ struct ImageServiceSheet: View {
 
     private var service: ImageService? { store.imageServices.first { $0.id == selected } }
     private var savedKey: Bool { UserDefaults.standard.bool(forKey: "imageKeySaved." + selected) }
+    /// 模型 ID 只能是字母数字和 . _ -（如 doubao-seedream-5-0-pro-260628，或在线推理的 ep-2026… 接入点）。
+    private var modelIssue: String? {
+        let text = model.trimmingCharacters(in: .whitespaces)
+        guard manualModel, !text.isEmpty else { return nil }
+        guard text.range(of: "^[A-Za-z0-9._-]{1,128}$", options: .regularExpression) != nil else {
+            return "模型 ID 只能有字母、数字和 . _ -，不能有空格或中文。"
+        }
+        return nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -101,9 +111,22 @@ struct ImageServiceSheet: View {
                         Divider()
                         Text("手动填写…").tag("\u{0}manual")
                     }
-                    if manualModel { TextField("模型名称", text: $model, prompt: Text("按服务商文档填写")) }
+                    if manualModel {
+                        TextField("模型名称", text: $model, prompt: Text("例：doubao-seedream-5-0-pro-260628"))
+                        if let modelIssue {
+                            Text(modelIssue).font(.callout).foregroundStyle(.orange)
+                        }
+                    }
                 }
-            }.formStyle(.grouped).scrollDisabled(true).frame(height: selected == "mock" ? 80 : (manualModel ? 200 : 160))
+            }.formStyle(.grouped).scrollDisabled(true).frame(height: selected == "mock" ? 80 : (manualModel ? 230 : 175))
+            if selected == "jimeng" {
+                HStack(spacing: 6) {
+                    Text("模型 ID 以「doubao-seedream」开头，后面必须带日期后缀，例如 doubao-seedream-5-0-pro-260628；不要填 Seedream 5.0 pro 这种展示名。")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button("官方模型列表") { NSWorkspace.shared.open(URL(string: "https://www.volcengine.com/docs/82379/1330310")!) }
+                        .buttonStyle(.link).font(.callout)
+                }.padding(.horizontal, 24)
+            }
             Text("密钥保存在本机钥匙串。出图按服务商标准计费。保存时不会调用服务，出图能力要等第一次真正生成后才算验证过。")
                 .font(.callout).foregroundStyle(.secondary).padding(.horizontal, 24)
             HStack {
@@ -115,7 +138,7 @@ struct ImageServiceSheet: View {
                                            model: model.trimmingCharacters(in: .whitespaces).isEmpty ? (service?.defaultModel ?? "") : model)
                     done()
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-                    .disabled(selected.isEmpty || (selected != "mock" && key.isEmpty && !savedKey))
+                    .disabled(selected.isEmpty || modelIssue != nil || (selected != "mock" && key.isEmpty && !savedKey))
             }.padding(24)
         }
         .onAppear {

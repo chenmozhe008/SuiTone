@@ -27,6 +27,7 @@ struct AboutView: View {
     }
 
     private var releasesPage: URL { URL(string: "https://github.com/\(repo)/releases")! }
+    private var repoURL: URL { URL(string: "https://github.com/\(repo)")! }
 
     /// 线上记录与本机更新记录按版本号合并，新的在前；同一版本不重复显示。
     private var mergedReleases: [ReleasedVersion] {
@@ -76,10 +77,18 @@ struct AboutView: View {
                     Text("随心修图").font(.system(size: 27, weight: .bold))
                     Text("跟 AI 对话，随心修出想要的照片")
                         .font(.callout)
-                    Text("版本 \(AppIdentity.version)　·　SuiTone")
-                        .font(.callout).opacity(0.8)
+                    HStack(spacing: 10) {
+                        Text("v\(AppIdentity.version)")
+                        Text("作者 @沉默者之二")
+                    }.font(.callout).opacity(0.8)
                 }.foregroundStyle(.white)
                 Spacer()
+                Link(destination: repoURL) {
+                    Label("GitHub", systemImage: "arrow.up.right.square")
+                        .font(.callout.weight(.semibold)).padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(Color.white.opacity(0.16), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.35)))
+                }.foregroundStyle(.white).buttonStyle(.plain)
             }.padding(.horizontal, 28).padding(.top, 36).padding(.bottom, 24)
                 .background(LinearGradient(colors: [Color(red: 0.18, green: 0.44, blue: 0.60), Color(red: 0.12, green: 0.28, blue: 0.42)], startPoint: .topLeading, endPoint: .bottomTrailing))
             Picker("", selection: $state.tab) {
@@ -103,6 +112,26 @@ struct AboutView: View {
             sectionTitle("它是什么")
             Text("随心修图是一款以 AI 对话为核心的 Mac 照片编辑工具。用自己的话告诉 AI 想怎么修，它会看照片、理解要求并调整光影与色彩；调整后还可以自己继续拉滑块，让照片更符合你的想法。")
                 .font(.body).lineSpacing(6).fixedSize(horizontal: false, vertical: true)
+            card {
+                HStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color(white: 0.13))
+                        .frame(width: 46, height: 46)
+                        .overlay(Image(systemName: "chevron.left.forwardslash.chevron.right")
+                            .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white.opacity(0.9)))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("代码完全开源").font(.body.weight(.semibold))
+                        Text("github.com/\(repo)").font(.callout).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    Spacer()
+                    Link(destination: repoURL) {
+                        Label("在 GitHub 查看", systemImage: "arrow.up.right")
+                            .font(.callout.weight(.semibold)).padding(.horizontal, 16).padding(.vertical, 9)
+                            .background(Color(red: 0.15, green: 0.50, blue: 0.52), in: Capsule())
+                            .foregroundStyle(.white)
+                    }.buttonStyle(.plain)
+                }
+            }
             card {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("选择适合你的 AI 服务").font(.body.weight(.semibold))
@@ -149,7 +178,12 @@ struct AboutView: View {
                 Button(loadingHistory ? "正在获取…" : "刷新") { Task { await loadHistory() } }.disabled(loadingHistory)
                 Link(destination: releasesPage) { Label("发布页", systemImage: "arrow.up.right.square") }
             }
-            if let historyMessage { Text(historyMessage).font(.callout).foregroundStyle(.secondary) }
+            if let historyMessage {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(historyMessage).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button("重试") { Task { await loadHistory() } }.buttonStyle(.link).font(.callout)
+                }
+            }
             ForEach(mergedReleases, id: \.version) { release in
                 card {
                     VStack(alignment: .leading, spacing: 10) {
@@ -231,43 +265,66 @@ struct AboutView: View {
     }
     @MainActor private func loadHistory() async {
         loadingHistory = true; defer { loadingHistory = false }
+        // 先把上次拿到的记录显示出来，网络慢或失败时也不至于空白。
+        if history.isEmpty, let cached = UserDefaults.standard.data(forKey: Keys.releases),
+           let rows = Self.parseReleases(cached), !rows.isEmpty { history = rows }
         guard let url = URL(string: "https://api.github.com/repos/\(repo)/releases?per_page=100") else { return }
         do {
-            var request = URLRequest(url: url, timeoutInterval: 15)
+            var request = URLRequest(url: url, timeoutInterval: 20)
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200,
-                  let releases = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-                historyMessage = "没连上 GitHub，下面是应用自带的更新记录。"; return
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200, let rows = Self.parseReleases(data) else {
+                let why = (code == 403 || code == 429) ? "GitHub 限制了查询频率，过一会儿再试" : "GitHub 返回 \(code)"
+                historyMessage = "没能刷新线上记录：\(why)。下面显示的是已缓存的记录和应用自带的更新记录。"
+                return
             }
-            history = releases.filter { !($0["draft"] as? Bool ?? true) && !($0["prerelease"] as? Bool ?? true) }
-                .compactMap { release in
-                    guard let tag = release["tag_name"] as? String else { return nil }
-                    let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
-                    let page = (release["html_url"] as? String).flatMap(URL.init(string:))
-                    let date = (release["published_at"] as? String).map { String($0.prefix(10)) }
-                    let body = release["body"] as? String ?? ""
-                    // 优先取「这一版的变化 / 更新内容」这一节的条目，没有就退回全文里的条目。
-                    var section: [String] = [], all: [String] = [], inChangelog = false
-                    for line in body.components(separatedBy: .newlines) {
-                        if line.hasPrefix("#") {
-                            inChangelog = ["更新内容", "变化", "更新"].contains { line.contains($0) }
-                            continue
-                        }
-                        guard line.hasPrefix("- ") else { continue }
-                        let item = String(line.dropFirst(2)).replacingOccurrences(of: "**", with: "")
-                        all.append(item)
-                        if inChangelog { section.append(item) }
+            UserDefaults.standard.set(data, forKey: Keys.releases)
+            history = rows
+            historyMessage = rows.isEmpty ? "线上还没有发布记录，下面是应用自带的更新记录。" : nil
+        } catch {
+            let reason: String
+            switch (error as? URLError)?.code {
+            case .timedOut: reason = "连接超时"
+            case .notConnectedToInternet: reason = "本机没有网络"
+            case .cannotFindHost, .cannotConnectToHost, .networkConnectionLost: reason = "连不上 api.github.com，可能需要代理"
+            default: reason = error.localizedDescription
+            }
+            historyMessage = "没能刷新线上记录（\(reason)）。下面显示的是已缓存的记录和应用自带的更新记录。"
+        }
+    }
+
+    private enum Keys { static let releases = "aboutReleases" }
+
+    /// 解析 GitHub Releases 的返回；失败返回 nil。
+    private static func parseReleases(_ data: Data) -> [ReleasedVersion]? {
+        guard let releases = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
+        return releases.filter { !($0["draft"] as? Bool ?? true) && !($0["prerelease"] as? Bool ?? true) }
+            .compactMap { release in
+                guard let tag = release["tag_name"] as? String else { return nil }
+                let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+                let page = (release["html_url"] as? String).flatMap(URL.init(string:))
+                let date = (release["published_at"] as? String).map { String($0.prefix(10)) }
+                let body = release["body"] as? String ?? ""
+                // 优先取「这一版的变化 / 更新内容」这一节的条目，没有就退回全文里的条目。
+                var section: [String] = [], all: [String] = [], inChangelog = false
+                for line in body.components(separatedBy: .newlines) {
+                    if line.hasPrefix("#") {
+                        inChangelog = ["更新内容", "变化", "更新"].contains { line.contains($0) }
+                        continue
                     }
-                    var notes = section.isEmpty ? all : section
-                    if notes.isEmpty {
-                        notes = body.components(separatedBy: .newlines)
-                            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.hasPrefix("#") }
-                            .prefix(4).map { $0.replacingOccurrences(of: "**", with: "") }
-                    }
-                    return ReleasedVersion(version: version, date: date, notes: notes, page: page)
+                    guard line.hasPrefix("- ") else { continue }
+                    let item = String(line.dropFirst(2)).replacingOccurrences(of: "**", with: "")
+                    all.append(item)
+                    if inChangelog { section.append(item) }
                 }
-            historyMessage = history.isEmpty ? "线上还没有取到发布记录，下面是应用自带的更新记录。" : nil
-        } catch { historyMessage = "没能连上 GitHub，下面是应用自带的更新记录。" }
+                var notes = section.isEmpty ? all : section
+                if notes.isEmpty {
+                    notes = body.components(separatedBy: .newlines)
+                        .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.hasPrefix("#") }
+                        .prefix(4).map { $0.replacingOccurrences(of: "**", with: "") }
+                }
+                return ReleasedVersion(version: version, date: date, notes: notes, page: page)
+            }
     }
 }

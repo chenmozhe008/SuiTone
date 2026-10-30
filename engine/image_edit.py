@@ -56,8 +56,12 @@ def gemini_edit(key, model, image, prompt, *, opener=_open):
 # mock 只在测试启动参数下由 App 提供，用来不花钱地跑通流程；结果是镜像翻转并压一条色带，一眼能看出是模拟图。
 # 模型名单按官方文档（2026-10-30 核对）：火山方舟模型列表、Google Gemini API 模型页；第一个是默认（最新）。
 IMAGE_SERVICES = {
+    # 模型 ID 按火山方舟「图片生成」模型列表核对（ark.volcengine.com/docs/82379/1330310，2026-10-30）：
+    # 5.0 pro / flash 不支持组图（传 sequential_image_generation 会 400），5.0 lite、4.5、4.0 支持组图。
     'jimeng': dict(title='即梦（火山方舟）', default_model='doubao-seedream-5-0-pro-260628', paid=True,
-                   models=['doubao-seedream-5-0-pro-260628', 'doubao-seedream-5-0-flash-260915', 'doubao-seedream-4-0-250828']),
+                   models=['doubao-seedream-5-0-pro-260628', 'doubao-seedream-5-0-flash-260915',
+                           'doubao-seedream-5-0-260128', 'doubao-seedream-4-5-251128',
+                           'doubao-seedream-4-0-250828']),
     'gemini': dict(title='Gemini', default_model='gemini-nano-banana-2.1', paid=True,
                    models=['gemini-nano-banana-2.1']),
     'mock': dict(title='模拟出图（测试用）', default_model='mock', paid=False, models=['mock']),
