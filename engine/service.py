@@ -182,6 +182,20 @@ def clean_temporary(tmp, cache_limit=500*1024*1024):
         except OSError:continue
 
 
+def clean_region(inside):
+    """自动识别区域描边前整理：合上细缝、去掉零碎小块、填平区域里的小洞（如水面波光），轮廓才不会满是碎圈。"""
+    import cv2
+    k=max(3,inside.shape[1]//150)|1
+    inside=cv2.morphologyEx(inside,cv2.MORPH_CLOSE,np.ones((k,k),np.uint8))
+    smallest=inside.size*.002
+    for value in (1,0):  # 先去掉孤立的小块，再填平小洞
+        target=(inside==value).astype(np.uint8)
+        count,labels,stats,_=cv2.connectedComponentsWithStats(target,8)
+        for i in range(1,count):
+            if stats[i,cv2.CC_STAT_AREA]<smallest:inside[labels==i]=1-value
+    return inside
+
+
 def replay_operations(asset):
     """按原尺寸重放这张照片的编辑操作：移除杂物在原图上重做；换成生成图时直接改用存下的生成图（RAW 浮点像素随之丢弃）。"""
     image,pixels=load_pixels(asset.path)
@@ -478,7 +492,7 @@ class Engine:
             mask=local_mask(context,name,0,context.image.width,p['manual_masks'])
         elif name in ('water','sky','land','person'):mask=context.region(name)
         else:raise ValueError('未知区域')
-        inside=(np.asarray(mask)>.5).astype(np.uint8)
+        inside=clean_region((np.asarray(mask)>.5).astype(np.uint8)) if not name.startswith('selection-') else (np.asarray(mask)>.5).astype(np.uint8)
         if not inside.any():raise ValueError('这个区域在照片里找不到')
         width=max(2,context.image.width//500)
         kernel=np.ones((width*2+1,width*2+1),np.uint8)

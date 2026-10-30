@@ -768,6 +768,15 @@ class EngineTests(unittest.TestCase):
         bad=root/'bad.png';bad.write_bytes(b'not an image')
         with self.assertRaises(ValueError):engine.adopt_generated(asset.id,str(bad))
 
+    def test_clean_region_fills_specks_and_drops_crumbs(self):
+        from service import clean_region
+        inside=np.zeros((200,300),np.uint8);inside[100:]=1
+        inside[150,100]=0;inside[160:163,200:203]=0      # 水面里的亮点小洞
+        inside[20:23,50:53]=1                             # 天上的碎点
+        out=clean_region(inside.copy())
+        self.assertEqual(out[150,100],1);self.assertEqual(out[161,201],1);self.assertEqual(out[21,51],0)
+        self.assertEqual(out[180,150],1);self.assertEqual(out[50,150],0)
+
     def test_region_outline_draws_only_the_edge(self):
         from service import Engine
         import tempfile
