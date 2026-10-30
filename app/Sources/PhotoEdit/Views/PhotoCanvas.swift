@@ -191,7 +191,8 @@ struct PhotoCanvas: View {
                     }
                 }
                 .overlay(alignment:.bottomLeading) {
-                    if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}
+                    if store.inspectorTab == "crop" { canvasLabel(cropHint).padding(10) }
+                    else if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}
                     else if store.showOriginal {canvasLabel("原图").padding(10)}
                     else if store.repairDraft != nil {canvasLabel(store.repairShowingBefore ? "修复前" : "修复预览").padding(10)}
                     else if store.inspectorTab == "aiedit" && store.selectionOverlay != nil && !store.selectionParts.isEmpty {
@@ -277,6 +278,14 @@ struct PhotoCanvas: View {
         store.inspectorTab != "crop"
             && store.splitCompare && !store.showOriginal && !store.repairEnabled && store.repairDraft == nil && store.overlay.isEmpty
             && !(store.inspectorTab == "aiedit" && !store.selectionParts.isEmpty)
+    }
+
+    /// 裁切页左下角的一行提示：先把「框怎么动」讲清楚，第一次进来的人不用猜。
+    private var cropHint: String {
+        let box = store.cropDraft ?? [0, 0, 1, 1]
+        let full = box[0] < 0.002 && box[1] < 0.002 && box[2] > 0.998 && box[3] > 0.998
+        return full ? "在照片上拖一下，框出要保留的范围"
+                    : "框内拖＝移动 · 四角四边＝改大小 · 框外拖＝重新框"
     }
 
     private func canvasLabel(_ text:String, color: Color = .white)->some View {

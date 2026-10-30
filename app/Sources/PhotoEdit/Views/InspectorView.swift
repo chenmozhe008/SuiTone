@@ -12,8 +12,14 @@ struct InspectorView: View {
                 HStack {
                     Text(Self.titles[store.inspectorTab] ?? "").font(.headline)
                     Spacer()
-                    Button("完成") { store.inspectorTab = store.lastMainTab }
-                        .buttonStyle(.borderedProminent).disabled(store.busy)
+                    // 裁切页不设「完成」：裁完还得接着转、拉直，跳走反而要再点回来。
+                    // 想换页直接点上面的页签（离开时自动应用），这里只提示一下回车。
+                    if store.inspectorTab == "crop" {
+                        Text("回车应用，换页点上方页签").font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Button("完成") { store.inspectorTab = store.lastMainTab }
+                            .buttonStyle(.borderedProminent).disabled(store.busy)
+                    }
                 }.padding(.horizontal, 16).frame(height: 56)
             } else {
                 HStack(spacing: 8) {

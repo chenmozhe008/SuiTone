@@ -82,3 +82,40 @@ import Testing
         #expect(abs(CropGeometry.snappedAngle(3.44) - 3.4) < 0.0001)
     }
 }
+
+/// 点「确定」之后的行为：留在裁切页，且不重复记历史。
+@MainActor @Suite struct CropCommitTests {
+    @MainActor private func fixture() -> WorkspaceStore {
+        let store = WorkspaceStore()
+        let imported = ImportedPhoto(id: "photo", path: "/fixture.jpg", name: "fixture.jpg", thumbnail: "/thumb.png",
+                                     original: "/source.png", width: 1200, height: 800, similarTo: nil)
+        store.photos = [PhotoRecord(imported: imported, assetID: "original")]
+        store.currentID = "photo"
+        store.inspectorTab = "crop"
+        return store
+    }
+
+    @Test @MainActor func confirmingKeepsTheCropPageAndRecordsOnce() throws {
+        let store = fixture()
+        store.cropDraft = [0.2, 0.15, 0.5, 0.6]
+        store.finishCrop()
+        // 裁完还留在裁切页：想换页自己点上面的页签。
+        #expect(store.inspectorTab == "crop")
+        let written = try #require(store.current?.parameters.crop)
+        #expect(zip(written, [0.2, 0.15, 0.5, 0.6]).allSatisfy { abs($0 - $1) < 0.0001 })
+        let count = store.undoChanges.count
+        #expect(count == 1)
+        // 再点一次「确定」不该把历史堆满。
+        store.finishCrop()
+        #expect(store.undoChanges.count == count)
+    }
+
+    @Test @MainActor func reenteringCropShowsTheCommittedBox() {
+        let store = fixture()
+        store.cropDraft = [0.1, 0.2, 0.3, 0.4]
+        store.commitCrop()
+        store.cropDraft = nil
+        store.beginCrop()
+        #expect(store.cropDraft == [0.1, 0.2, 0.3, 0.4])
+    }
+}

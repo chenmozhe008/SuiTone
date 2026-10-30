@@ -297,6 +297,24 @@ final class WorkspaceStore {
                 inspectorTab = "crop"
                 cropDraft = box
             }
+            // 验收用：往窗口里注入一次真实拖动，验证裁切框真的能拖。`-debugDrag "0.28,0.30,0.55,0.70"`
+            if let spec = options["debugDrag"] as? String {
+                try? await Task.sleep(for: .milliseconds(1200))
+                await DebugDrag.run(spec, box: { [weak self] in self?.cropDraft },
+                                    tab: { [weak self] in
+                                        guard let self else { return "?" }
+                                        return "\(inspectorTab) 已写入=\(String(describing: current?.parameters.crop))"
+                                    })
+            }
+            // 验收用：跑一次「确定」，看会不会跳页。`-debugAction finishCrop`
+            if options["debugAction"] as? String == "finishCrop" {
+                try? await Task.sleep(for: .milliseconds(600))
+                let before = inspectorTab
+                finishCrop()
+                print("debugAction 点确定前=\(before) 后=\(inspectorTab) 已写入=\(String(describing: current?.parameters.crop)) "
+                      + "历史条数=\(undoChanges.count)")
+                fflush(stdout)
+            }
             if let region = options["localRegion"] as? String {
                 loadAnalysis(); try? await Task.sleep(for: .seconds(2)); selectLocalRegion(region)
             }

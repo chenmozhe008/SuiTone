@@ -73,16 +73,21 @@ extension WorkspaceStore {
         finishEditing()
     }
 
-    /// 框好了就写进参数，画布随即显示裁切后的画面。
-    /// 「确定」：把框定的范围写进照片，然后回到刚才那一页。
+    /// 「确定」：把框定的范围写进照片，但仍然留在裁切页——
+    /// 裁完往往还要接着拉直、转一下，跳走反而要再点回来；想换页自己去点上面的页签。
     func finishCrop() {
         commitCrop()
-        inspectorTab = lastMainTab
+        status = "裁切已应用，还能接着转、拉直，或者点上面的页签换一页"
     }
 
+    /// 把框写进参数，画布随即按新构图显示。
     func commitCrop() {
-        guard let draft = cropDraft else { return }
+        guard let photo = current, let draft = cropDraft else { return }
         let full = draft[0] < 0.001 && draft[1] < 0.001 && draft[2] > 0.999 && draft[3] > 0.999
+        // 框没动过就别再记一条历史：连点「确定」不该把历史堆满。
+        let existing = photo.parameters.crop
+        if full && existing == nil { return }
+        if let existing, !full, zip(draft, existing).allSatisfy({ abs($0 - $1) < 0.0005 }) { return }
         change(full ? "恢复整幅画面" : "裁切画面") { parameters in
             parameters.crop = full ? nil : draft
         }
