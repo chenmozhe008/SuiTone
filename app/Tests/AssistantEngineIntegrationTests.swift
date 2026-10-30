@@ -298,4 +298,47 @@ import Testing
         store.undo(); store.previewTask?.cancel()
         #expect(store.photos[0].assetID == image.id && store.photos[0].operations.isEmpty)
     }
+
+    @Test @MainActor func testAIEditPanelOnlySelectionBecomesVersion() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let sample = root.appendingPathComponent("output/stage2-20261028/city-public.jpg")
+        guard FileManager.default.fileExists(atPath: sample.path) else { /* 跳过：缺少公开城市样片 */ return }
+        let fixture = root.appendingPathComponent("tmp/aiedit-fixture-\(UUID().uuidString)")
+        let engineDir = fixture.appendingPathComponent("engine")
+        try FileManager.default.createDirectory(at: engineDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let encoder = JSONEncoder(); encoder.outputFormatting = .withoutEscapingSlashes
+        let pythonPath = String(data: try encoder.encode(root.appendingPathComponent("engine").path), encoding: .utf8)!
+        let generatedPath = String(data: try encoder.encode(fixture.appendingPathComponent("generated").path), encoding: .utf8)!
+        let script = """
+        import os, sys
+        from pathlib import Path
+        sys.path.insert(0, \(pythonPath))
+        import service
+        original=service.Engine.__init__
+        def init(self, root):
+            original(self, root); self.generated_dir=Path(\(generatedPath))
+        service.Engine.__init__=init
+        service.serve(sys.argv[sys.argv.index('--root')+1],os.environ['PHOTO_EDIT_SESSION_TOKEN'])
+        """
+        try script.write(to: engineDir.appendingPathComponent("service.py"), atomically: true, encoding: .utf8)
+        let store = WorkspaceStore(engine: EngineClient(root: fixture))
+        let imported: ImportResponse = try await store.engine.request("import", body: ["paths": [sample.path]])
+        let image = try #require(imported.photos.first)
+        var photo = PhotoRecord(imported: image, assetID: image.id); photo.ready = true
+        store.photos = [photo]; store.currentID = photo.id; store.selectedIDs = [photo.id]
+        store.imageServices = [ImageService(id: "mock", title: "模拟出图（测试用）", defaultModel: "mock", paid: false)]
+        store.imageService = "mock"
+        store.inspectorTab = "aiedit"
+        store.selectionParts = [SelectionPart(box: [0.5, 0, 1, 1])]; store.refreshSelection()
+        store.startAIEdit(prompt: "把右半边换掉", onlySelection: true)
+        await store.generationTask?.value
+        let card = try #require(store.chatMessages.last?.generation)
+        #expect(card.state == "done", Comment(rawValue: card.error ?? ""))
+        #expect(card.selection?.parts?.count == 1)
+        #expect(store.photos[0].operations.last?.generated != nil)
+        #expect(store.photoVersions.count == 2)
+        store.undo(); store.previewTask?.cancel()
+        #expect(store.photos[0].operations.isEmpty && store.photoVersions.count == 1)
+    }
 }

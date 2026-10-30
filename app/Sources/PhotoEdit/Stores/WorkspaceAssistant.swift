@@ -489,6 +489,7 @@ extension WorkspaceStore {
                     "quality": try EngineClient.object(photo.quality), "service": service.id, "model": model,
                     "prompt": card.prompt, "image_consent": true]
                 if !key.isEmpty { body["api_key"] = key }
+                if let selection = card.selection { body["selection"] = try EngineClient.object(selection) }
                 let started: Started = try await engine.request("image-edit-start", body: body)
                 updateGeneration(messageID) { $0.jobID = started.id }
                 var job = Job(state: "running")
@@ -543,5 +544,28 @@ extension WorkspaceStore {
         let result: Result = try await engine.request("assistant-vision-check", body: body)
         visionChecks[provider + "|" + model] = result.vision
         return (result.vision, result.detail)
+    }
+}
+
+extension WorkspaceStore {
+    /// AI 改图面板点「生成」：在对话里记一条（可在对话里看到和撤销），用同一套确认卡流程立即生成。
+    func startAIEdit(prompt: String, onlySelection: Bool) {
+        guard let photo = current, !controlsBlocked, generationTask == nil else { return }
+        let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let selection = onlySelection && !selectionParts.isEmpty ? removalOperation(selectionBox ?? [0, 0, 1, 1]) : nil
+        chatMessages.append(ChatMessage(role: "user", text: "AI 改图：" + text))
+        let message = ChatMessage(role: "assistant", text: selection == nil ? "按你的要求生成整张新图。" : "只改选区里的部分，其余保持原样。",
+                                  generation: GenerationCard(photoID: photo.id, prompt: text, selection: selection))
+        chatMessages.append(message)
+        aiEditMessageID = message.id
+        startGeneration(message.id)
+    }
+
+    /// 这张照片的版本：原图和每次采用的生成图（按顺序）。
+    var photoVersions: [(title: String, path: String)] {
+        guard let photo = current else { return [] }
+        let generated = photo.operations.compactMap(\.generated)
+        return [("原图", photo.imported.thumbnail)] + generated.enumerated().map { ("版本 \($0.offset + 1)", $0.element) }
     }
 }

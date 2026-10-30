@@ -728,6 +728,26 @@ class EngineTests(unittest.TestCase):
         adopted=engine.adopt_generated(key,status['paths'][0])
         self.assertTrue(Path(adopted['stored']).is_file())
 
+    def test_generation_with_selection_only_changes_selected_area_at_full_size(self):
+        from service import Engine
+        from time import sleep
+        import tempfile
+        root=Path(tempfile.mkdtemp());engine=Engine(root);engine.generated_dir=root/'generated'
+        source=root/'photo.jpg';Image.new('RGB',(1600,1000),(30,60,200)).save(source,quality=95)
+        key=engine.import_one(source).id
+        job=engine.image_edit.start(dict(id=key,params={'exposure':2},service='mock',prompt='把右边换掉',image_consent=True,
+                                         selection=dict(box=[0,0,1,1],parts=[dict(box=[.6,0,1,1])])))['id']
+        for _ in range(200):
+            status=engine.image_edit.status(job)
+            if status['state']!='running':break
+            sleep(.05)
+        self.assertEqual(status['state'],'done',status)
+        out=np.asarray(Image.open(status['paths'][0]),int)
+        self.assertEqual(out.shape[:2],(1000,1600))                     # 原尺寸，不是 2048 缩图
+        self.assertLess(abs(out[500,200]-[30,60,200]).max(),6)          # 选区外保持原样，且没有套用曝光（发的是原片）
+        self.assertGreater(out[-5,1500,0],150)                          # 选区内换成模拟图（底部色带）
+        with self.assertRaises(ValueError):engine.image_edit.start(dict(id=key,service='mock',prompt='x',image_consent=True,selection=dict(glow=1)))
+
     def test_generated_version_persists_and_replays(self):
         from service import Engine,replay_operations
         import tempfile

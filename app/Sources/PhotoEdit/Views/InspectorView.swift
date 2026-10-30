@@ -27,6 +27,7 @@ struct InspectorView: View {
             case "quality": QualityPanel(store: store)
             case "cutout": CutoutPanel(store: store)
             case "selection": SelectionPanel(store: store)
+            case "aiedit": AIEditPanel(store: store)
             case "adjust": AdjustPanel(store: store)
             default: AssistantPanel(store: store)
             }

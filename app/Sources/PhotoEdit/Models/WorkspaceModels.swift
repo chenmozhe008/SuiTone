@@ -108,6 +108,8 @@ struct GenerationCard {
     var error: String? = nil
     var preview: String? = nil
     var jobID: String? = nil
+    /// 只改选区时的选区（原尺寸上只替换这一块）；nil 为整张
+    var selection: RemovalOperation? = nil
 }
 
 struct GenerationProposal: Decodable { var prompt: String }

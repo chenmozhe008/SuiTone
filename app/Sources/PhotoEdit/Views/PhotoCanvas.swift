@@ -120,7 +120,8 @@ struct PhotoCanvas: View {
                     if store.usesSelectionParts && store.repairDraft == nil { SelectionToolbar(store:store).padding(.top,6) }
                 }
                 .overlay(alignment:.bottomLeading) {
-                    if store.showOriginal {canvasLabel("原图").padding(10)}
+                    if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}
+                    else if store.showOriginal {canvasLabel("原图").padding(10)}
                     else if store.repairDraft != nil {canvasLabel(store.repairShowingBefore ? "修复前" : "修复预览").padding(10)}
                     else if !store.overlay.isEmpty && !splitActive {
                         canvasLabel(store.overlay.hasPrefix("selection-") ? "选区" : RegionNames.title(store.overlay)+"选区").padding(10)
@@ -175,6 +176,7 @@ struct PhotoCanvas: View {
     }
 
     private func displayPath(_ photo:PhotoRecord)->String {
+        if store.inspectorTab == "aiedit", let version = store.versionPreview {return version}
         if store.showOriginal {return photo.imported.original}
         if let draft = store.repairDraft, draft.photoID == photo.id {
             return store.repairShowingBefore ? draft.beforePath : draft.previewPath

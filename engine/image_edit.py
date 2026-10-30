@@ -80,6 +80,20 @@ def call_service(service, key, model, image_bytes, prompt, opener=_open):
     return jimeng_edit(key, model or IMAGE_SERVICES['jimeng']['default_model'], image_bytes, prompt, opener=opener)
 
 
+def composite_selection(original, generated, selection):
+    """只改选区：在原图原尺寸上，把选区里的部分换成生成内容，边缘羽化过渡；选区外的像素保持原样。"""
+    import numpy as np
+    from PIL import ImageFilter
+    from inpaint import shape_mask
+    generated = generated.resize(original.size, Image.Resampling.LANCZOS)
+    mask = shape_mask(original, selection.get('strokes'), selection.get('radius'), selection.get('polygon'),
+                      selection.get('point'), selection.get('parts'), box=None if any(selection.get(k) is not None for k in
+                      ('strokes', 'polygon', 'point', 'parts')) else selection.get('box'), allow_large=True)
+    if mask.max() <= 0: raise ValueError('选区是空的，请重新画选区')
+    soft = Image.fromarray(np.uint8(np.clip(mask, 0, 1) * 255)).filter(ImageFilter.GaussianBlur(max(2, original.width / 400)))
+    return Image.composite(generated, original, soft)
+
+
 class ImageEditBridge:
     """后台出图任务：渲染当前成品（长边 2048）→ 发给所选服务 → 结果存会话目录，交给 App 采用为新版本。"""
 
@@ -98,6 +112,14 @@ class ImageEditBridge:
         self.engine.asset(data['id']); parameters(data.get('params', {})); quality_settings(data.get('quality'))
         prompt = data.get('prompt')
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
+        selection = data.get('selection')
+        if selection is not None:
+            from service import shape_input, parts_input, repair_input
+            if not isinstance(selection, dict) or set(selection) - {'box', 'strokes', 'radius', 'polygon', 'point', 'parts'}:
+                raise ValueError('选区格式无效')
+            if selection.get('box') is not None: repair_input(selection['box'])
+            shape_input(selection.get('strokes'), selection.get('radius'), selection.get('polygon'), selection.get('point'))
+            parts_input(selection.get('parts'))
         with self.lock:
             if any(j['state'] == 'running' for j in self.jobs.values()): raise ValueError('上一张还在生成，请稍候或先取消')
             key = uuid4().hex; self.jobs[key] = dict(state='running'); self.events[key] = Event()
@@ -114,21 +136,24 @@ class ImageEditBridge:
 
     def _run(self, key, data):
         from uuid import uuid4
+        from service import replay_operations
         event = self.events[key]
         try:
+            # 发不带调色的原片（保留移除杂物等修改）：生成图作为新版本后，用户的调色照常套在上面，不会叠两次。
             with self.engine.lock:
-                rendered = self.engine.render_full_png(data['id'], data.get('params', {}), data.get('quality'))
-            with Image.open(rendered['path']) as full:
-                image = full.convert('RGB'); image.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
-            Path(rendered['path']).unlink(missing_ok=True)
-            buffer = BytesIO(); image.save(buffer, 'JPEG', quality=92)
+                full, _ = replay_operations(self.engine.asset(data['id']))
+            full = full.convert('RGB')
+            sent = full.copy(); sent.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+            buffer = BytesIO(); sent.save(buffer, 'JPEG', quality=92)
             if event.is_set(): raise InterruptedError()
             results = call_service(data['service'], data.get('api_key'), data.get('model'), buffer.getvalue(), data['prompt'])
             if event.is_set(): raise InterruptedError()
             paths = []
             for item in results[:4]:
+                with Image.open(BytesIO(item['data'])) as out: generated = out.convert('RGB')
+                if data.get('selection'): generated = composite_selection(full, generated, data['selection'])
                 path = self.engine.folder / (uuid4().hex + '-generated.png')
-                with Image.open(BytesIO(item['data'])) as out: out.convert('RGB').save(path, 'PNG')
+                generated.save(path, 'PNG')
                 paths.append(str(path))
             with self.lock: self.jobs[key] = dict(state='done', paths=paths)
         except InterruptedError:

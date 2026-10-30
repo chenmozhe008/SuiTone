@@ -55,6 +55,10 @@ final class WorkspaceStore {
         didSet { UserDefaults.standard.set(visionChecks, forKey: "visionChecks") }
     }
     var generationTask: Task<Void, Never>?
+    /// AI 改图面板最近一次生成对应的对话消息（面板显示它的进度和结果）
+    var aiEditMessageID: UUID?
+    /// 在画布上临时查看某个版本（不改照片，点「回到当前」或离开面板即恢复）
+    var versionPreview: String?
     /// 出图服务是否已配好（密钥只在真正生成时才读钥匙串，这里看保存标记，避免弹授权框）
     var imageServiceReady: Bool {
         guard let service = imageServices.first(where: { $0.id == imageService }) else { return false }
