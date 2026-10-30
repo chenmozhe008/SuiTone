@@ -195,7 +195,7 @@ private struct WelcomeView: View {
             Button("导入照片或文件夹…") { store.chooseImport() }
                 .buttonStyle(.borderedProminent).controlSize(.large).disabled(store.importing)
             HStack(alignment: .top, spacing: 40) {
-                feature("sparkles", "自动调整", "逐张优化光影")
+                feature("slider.horizontal.3", "手动调整", "随心调整光影")
                 feature("square.stack", "风格与参考", "统一整组色彩")
                 feature("text.bubble", "对话调整", "描述需要的变化")
             }.padding(.top, 16)

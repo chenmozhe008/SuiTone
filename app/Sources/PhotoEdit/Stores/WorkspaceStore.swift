@@ -29,8 +29,8 @@ final class WorkspaceStore {
     var progressDone = 0
     var progressTotal = 0
     /// 右栏：chat / adjust 两页常驻；repair / quality 由画布工具栏进入，完成后回到 lastMainTab。
-    var inspectorTab = "chat"
-    var lastMainTab = "chat"
+    var inspectorTab = "adjust"
+    var lastMainTab = "adjust"
     /// 调整页「局部」里选中的区域（water / sky / land / person）。
     var localRegion: String?
     var myStyles: [MyStyle] = {

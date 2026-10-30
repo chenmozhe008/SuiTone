@@ -16,10 +16,10 @@ struct InspectorView: View {
                         .buttonStyle(.borderedProminent).disabled(store.busy)
                 }.padding(.horizontal, 16).frame(height: 56)
             } else {
-                Picker("面板", selection: $store.inspectorTab) {
-                    Text("调整").tag("adjust")
-                    Text("对话").tag("chat")
-                }.pickerStyle(.segmented).labelsHidden().frame(width: 220).frame(maxWidth: .infinity).frame(height: 56)
+                HStack(spacing: 8) {
+                    mainTab("调整", icon: "slider.horizontal.3", id: "adjust")
+                    mainTab("对话", icon: "bubble.left.and.bubble.right", id: "chat")
+                }.padding(.horizontal, 16).frame(height: 64)
             }
             Divider()
             switch store.inspectorTab {
@@ -42,6 +42,17 @@ struct InspectorView: View {
                 if Self.titles[tab] != nil { store.grid = false }
                 if tab == "adjust" { store.loadStyleTiles(); if store.analysis == nil { store.loadAnalysis() } }
             }
+    }
+
+    private func mainTab(_ title: String, icon: String, id: String) -> some View {
+        let selected = store.inspectorTab == id
+        return Button { store.inspectorTab = id } label: {
+            Label(title, systemImage: icon).font(.body.weight(.semibold))
+                .frame(maxWidth: .infinity).frame(height: 42)
+                .foregroundStyle(selected ? Color.white : Color(white: 0.82))
+                .background(selected ? Color(red: 0.18, green: 0.42, blue: 0.57) : Color(white: 0.24), in: RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(selected ? Color.cyan.opacity(0.6) : Color.white.opacity(0.10)))
+        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
