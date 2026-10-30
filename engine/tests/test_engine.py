@@ -664,6 +664,41 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(probabilities.shape,(2,2,2));self.assertEqual(labels[0],'sky')
             with np.load(cache/(digest+'.npz')) as saved:self.assertEqual(saved['p'].shape,(2,2,2))
 
+    def test_generation_proposal_is_validated_and_exclusive(self):
+        from assistant import validate_plan
+        from smart import neutral
+        context=self.context(Image.new('RGB',(64,64),(120,135,145)))
+        engine=SimpleNamespace(analysis=lambda key:(context,True))
+        targets=[dict(id='one',params=neutral())]
+        base=dict(reply='换背景需要生成新图',selection='none',actions=[],variants=[])
+        result=validate_plan(dict(base,generate=dict(needed=True,prompt='把背景换成雪山，人物不变')),targets,engine)
+        self.assertEqual(result['generation']['prompt'],'把背景换成雪山，人物不变');self.assertEqual(result['changes'],[])
+        self.assertIsNone(validate_plan(dict(base,generate=dict(needed=False,prompt='')),targets,engine)['generation'])
+        with self.assertRaises(ValueError):validate_plan(dict(base,generate=dict(needed=True,prompt='  ')),targets,engine)
+        action=dict(id='one',preset='keep',adjustments=[dict(parameter='exposure',mode='add',value=.1)],operations=[])
+        with self.assertRaises(ValueError):validate_plan(dict(base,actions=[action],generate=dict(needed=True,prompt='加只猫')),targets,engine)
+
+    def test_image_edit_job_renders_sends_and_returns_result(self):
+        from service import Engine
+        from time import sleep
+        import tempfile
+        root=Path(tempfile.mkdtemp());engine=Engine(root);engine.generated_dir=root/'generated'
+        source=root/'photo.jpg';Image.new('RGB',(320,200),(30,60,200)).save(source)
+        key=engine.import_one(source).id
+        base=dict(id=key,params={},service='mock',prompt='换背景',image_consent=True)
+        with self.assertRaises(ValueError):engine.image_edit.start(dict(base,image_consent=False))
+        with self.assertRaises(ValueError):engine.image_edit.start(dict(base,service='jimeng'))  # 没密钥
+        job=engine.image_edit.start(base)['id']
+        for _ in range(100):
+            status=engine.image_edit.status(job)
+            if status['state']!='running':break
+            sleep(.05)
+        self.assertEqual(status['state'],'done',status)
+        result=Image.open(status['paths'][0])
+        self.assertEqual(result.size,(320,200));self.assertGreater(np.asarray(result)[-2,10,0],150)  # 模拟图底部色带
+        adopted=engine.adopt_generated(key,status['paths'][0])
+        self.assertTrue(Path(adopted['stored']).is_file())
+
     def test_generated_version_persists_and_replays(self):
         from service import Engine,replay_operations
         import tempfile

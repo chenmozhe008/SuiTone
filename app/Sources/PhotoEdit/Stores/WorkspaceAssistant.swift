@@ -118,6 +118,12 @@ extension WorkspaceStore {
                         return
                     }
                     if result.state == "done" {
+                        if let generation = result.generation {
+                            let photo = items.first(where: { $0.id == currentID }) ?? items[0]
+                            chatMessages.append(ChatMessage(role: "assistant", text: result.reply ?? "这个要求需要生成新图。",
+                                generation: GenerationCard(photoID: photo.id, prompt: generation.prompt)))
+                            return
+                        }
                         if let variants = result.variants, !variants.isEmpty {
                             assistantApplying = true; assistantPhase = "正在生成方案预览"
                             await self.presentVariants(variants, reply: result.reply, items: items)
@@ -452,5 +458,78 @@ extension WorkspaceStore {
         if !baseURL.isEmpty { body["base_url"] = baseURL }
         let response: Models = try await engine.request("assistant-models", body: body)
         return response.models
+    }
+}
+
+extension WorkspaceStore {
+    private func updateGeneration(_ messageID: UUID, _ body: (inout GenerationCard) -> Void) {
+        guard let i = chatMessages.firstIndex(where: { $0.id == messageID }), var card = chatMessages[i].generation else { return }
+        body(&card); chatMessages[i].generation = card
+    }
+
+    /// 用户在确认卡上点「生成」：渲染当前成品发给所选出图服务，结果采用为照片的新版本（可撤销）。
+    func startGeneration(_ messageID: UUID) {
+        guard generationTask == nil, !controlsBlocked,
+              let message = chatMessages.first(where: { $0.id == messageID }), let card = message.generation,
+              let photo = photos.first(where: { $0.id == card.photoID }) else { return }
+        guard let service = imageServices.first(where: { $0.id == imageService }), imageServiceReady else {
+            showingImageSettings = true; return
+        }
+        let key = service.id == "mock" ? "" : (Keychain.read("image." + service.id) ?? "")
+        guard service.id == "mock" || !key.isEmpty else { showingImageSettings = true; return }
+        let model = imageModels[service.id] ?? service.defaultModel
+        updateGeneration(messageID) { $0.state = "running"; $0.error = nil }
+        status = "正在用\(service.title)生成…"
+        generationTask = Task {
+            defer { generationTask = nil }
+            do {
+                struct Started: Decodable { var id: String }
+                struct Job: Decodable { var state: String; var paths: [String]?; var error: String? }
+                var body: [String: Any] = ["id": photo.assetID, "params": try EngineClient.object(photo.parameters),
+                    "quality": try EngineClient.object(photo.quality), "service": service.id, "model": model,
+                    "prompt": card.prompt, "image_consent": true]
+                if !key.isEmpty { body["api_key"] = key }
+                let started: Started = try await engine.request("image-edit-start", body: body)
+                updateGeneration(messageID) { $0.jobID = started.id }
+                var job = Job(state: "running")
+                while job.state == "running" {
+                    try await Task.sleep(for: .milliseconds(700))
+                    job = try await engine.get("image-edit-status", query: [URLQueryItem(name: "id", value: started.id)])
+                }
+                if job.state == "cancelled" { updateGeneration(messageID) { $0.state = "cancelled" }; status = "已取消生成"; return }
+                guard job.state == "done", let path = job.paths?.first else { throw EngineError(message: job.error ?? "生成未完成，原照片未改变") }
+                guard let current = photos.first(where: { $0.id == photo.id }) else { return }
+                let before = current.snapshot
+                let prepared = try await prepareOperation(.generated(path: path), on: current)
+                guard commitPrepared(prepared, expected: before) else {
+                    throw EngineError(message: "生成期间照片被修改过，已保留你的修改，这次生成结果没有采用")
+                }
+                let changeID = recordChange("AI 生成新版本", before: [photo.id: before])
+                if let i = chatMessages.firstIndex(where: { $0.id == messageID }) {
+                    chatMessages[i].changeID = changeID; chatMessages[i].affectedPhotos = [photo.imported.name]
+                }
+                updateGeneration(messageID) { $0.state = "done"; $0.preview = prepared.previewPath }
+                status = "已换成生成版本，可撤销"
+            } catch {
+                updateGeneration(messageID) { $0.state = "failed"; $0.error = error.localizedDescription }
+                status = "生成未完成"
+            }
+        }
+    }
+
+    func cancelGeneration(_ messageID: UUID) {
+        guard let jobID = chatMessages.first(where: { $0.id == messageID })?.generation?.jobID else { return }
+        Task { struct Done: Decodable { var cancelled: Bool }; let _: Done? = try? await engine.request("image-edit-cancel", body: ["id": jobID]) }
+    }
+
+    func dismissGeneration(_ messageID: UUID) { updateGeneration(messageID) { $0.state = "dismissed" } }
+
+    func saveImageService(_ id: String, key: String?, model: String) {
+        if let key {
+            Keychain.save(key, for: "image." + id)
+            UserDefaults.standard.set(!key.isEmpty, forKey: "imageKeySaved." + id)
+        }
+        imageModels[id] = model
+        imageService = id
     }
 }

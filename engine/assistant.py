@@ -42,11 +42,17 @@ _VARIANT_ACTION['properties']['title'] = dict(type='string')
 SCHEMA['properties']['variants'] = dict(type='array', items=_VARIANT_ACTION)
 SCHEMA['required'].append('variants')
 
+# 需要生成新像素的要求（换背景、加东西、去掉大物体并补画面等）只提议，不执行；由用户在确认卡上点「生成」。
+SCHEMA['properties']['generate'] = dict(type='object', additionalProperties=False, required=['needed','prompt'],
+    properties=dict(needed=dict(type='boolean'), prompt=dict(type='string')))
+SCHEMA['required'].append('generate')
+
 SYSTEM='''你是随心调色 SuiTone 的修图助手。理解用户任意自然语言，延续对话，给出可执行的本地修图参数或审美建议。
 你拿到的是本地分析摘要和当前参数，没有看到照片本身，不得声称看过细节或把统计推断当成事实。
 只能输出规定的 JSON；不执行工具、命令、不读取文件、不联网。不要编程、修改 App 或其他项目。
 编辑输出可回退的参数方案。当前版本尚不支持裁切或比例导出，也不能覆盖原文件；导出会另存为新文件。
 用户只讨论、询问或要求建议时 actions=[]，variants=[]。
+generate：本地参数和本地修复做不到、必须生成新像素的要求（换背景、添加或替换物体、去掉大面积或复杂主体并补出背后的画面、改变物体形状、扩展画面），generate.needed=true，prompt 写给出图模型的编辑指令：说清要改什么、其余内容（人物长相、构图、光线）保持不变；同时 actions=[]、variants=[]，reply 用一两句说明为什么要生成新图、结果是新图片且需要用户确认后才会发送。调色、局部明暗、风格、去掉小杂物（用户有选区时用 repair）这类本地能做的，一律 generate.needed=false、prompt 为空字符串。
 用户要求展示多种效果、做多个不同版本、或说“都展示出来”指代此前建议时，每个版本放入 variants，不要直接修改照片：每个方案含 id、简短中文 title、preset、adjustments，operations 必须为空，多个方案可以使用同一照片 id；actions=[]。依据对话上下文还原用户指定的每个方向，每个版本独立从当前照片出发，最多 4 个方案（用户要更多时说明一次最多比较 4 个）。单种直接修图使用 actions，variants=[]。其他情况下 variants=[]。
 仅当用户要求修图时填写 actions，且 id 只能来自当前 targets。整批请求要覆盖 targets 各张，考虑每张自身曝光。
 默认温和调整，保留现场光感和肤色。自然不是固定成某种水色；暖调、电影感、复古等根据诉求用通用风格起步再调整。
@@ -71,7 +77,7 @@ repair 和 match 的 value 都为 0。修复只能在目标有用户提供的 re
 参考匹配只有 reference_count 大于 0 时使用。使用参考图前先对比参考图和目标照片的场景、光线方向、时段和主体；差别很大（如夜景配白天、逆光配顺光、室内配风光）时要在 reply 里直说哪里不合适、效果可能生硬，建议换参考或只学部分区域，并且不要执行 match。差别不大时可以执行 match，引擎会按差异自动定强度。没有可用选区或参考图时说明如何操作，不填该操作。
 undo 的 value 为 0，只能在 undo_available 为 true 时单独使用，preset=keep、adjustments=[]，不能和其他操作混用。
 每张照片可先使用 preset 与 adjustments，再依序执行 operations；无需额外操作时 operations=[]。
-修复工具支持画笔、套索、点选物体和方框；点选无法用于大片背景。没有选区时可建议用户先用这些工具选择，但不能替用户猜测选区。用户可在调整面板保存个人风格，对话不能直接执行保存；液化、美妆和生成内容尚未支持，要如实解释，不返回假操作。
+修复工具支持画笔、套索、点选物体和方框；点选无法用于大片背景。没有选区时可建议用户先用这些工具选择，但不能替用户猜测选区。用户可在调整面板保存个人风格，对话不能直接执行保存；液化、美妆尚未支持，要如实解释，不返回假操作；需要生成新内容时按下文 generate 规则提议，不要说不支持。
 用户指定的框选、画笔、套索或点选区域可通过 local_selected_exposure/contrast/highlights/temperature/saturation/hue/feather 调整，只有 repair_selection 对应的照片可使用；只要求调整选区时不要改全局参数。用户明确要求对整个画面调整时可使用全局参数。
 用户提到画面中的人物或其他具体对象时，先核对已有信息：有预览图且对象明显不存在时，说明没有看到，别指示用户框选不存在的对象；
 看不到照片、对象过小或无法确定时，说明无法确认并请用户指出位置，不把用户描述当作已经验证的画面事实。
@@ -193,6 +199,15 @@ def validate_plan(plan,targets,engine,available_context=None):
             if kind=='undo' and value==0 and available_context.get('undo_available') is True and len(actions)==1 and len(operations)==1 and preset=='keep' and not action['adjustments']:continue
             raise ValueError('AI 请求的操作不可用或缺少选区、参考图')
         changes.append(dict(id=key,params=p,notes=notes,operations=operations))
+    generate=plan.get('generate') or dict(needed=False,prompt='')
+    if not isinstance(generate,dict) or not isinstance(generate.get('needed'),bool) or not isinstance(generate.get('prompt',''),str):
+        raise ValueError('AI 的生成提议格式不正确，设置未改变')
+    generation=None
+    if generate['needed']:
+        prompt=generate['prompt'].strip()
+        if not prompt or len(prompt)>2000:raise ValueError('AI 没有给出可用的生成要求，设置未改变')
+        if changes or plan.get('variants') or available_context.get('review_only'):raise ValueError('生成提议不能和本地调整同时执行，设置未改变')
+        generation=dict(prompt=prompt)
     variants=plan.get('variants',[])
     if not isinstance(variants,list) or len(variants)>4 or (variants and (changes or available_context.get('review_only'))):
         raise ValueError('AI 返回的方案数量或操作范围无效，设置未改变')
@@ -205,7 +220,8 @@ def validate_plan(plan,targets,engine,available_context=None):
         action={k:v for k,v in variant.items() if k!='title'}
         result=validate_plan(dict(reply='',selection='none',actions=[action],variants=[]),targets,engine,available_context)
         prepared.append(dict(title=variant['title'].strip(),**result['changes'][0]))
-    return dict(reply=safe_advice(plan['reply']) if not changes and not prepared else plan['reply'],selection=plan['selection'],changes=changes,variants=prepared)
+    return dict(reply=safe_advice(plan['reply']) if not changes and not prepared and not generation else plan['reply'],
+                selection=plan['selection'],changes=changes,variants=prepared,generation=generation)
 
 
 class AssistantBridge:

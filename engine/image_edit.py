@@ -2,6 +2,7 @@
 import base64
 import binascii
 from io import BytesIO
+from pathlib import Path
 import json
 import re
 from urllib.request import Request
@@ -49,3 +50,89 @@ def gemini_edit(key, model, image, prompt, *, opener=_open):
         return result
     except (ValueError,KeyError,TypeError,binascii.Error,OSError):
         raise ValueError('Gemini 没有返回可用图片，原照片未改变') from None
+
+
+# ---------- 出图服务目录与任务 ----------
+# mock 只在测试启动参数下由 App 提供，用来不花钱地跑通流程；结果是镜像翻转并压一条色带，一眼能看出是模拟图。
+IMAGE_SERVICES = {
+    'jimeng': dict(title='即梦（火山方舟）', default_model='doubao-seedream-4-0-250828', paid=True),
+    'gemini': dict(title='Gemini', default_model='gemini-2.5-flash-image', paid=True),
+    'mock': dict(title='模拟出图（测试用）', default_model='mock', paid=False),
+}
+
+
+def mock_edit(image_bytes, prompt):
+    from PIL import ImageOps
+    with Image.open(BytesIO(image_bytes)) as source:
+        image = ImageOps.mirror(source.convert('RGB'))
+    band = Image.new('RGB', (image.width, max(8, image.height // 12)), (200, 60, 60))
+    image.paste(band, (0, image.height - band.height))
+    out = BytesIO(); image.save(out, 'PNG')
+    return [dict(mime='image/png', data=out.getvalue())]
+
+
+def call_service(service, key, model, image_bytes, prompt, opener=_open):
+    if service not in IMAGE_SERVICES: raise ValueError('未知的出图服务')
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
+    if service == 'mock': return mock_edit(image_bytes, prompt)
+    if service == 'gemini': return gemini_edit(key, model or IMAGE_SERVICES['gemini']['default_model'], image_bytes, prompt, opener=opener)
+    from jimeng_edit import jimeng_edit
+    return jimeng_edit(key, model or IMAGE_SERVICES['jimeng']['default_model'], image_bytes, prompt, opener=opener)
+
+
+class ImageEditBridge:
+    """后台出图任务：渲染当前成品（长边 2048）→ 发给所选服务 → 结果存会话目录，交给 App 采用为新版本。"""
+
+    def __init__(self, engine):
+        from threading import RLock
+        self.engine = engine; self.jobs = {}; self.events = {}; self.lock = RLock()
+
+    def start(self, data):
+        from threading import Event, Thread
+        from uuid import uuid4
+        from service import parameters, quality_settings
+        service = data.get('service')
+        if service not in IMAGE_SERVICES: raise ValueError('请先选择出图服务')
+        if data.get('image_consent') is not True: raise ValueError('生成新图需要先确认发送照片')
+        if service != 'mock' and not clean_key(data.get('api_key') or ''): raise ValueError('请先填写出图服务的密钥')
+        self.engine.asset(data['id']); parameters(data.get('params', {})); quality_settings(data.get('quality'))
+        prompt = data.get('prompt')
+        if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
+        with self.lock:
+            if any(j['state'] == 'running' for j in self.jobs.values()): raise ValueError('上一张还在生成，请稍候或先取消')
+            key = uuid4().hex; self.jobs[key] = dict(state='running'); self.events[key] = Event()
+        Thread(target=self._run, args=(key, dict(data)), daemon=True).start()
+        return dict(id=key)
+
+    def status(self, key):
+        with self.lock: return dict(self.jobs.get(key, dict(state='error', error='生成任务不存在')))
+
+    def cancel(self, key):
+        with self.lock:
+            if key in self.events: self.events[key].set()
+        return dict(cancelled=True)
+
+    def _run(self, key, data):
+        from uuid import uuid4
+        event = self.events[key]
+        try:
+            with self.engine.lock:
+                rendered = self.engine.render_full_png(data['id'], data.get('params', {}), data.get('quality'))
+            with Image.open(rendered['path']) as full:
+                image = full.convert('RGB'); image.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+            Path(rendered['path']).unlink(missing_ok=True)
+            buffer = BytesIO(); image.save(buffer, 'JPEG', quality=92)
+            if event.is_set(): raise InterruptedError()
+            results = call_service(data['service'], data.get('api_key'), data.get('model'), buffer.getvalue(), data['prompt'])
+            if event.is_set(): raise InterruptedError()
+            paths = []
+            for item in results[:4]:
+                path = self.engine.folder / (uuid4().hex + '-generated.png')
+                with Image.open(BytesIO(item['data'])) as out: out.convert('RGB').save(path, 'PNG')
+                paths.append(str(path))
+            with self.lock: self.jobs[key] = dict(state='done', paths=paths)
+        except InterruptedError:
+            with self.lock: self.jobs[key] = dict(state='cancelled')
+        except Exception as exc:
+            message = str(exc) if isinstance(exc, ValueError) else '生成未完成，原照片未改变'
+            with self.lock: self.jobs[key] = dict(state='error', error=message)

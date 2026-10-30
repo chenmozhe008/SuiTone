@@ -241,4 +241,58 @@ import Testing
         store.undo(); store.previewTask?.cancel()
         #expect(store.photos[0].quality == QualitySettings())
     }
+
+    @Test @MainActor func testGenerationProposalNeedsConfirmationThenBecomesUndoableVersion() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let sample = root.appendingPathComponent("output/stage2-20261028/city-public.jpg")
+        guard FileManager.default.fileExists(atPath: sample.path) else { /* 跳过：缺少公开城市样片 */ return }
+        let fixture = root.appendingPathComponent("tmp/generation-fixture-\(UUID().uuidString)")
+        let engineDir = fixture.appendingPathComponent("engine")
+        try FileManager.default.createDirectory(at: engineDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let encoder = JSONEncoder(); encoder.outputFormatting = .withoutEscapingSlashes
+        let pythonPath = String(data: try encoder.encode(root.appendingPathComponent("engine").path), encoding: .utf8)!
+        let generatedPath = String(data: try encoder.encode(fixture.appendingPathComponent("generated").path), encoding: .utf8)!
+        let script = """
+        import json, os, sys
+        from pathlib import Path
+        sys.path.insert(0, \(pythonPath))
+        import assistant, service
+        assistant.executable=lambda provider: '/fake/claude'
+        def fake(self, provider, prompt, cancel, *images):
+            return {'reply':'换背景需要生成新图','selection':'none','actions':[],'variants':[],
+                    'generate':{'needed':True,'prompt':'把背景换成雪山，人物不变'}}
+        assistant.AssistantBridge._invoke=fake
+        original=service.Engine.__init__
+        def init(self, root):
+            original(self, root); self.generated_dir=Path(\(generatedPath))
+        service.Engine.__init__=init
+        service.serve(sys.argv[sys.argv.index('--root')+1],os.environ['PHOTO_EDIT_SESSION_TOKEN'])
+        """
+        try script.write(to: engineDir.appendingPathComponent("service.py"), atomically: true, encoding: .utf8)
+        let store = WorkspaceStore(engine: EngineClient(root: fixture))
+        let imported: ImportResponse = try await store.engine.request("import", body: ["paths": [sample.path]])
+        let image = try #require(imported.photos.first)
+        var photo = PhotoRecord(imported: image, assetID: image.id); photo.ready = true
+        store.photos = [photo]; store.currentID = photo.id; store.selectedIDs = [photo.id]
+        store.providers = [AssistantProvider(id: "claude", title: "Claude Code", available: true)]
+        store.assistantProvider = "claude"; store.visionConsents.insert("claude")
+        store.imageServices = [ImageService(id: "mock", title: "模拟出图（测试用）", defaultModel: "mock", paid: false)]
+        store.imageService = "mock"
+        store.chatDraft = "把背景换成雪山"
+        store.sendChat()
+        await store.assistantTask?.value
+        let message = try #require(store.chatMessages.last)
+        let card = try #require(message.generation)
+        #expect(card.state == "proposed" && card.prompt.contains("雪山"))
+        #expect(store.photos[0].assetID == image.id)  // 确认前不发送、不改照片
+        store.startGeneration(message.id)
+        await store.generationTask?.value
+        let done = try #require(store.chatMessages.last?.generation)
+        #expect(done.state == "done", Comment(rawValue: done.error ?? ""))
+        #expect(store.photos[0].assetID != image.id)
+        #expect(store.photos[0].operations.last?.generated?.contains("generation-fixture") == true)
+        store.undo(); store.previewTask?.cancel()
+        #expect(store.photos[0].assetID == image.id && store.photos[0].operations.isEmpty)
+    }
 }

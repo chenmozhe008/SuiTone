@@ -96,6 +96,28 @@ struct ChatMessage:Identifiable {
     var changeID: UUID? = nil
     var wasUndone = false
     var variants: [VariantPreview] = []
+    /// AI 认为必须生成新图时的确认卡；用户点「生成」才发送
+    var generation: GenerationCard? = nil
+}
+
+/// 生成新图的确认卡状态：proposed 待确认 / running 生成中 / done 已采用 / failed 失败 / cancelled 已取消 / dismissed 不用了
+struct GenerationCard {
+    var photoID: String
+    var prompt: String
+    var state = "proposed"
+    var error: String? = nil
+    var preview: String? = nil
+    var jobID: String? = nil
+}
+
+struct GenerationProposal: Decodable { var prompt: String }
+
+/// 出图服务（引擎 `/image-services` 提供）；mock 只在测试启动参数下出现
+struct ImageService: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let defaultModel: String
+    let paid: Bool
 }
 
 struct VariantPreview: Identifiable {
@@ -135,4 +157,5 @@ struct AssistantJob:Decodable {
     var changes:[AssistantChange]?
     var error:String?
     var variants: [AssistantVariant]? = nil
+    var generation: GenerationProposal? = nil
 }

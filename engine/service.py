@@ -202,6 +202,8 @@ class Engine:
         self.assistant=AssistantBridge(self)
         from ai_recommendation import RecommendationBridge
         self.ai_recommendations=RecommendationBridge(self)
+        from image_edit import ImageEditBridge
+        self.image_edit=ImageEditBridge(self)
         self.import_hashes={}
         # AI 生成的新图要跨会话保存（工程重开、导出都要用），不能放会被清理的会话目录。
         self.generated_dir=Path.home()/'Library/Application Support/SuiTone/generated'
@@ -575,6 +577,13 @@ def serve(root, token, watch_stdin=True):
                 from urllib.parse import parse_qs,urlsplit
                 job=parse_qs(urlsplit(self.path).query).get('id',[''])[0]
                 return self.response(200,engine.assistant.status(job))
+            if self.path.startswith('/image-edit-status?'):
+                from urllib.parse import parse_qs,urlsplit
+                job=parse_qs(urlsplit(self.path).query).get('id',[''])[0]
+                return self.response(200,engine.image_edit.status(job))
+            if self.path=='/image-services':
+                from image_edit import IMAGE_SERVICES
+                return self.response(200,dict(services=[dict(id=k,**v) for k,v in IMAGE_SERVICES.items()]))
             if self.path.startswith('/recommendation-status?'):
                 from urllib.parse import parse_qs,urlsplit
                 job=parse_qs(urlsplit(self.path).query).get('id',[''])[0]
@@ -588,6 +597,8 @@ def serve(root, token, watch_stdin=True):
                 length=int(self.headers.get('Content-Length','0'))
                 if not 0<length<=1024*1024: raise ValueError('请求大小无效')
                 data=json.loads(self.rfile.read(length))
+                if self.path=='/image-edit-start':return self.response(200,engine.image_edit.start(data))
+                if self.path=='/image-edit-cancel':return self.response(200,engine.image_edit.cancel(data['id']))
                 if self.path=='/assistant-models':
                     from api_providers import list_models
                     return self.response(200,list_models(data))

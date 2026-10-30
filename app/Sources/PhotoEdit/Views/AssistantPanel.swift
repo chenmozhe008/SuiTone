@@ -87,6 +87,9 @@ struct AssistantPanel: View {
                                 Text(message.role == "user" ? "你" : "修图助手")
                                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                 Text(message.wasUndone ? "这次调整已撤销。" : message.text).font(.callout).lineSpacing(4).textSelection(.enabled)
+                                if let card = message.generation, !message.wasUndone {
+                                    GenerationCardView(store: store, messageID: message.id, card: card)
+                                }
                                 if !message.variants.isEmpty {
                                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                                         ForEach(message.variants) { variant in
@@ -210,6 +213,7 @@ struct AssistantPanel: View {
                 showingVisionConsent = false
             }
         }
+        .sheet(isPresented: $store.showingImageSettings) { ImageServiceSheet(store: store) }
         .sheet(isPresented: $showingAPISettings) {
             if let provider = store.currentProvider {
                 APISettingsSheet(store: store, provider: provider) { showingAPISettings = false }

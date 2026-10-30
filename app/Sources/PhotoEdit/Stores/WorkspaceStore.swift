@@ -41,6 +41,20 @@ final class WorkspaceStore {
     }
     var styleFamily = "creative"
     var styles: [StylePreset] = []
+    var imageServices: [ImageService] = []
+    var imageService = UserDefaults.standard.string(forKey: "imageService") ?? "" {
+        didSet { UserDefaults.standard.set(imageService, forKey: "imageService") }
+    }
+    var imageModels: [String: String] = (UserDefaults.standard.dictionary(forKey: "imageModels") as? [String: String]) ?? [:] {
+        didSet { UserDefaults.standard.set(imageModels, forKey: "imageModels") }
+    }
+    var showingImageSettings = false
+    var generationTask: Task<Void, Never>?
+    /// 出图服务是否已配好（密钥只在真正生成时才读钥匙串，这里看保存标记，避免弹授权框）
+    var imageServiceReady: Bool {
+        guard let service = imageServices.first(where: { $0.id == imageService }) else { return false }
+        return service.id == "mock" || UserDefaults.standard.bool(forKey: "imageKeySaved." + service.id)
+    }
     var styleTiles: [String:String] = [:]
     var styleTileTask: Task<Void,Never>?
     var status = "正在检查本地引擎…"
@@ -163,6 +177,9 @@ final class WorkspaceStore {
             struct Providers: Decodable { var providers: [AssistantProvider] }
             let response: Providers = try await engine.get("assistant-providers")
             providers = response.providers
+            struct Services: Decodable { var services: [ImageService] }
+            let showMock = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)["mockImageService"] != nil
+            imageServices = ((try? await engine.get("image-services") as Services)?.services ?? []).filter { $0.id != "mock" || showMock }
             struct Styles: Decodable { var styles: [StylePreset] }
             styles = (try await engine.get("styles") as Styles).styles
             if !providers.contains(where: { $0.id == assistantProvider && $0.available }),
