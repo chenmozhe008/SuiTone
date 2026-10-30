@@ -39,6 +39,10 @@ struct ContentView: View {
 
 private struct WorkspaceHeader: View {
     @Bindable var store: WorkspaceStore
+    @State private var showingReset = false
+    private var resetTitle: String {
+        store.targets.count > 1 ? "把所选的 \(store.targets.count) 张照片复原成原图？" : "把这张照片复原成原图？"
+    }
     var body: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
@@ -50,12 +54,20 @@ private struct WorkspaceHeader: View {
                 .disabled(store.controlsBlocked)
             Spacer(minLength: 16)
             if !store.photos.isEmpty {
-                HStack(spacing: 4) {
-                    Button { store.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                        .help("撤销，可退回整批调整").disabled(!store.canUndo || store.controlsBlocked)
-                    Button { store.redo() } label: { Image(systemName: "arrow.uturn.forward") }
-                        .help("重做").disabled(!store.canRedo || store.controlsBlocked)
-                }
+                HStack(spacing: 6) {
+                    Button { store.undo() } label: { Label("撤销", systemImage: "arrow.uturn.backward") }
+                        .help("撤销上一步（⌘Z）").disabled(!store.canUndo || store.controlsBlocked)
+                    Button { store.redo() } label: { Label("重做", systemImage: "arrow.uturn.forward") }
+                        .help("重做（⇧⌘Z）").disabled(!store.canRedo || store.controlsBlocked)
+                    Button { showingReset = true } label: { Label("复原", systemImage: "arrow.counterclockwise") }
+                        .help("把照片恢复成导入时的原图").disabled(store.targets.isEmpty || store.controlsBlocked)
+                }.labelStyle(.titleAndIcon)
+                    .confirmationDialog(resetTitle, isPresented: $showingReset, titleVisibility: .visible) {
+                        Button("复原", role: .destructive) { store.resetToOriginal() }
+                        Button("取消", role: .cancel) {}
+                    } message: {
+                        Text("会去掉调色、移除杂物、AI 生成的版本和画质设置，换回导入时的原图。复原后可以用「撤销」找回。")
+                    }
                 Divider().frame(height: 22)
                 Button("导出 \(store.targets.count) 张…") { store.showExportOptions = true }
                     .buttonStyle(.borderedProminent).disabled(store.targets.isEmpty || store.controlsBlocked)

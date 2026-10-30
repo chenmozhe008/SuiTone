@@ -19,6 +19,27 @@ extension WorkspaceStore {
             label: "应用\(styles.first(where: { $0.id == style })?.title ?? "风格")")
     }
 
+    /// 一键复原：照片换回导入时的原图，调色、移除杂物、AI 生成版本、画质全部去掉；记成一步，可以撤销找回。
+    func resetToOriginal() {
+        finishEditing()
+        let items = targets
+        guard !items.isEmpty, !controlsBlocked else { return }
+        let before = capture(items)
+        clearRepairSelection(); localRegion = nil; overlay = ""; versionPreview = nil
+        for i in photos.indices where items.contains(where: { $0.id == photos[i].id }) {
+            photos[i].assetID = photos[i].imported.id
+            photos[i].parameters = AdjustmentParameters()
+            photos[i].operations = []
+            photos[i].quality = QualitySettings()
+            photos[i].lookName = "原图"; photos[i].notes = []
+            photos[i].previewPath = nil
+        }
+        analysis = nil; styleTiles = [:]
+        recordChange("复原原图", before: before)
+        status = items.count > 1 ? "已复原 \(items.count) 张，可撤销" : "已复原，可撤销"
+        schedulePreview(); refreshGrid(); loadStyleTiles()
+    }
+
     func saveMyStyle() {
         finishEditing()
         guard let photo = current else { return }

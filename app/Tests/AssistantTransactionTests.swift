@@ -337,6 +337,20 @@ import Testing
         #expect(sorted.firstIndex(of: "gpt-6")! < sorted.firstIndex(of: "gpt-5.5")!)
     }
 
+    @Test @MainActor func testResetToOriginalClearsEverythingAndIsUndoable() {
+        let store = fixture()
+        store.photos[0].assetID = "repaired"; store.photos[0].parameters.exposure = 0.8
+        store.photos[0].operations = [RemovalOperation(box: [0, 0, 1, 1], generated: "/gen/a.png")]
+        store.photos[0].quality.denoise = true; store.photos[0].lookName = "暖胶片"
+        store.selectedIDs = [store.photos[0].id]
+        store.resetToOriginal()
+        let photo = store.photos[0]
+        #expect(photo.assetID == photo.imported.id && photo.parameters == AdjustmentParameters())
+        #expect(photo.operations.isEmpty && photo.quality == QualitySettings() && photo.lookName == "原图")
+        store.undo(); store.previewTask?.cancel()
+        #expect(store.photos[0].assetID == "repaired" && store.photos[0].parameters.exposure == 0.8)
+    }
+
     @MainActor private func fixture() -> WorkspaceStore {
         let store = WorkspaceStore()
         let image = ImportedPhoto(id: "photo", path: "/fixture.jpg", name: "fixture.jpg", thumbnail: "/thumb.png",
