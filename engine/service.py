@@ -599,6 +599,9 @@ def serve(root, token, watch_stdin=True):
                 data=json.loads(self.rfile.read(length))
                 if self.path=='/image-edit-start':return self.response(200,engine.image_edit.start(data))
                 if self.path=='/image-edit-cancel':return self.response(200,engine.image_edit.cancel(data['id']))
+                if self.path=='/assistant-vision-check':
+                    from api_providers import vision_check
+                    return self.response(200,vision_check(data))
                 if self.path=='/assistant-models':
                     from api_providers import list_models
                     return self.response(200,list_models(data))

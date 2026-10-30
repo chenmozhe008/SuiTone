@@ -664,6 +664,21 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(probabilities.shape,(2,2,2));self.assertEqual(labels[0],'sky')
             with np.load(cache/(digest+'.npz')) as saved:self.assertEqual(saved['p'].shape,(2,2,2))
 
+    def test_vision_check_uses_test_image_and_judges_answer(self):
+        from api_providers import vision_check
+        import json
+        sent=[]
+        def reply(left,right):
+            class Response:
+                def __enter__(self):return self
+                def __exit__(self,*a):pass
+                def read(self,limit):return json.dumps({'choices':[{'finish_reason':'stop','message':{'content':json.dumps({'left':left,'right':right})}}]}).encode()
+            def opener(request,timeout):sent.append(json.loads(request.data));return Response()
+            return opener
+        self.assertTrue(vision_check(dict(provider='qwen',api_key='k'),opener=reply('红色','蓝色'))['vision'])
+        self.assertEqual(len(sent[0]['messages'][0]['content']),3)  # 文字＋标签＋一张测试图
+        self.assertFalse(vision_check(dict(provider='qwen',api_key='k'),opener=reply('无法看到图片','无'))['vision'])
+
     def test_jimeng_adapter_sends_base64_keeps_ratio_and_hides_key(self):
         from jimeng_edit import jimeng_edit,ENDPOINT,output_size
         from io import BytesIO

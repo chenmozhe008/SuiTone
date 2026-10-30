@@ -49,6 +49,10 @@ final class WorkspaceStore {
         didSet { UserDefaults.standard.set(imageModels, forKey: "imageModels") }
     }
     var showingImageSettings = false
+    /// 看图测试结果，键为「服务商|模型」；没测过的不在里面（界面写「看图未验证」）
+    var visionChecks: [String: Bool] = (UserDefaults.standard.dictionary(forKey: "visionChecks") as? [String: Bool]) ?? [:] {
+        didSet { UserDefaults.standard.set(visionChecks, forKey: "visionChecks") }
+    }
     var generationTask: Task<Void, Never>?
     /// 出图服务是否已配好（密钥只在真正生成时才读钥匙串，这里看保存标记，避免弹授权框）
     var imageServiceReady: Bool {

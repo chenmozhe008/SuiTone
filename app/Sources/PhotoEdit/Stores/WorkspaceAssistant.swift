@@ -533,3 +533,15 @@ extension WorkspaceStore {
         imageService = id
     }
 }
+
+extension WorkspaceStore {
+    /// 看图测试：引擎只发一张程序生成的测试图，模型答对颜色才记为能看图。
+    func checkVision(provider: String, key: String, model: String, baseURL: String) async throws -> (Bool, String) {
+        struct Result: Decodable { var vision: Bool; var detail: String }
+        var body: [String: Any] = ["provider": provider, "api_key": key, "model": model]
+        if !baseURL.isEmpty { body["base_url"] = baseURL }
+        let result: Result = try await engine.request("assistant-vision-check", body: body)
+        visionChecks[provider + "|" + model] = result.vision
+        return (result.vision, result.detail)
+    }
+}

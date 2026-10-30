@@ -39,7 +39,13 @@ struct AssistantPanel: View {
                     .padding(.horizontal, 16).padding(.bottom, 12)
             } else if store.usesAPI {
                 HStack {
-                    Label(store.apiCredentials?.model ?? "", systemImage: "key")
+                    Label((store.apiCredentials?.model ?? "") + {
+                        switch store.visionChecks[store.assistantProvider + "|" + (store.apiCredentials?.model ?? "")] {
+                        case true?: return "　能看图"
+                        case false?: return "　看不了图"
+                        default: return "　看图未验证"
+                        }
+                    }(), systemImage: "key")
                         .font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
                     Button("设置…") { showingAPISettings = true }.disabled(store.chatting)
@@ -277,6 +283,15 @@ private struct APISettingsSheet: View {
     @State private var fetching = false
     @State private var manualModel = false
     @State private var result: (ok: Bool, text: String)?
+    @State private var visionResult: (ok: Bool, text: String)?
+    @State private var checkingVision = false
+    private var visionLabel: String {
+        switch store.visionChecks[provider.id + "|" + trimmedModel] {
+        case true?: return "这个模型能看图（已测过）"
+        case false?: return "上次测试：这个模型看不了图"
+        default: return "看图能力未验证"
+        }
+    }
 
     private static let manualTag = "\u{0}manual"
     /// 选「手动填写…」时显示输入框，其余选项直接作为模型名。
@@ -331,7 +346,7 @@ private struct APISettingsSheet: View {
                         TextField("模型名称", text: $model, prompt: Text("按服务商文档填写"))
                     }
                 } footer: {
-                    Text("AI 调整需要支持看图的模型。测试连接只获取模型列表，不代表已验证看图或图片编辑能力。")
+                    Text("测试连接只确认密钥和地址可用、读取模型列表；看图测试会发一张程序生成的小测试图（不是你的照片），消耗很少额度。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -345,8 +360,20 @@ private struct APISettingsSheet: View {
                                 .font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                         }
                     }
+                    HStack(spacing: 10) {
+                        Button(checkingVision ? "正在测试…" : "看图测试") { testVision() }
+                            .disabled(checkingVision || effectiveKey.isEmpty || trimmedModel.isEmpty || (provider.needsBaseUrl && trimmedURL.isEmpty))
+                        if checkingVision { ProgressView().controlSize(.small) }
+                        if let vision = visionResult {
+                            Label(vision.text, systemImage: vision.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(vision.ok ? Color.green : Color.orange)
+                                .font(.callout).fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text(visionLabel).font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
                 }
-            }.formStyle(.grouped).scrollDisabled(true).frame(height: provider.needsBaseUrl ? 330 : 290)
+            }.formStyle(.grouped).scrollDisabled(true).frame(height: provider.needsBaseUrl ? 370 : 330)
             HStack {
                 if savedKey {
                     Button("删除密钥") { store.saveAPISettings(provider: provider.id, key: "", model: trimmedModel, baseURL: trimmedURL); done() }
@@ -366,6 +393,19 @@ private struct APISettingsSheet: View {
         }
         .onChange(of: key) { _, _ in result = nil; fetched = [] }
         .onChange(of: baseURL) { _, _ in result = nil; fetched = [] }
+    }
+
+    private func testVision() {
+        checkingVision = true; visionResult = nil
+        let secret = key.isEmpty ? effectiveKey : cleanedKey, name = trimmedModel
+        Task {
+            defer { checkingVision = false }
+            do {
+                let (ok, detail) = try await store.checkVision(provider: provider.id, key: secret, model: name,
+                                                               baseURL: provider.needsBaseUrl ? trimmedURL : "")
+                visionResult = (ok, ok ? "能看图：" + detail : "看不了图：" + detail)
+            } catch { visionResult = (false, error.localizedDescription) }
+        }
     }
 
     private func testConnection() {

@@ -95,7 +95,7 @@ struct ImageServiceSheet: View {
                     TextField("模型", text: $model, prompt: Text(service?.defaultModel ?? ""))
                 }
             }.formStyle(.grouped).scrollDisabled(true).frame(height: selected == "mock" ? 110 : 190)
-            Text("密钥保存在本机钥匙串。出图按服务商标准计费。")
+            Text("密钥保存在本机钥匙串。出图按服务商标准计费。保存时不会调用服务，出图能力要等第一次真正生成后才算验证过。")
                 .font(.callout).foregroundStyle(.secondary).padding(.horizontal, 24)
             HStack {
                 Spacer()

@@ -174,3 +174,23 @@ def list_models(data, *, opener=_open):
     except (KeyError, TypeError, ValueError):
         raise ValueError(_name(provider)+' 没有返回模型列表，可直接填写模型名称') from None
     return dict(models=names[:300])
+
+
+def vision_check(data, *, opener=_open):
+    """看图能力测试：只发一张程序生成的左红右蓝小图（不发用户照片），模型答对两边颜色才算能看图。"""
+    from io import BytesIO
+    from PIL import Image
+    image = Image.new('RGB', (64, 64), (220, 30, 30))
+    image.paste(Image.new('RGB', (32, 64), (30, 60, 220)), (32, 0))
+    buffer = BytesIO(); image.save(buffer, 'JPEG', quality=95)
+    schema = dict(type='object', additionalProperties=False, required=['left', 'right'],
+                  properties=dict(left=dict(type='string'), right=dict(type='string')))
+    prompt = '这是一张测试图。分别用一个中文颜色词回答左半边和右半边的颜色，只输出 JSON：{"left":"…","right":"…"}'
+    try:
+        answer = invoke(dict(data, image_consent=True), prompt, schema,
+                        [dict(label='测试图', data=buffer.getvalue())], opener=opener)
+    except ValueError as exc:
+        return dict(vision=False, detail=str(exc))
+    left, right = str(answer.get('left', '')), str(answer.get('right', ''))
+    ok = '红' in left and '蓝' in right
+    return dict(vision=ok, detail='答对了测试图的颜色' if ok else f'模型回答「{left}／{right}」，看不清测试图')
