@@ -1,7 +1,7 @@
 # 随心调色 · SuiTone：给评审 Agent 的交接说明
 
 更新日期：2026-10-28（Asia/Shanghai）  
-项目位置：`/Users/forwardyan/Coding/Coding Project/photo-edit`  
+项目位置：`~/Coding/Coding Project/photo-edit`  
 当前任务：审阅产品方向、AI 架构和验收缺口，提出意见；暂不继续修改产品代码。
 
 ## 先读：现在为什么停下来
@@ -42,7 +42,7 @@
 - 不自动加编号、装饰或文字。不要用“不裁切、不覆盖、支持哪些格式”等口号堆在界面底部。
 - 用户后来修订了最初“不裁图、不覆盖”的绝对产品限制：裁切、文件替换应按专业工作流明确选择和处理冲突。**这不授权在开发测试中覆盖真实原图。**
 - 调色浮点计算，输出前抖动量化，避免色阶断层；原图保留，不做破坏性测试。
-- 使用 `/Users/forwardyan/.cache/photo-edit/venv/bin/python -B`。不装全局依赖，不修改已有模型，不清理案例或缓存目录。
+- 使用 `~/.cache/photo-edit/venv/bin/python -B`。不装全局依赖，不修改已有模型，不清理案例或缓存目录。
 - 现有照片处理在本地；当前对话只发送文字和统计摘要。若以后支持在线模型看图，必须先明确照片发送范围与服务，不能悄悄上传或把在线处理说成完全离线。
 
 ## 三、当前实现是什么
@@ -215,9 +215,9 @@ SwiftUI
 命令速查，仅在需要复测且符合审阅范围时运行：
 
 ```bash
-cd '/Users/forwardyan/Coding/Coding Project/photo-edit'
+cd '~/Coding/Coding Project/photo-edit'
 swift test --package-path app
-/Users/forwardyan/.cache/photo-edit/venv/bin/python -B engine/tests/test_engine.py
+~/.cache/photo-edit/venv/bin/python -B engine/tests/test_engine.py
 ```
 
 以下命令有额外影响，审阅阶段不要当作无副作用检查：
@@ -238,4 +238,4 @@ swift test --package-path app
 
 ## 可直接复制给其他 Agent 的请求
 
-> 请审阅 `/Users/forwardyan/Coding/Coding Project/photo-edit/docs/AGENT_HANDOFF.md` 及所指代码和证据。用户已要求暂停开发：本次只评审，不改产品、不安装依赖、不下载模型。核心是“AI 对话调色为主，直接调色为辅，简单易用而功能强大”。请独立检查现有实现与这一定位的差距，重点把关界面信息层级、后台区域能力如何按需出现、Codex／Claude Code 的真实可执行能力、本机轻量看图模型的适用性，以及批量、撤销、异步状态的正确性。给出最重要的 3–5 个问题、推荐流程、技术路线取舍和分阶段验收标准。请区分实测、代码推断和待验证方案；不要把现有测试通过写成全部功能完成，也不要默认赞同上一位 Agent 的方案。
+> 请审阅 `~/Coding/Coding Project/photo-edit/docs/AGENT_HANDOFF.md` 及所指代码和证据。用户已要求暂停开发：本次只评审，不改产品、不安装依赖、不下载模型。核心是“AI 对话调色为主，直接调色为辅，简单易用而功能强大”。请独立检查现有实现与这一定位的差距，重点把关界面信息层级、后台区域能力如何按需出现、Codex／Claude Code 的真实可执行能力、本机轻量看图模型的适用性，以及批量、撤销、异步状态的正确性。给出最重要的 3–5 个问题、推荐流程、技术路线取舍和分阶段验收标准。请区分实测、代码推断和待验证方案；不要把现有测试通过写成全部功能完成，也不要默认赞同上一位 Agent 的方案。

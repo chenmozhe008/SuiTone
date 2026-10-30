@@ -238,7 +238,7 @@
 
 ## 8. 工作约束
 
-- Python 只用 `/Users/forwardyan/.cache/photo-edit/venv/bin/python -B`；不装全局依赖；新增依赖或下载模型前先问用户，说清体积和位置。
+- Python 只用 `~/.cache/photo-edit/venv/bin/python -B`；不装全局依赖；新增依赖或下载模型前先问用户，说清体积和位置。
 - 测试只用 `cases/` 的副本或公开照片，**不覆盖、不修改真实原图**。
 - 不悄悄上传照片；任何发图都要用户知情。
 - 不把单个案例（湖水色）的参数当全局默认。
@@ -251,11 +251,11 @@
 ### 常用命令
 
 ```bash
-cd '/Users/forwardyan/Coding/Coding Project/SuiTone'
+cd '~/Coding/Coding Project/SuiTone'
 ./script/test.sh                              # Swift + Python 测试；本机只有命令行工具，参数见 script/swift_env.sh
 bash script/build_and_run.sh --build-only    # 只编译签名，不关正在用的 App
 bash script/build_and_run.sh --verify        # 会停掉旧 App 并重启，先确认用户没有未保存的编辑
-/Users/forwardyan/.cache/photo-edit/venv/bin/python -B script/ai_acceptance.py   # 真实调用 CLI，消耗额度
+~/.cache/photo-edit/venv/bin/python -B script/ai_acceptance.py   # 真实调用 CLI，消耗额度
 ```
 
 应用包：`dist/SuiTone.app`。
