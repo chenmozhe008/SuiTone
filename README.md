@@ -92,6 +92,13 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/SuiTone/master/script/
 
 默认装到「应用程序」。想装到别处用 `--prefix <目录>`，想指定源码目录用 `--src <目录>`。
 
+如果上面那行拉不到脚本（GitHub 国内访问受限），改成先克隆再本地执行，效果一样：
+
+```bash
+git clone https://github.com/chenmozhe008/SuiTone.git ~/SuiTone
+bash ~/SuiTone/script/install.sh
+```
+
 ### 方式二：让 AI 助手帮你装
 
 用 Claude Code、Codex、WorkBuddy 这类助手时，把下面这段发给它：
