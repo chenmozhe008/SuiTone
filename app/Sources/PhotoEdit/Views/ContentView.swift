@@ -75,22 +75,21 @@ private struct WorkspaceHeader: View {
     }
     var body: some View {
         HStack(spacing: 14) {
-            // 品牌区只放图标和名字，单行居中；照片张数挪到底部缩略图条上方当提示，
-            // 标题下再压一行小字会把 logo 和名字挤得不像一个整体。
-            HStack(spacing: 11) {
+            HStack(spacing: 9) {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable().interpolation(.high)
-                    .frame(width: 40, height: 40)
-                    .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
-                Text(AppIdentity.name).font(.system(size: 18, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                Text(AppIdentity.name).font(.system(size: 16, weight: .semibold))
                     .fixedSize()
             }
+            .frame(width: 188, alignment: .leading)
+            Divider().frame(height: 24)
             HStack(spacing: 14) {
                 Button { store.showLibrary.toggle() } label: { Label("图集", systemImage: "sidebar.left") }
                     .help("显示或隐藏图集栏")
                 Button { store.chooseImport() } label: { Label("添加照片", systemImage: "plus") }
                     .disabled(store.controlsBlocked)
-            }.padding(.leading, 8)
+            }
             Spacer(minLength: 16)
             if !store.photos.isEmpty {
                 HStack(spacing: 6) {
