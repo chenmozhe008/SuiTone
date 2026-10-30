@@ -1,7 +1,10 @@
 import SwiftUI
 
-/// 工具面板里「选中」的样子。深色界面下只用一层灰色底看不出选没选，
-/// 所以选中一律换成带颜色的实底 + 亮边，一眼能分出来。
+/// 工具面板里「选中」的统一样子。
+///
+/// 深色界面下只用一层灰底看不出选没选，所以选中一律用同一个蓝色实底 + 亮边。
+/// 刻意只保留一种强调色：选法、添加／减去、裁切比例用的都是它，
+/// 不再按语义给不同按钮各配一种颜色——那会看起来像好几个不同层级的按钮。
 enum ToolAccent {
     struct Tone {
         var fill: LinearGradient
@@ -16,20 +19,7 @@ enum ToolAccent {
         border: Color(red: 0.48, green: 0.74, blue: 0.98).opacity(0.95),
         text: Color(red: 0.56, green: 0.79, blue: 1.0))
 
-    static let green = Tone(
-        fill: LinearGradient(colors: [Color(red: 0.20, green: 0.53, blue: 0.35),
-                                      Color(red: 0.12, green: 0.36, blue: 0.24)],
-                             startPoint: .top, endPoint: .bottom),
-        border: Color(red: 0.44, green: 0.84, blue: 0.58).opacity(0.9),
-        text: Color(red: 0.52, green: 0.88, blue: 0.63))
-
-    static let orange = Tone(
-        fill: LinearGradient(colors: [Color(red: 0.70, green: 0.42, blue: 0.14),
-                                      Color(red: 0.49, green: 0.28, blue: 0.08)],
-                             startPoint: .top, endPoint: .bottom),
-        border: Color(red: 0.98, green: 0.70, blue: 0.36).opacity(0.9),
-        text: Color(red: 0.99, green: 0.73, blue: 0.42))
-
+    /// 没选中：所有按钮共用同一块灰底和同一道描边，不许谁比谁亮一点。
     static let idleFill = Color(white: 0.22)
     static let idleBorder = Color.white.opacity(0.08)
 }
