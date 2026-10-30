@@ -329,6 +329,14 @@ import Testing
         #expect(try JSONDecoder().decode(RemovalOperation.self, from: data) == generated)
     }
 
+    @Test func testModelListPutsNewestFirstAndDropsNonChatModels() {
+        let sorted = ModelList.newestFirst(["gpt-5.5", "text-embedding-3", "gpt-6.1", "gpt-6", "whisper-1", "gpt-5.5-mini",
+                                            "doubao-seedream-5-0-flash-260915", "doubao-seedream-5-0-pro-260628"])
+        #expect(sorted.first == "gpt-6.1")
+        #expect(!sorted.contains("text-embedding-3") && !sorted.contains("whisper-1"))
+        #expect(sorted.firstIndex(of: "gpt-6")! < sorted.firstIndex(of: "gpt-5.5")!)
+    }
+
     @MainActor private func fixture() -> WorkspaceStore {
         let store = WorkspaceStore()
         let image = ImportedPhoto(id: "photo", path: "/fixture.jpg", name: "fixture.jpg", thumbnail: "/thumb.png",

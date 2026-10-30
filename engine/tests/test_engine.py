@@ -685,7 +685,10 @@ class EngineTests(unittest.TestCase):
         body=json.loads(calls[0].data)
         self.assertEqual(calls[0].full_url,ENDPOINT);self.assertEqual(calls[0].get_header('Authorization'),'Bearer fixture-secret')
         self.assertTrue(body['image'].startswith('data:image/jpeg;base64,'))
-        self.assertEqual(body['size'],output_size(300,200));self.assertEqual(body['size'],'2048x1368')
+        self.assertEqual(body['size'],output_size(300,200));self.assertEqual(body['size'],'2048x1360')
+        for w,h in [(300,200),(4000,300),(300,4000),(1000,1000),(6000,4000)]:
+            ow,oh=map(int,output_size(w,h).split('x'))
+            self.assertTrue(921_600<=ow*oh<=4_624_220,(w,h,ow,oh));self.assertAlmostEqual(ow/oh,w/h,delta=.15*w/h)
         self.assertFalse(body['watermark']);self.assertEqual(body['response_format'],'b64_json')
         self.assertNotIn('fixture-secret',calls[0].data.decode())
         def denied(request,timeout):raise HTTPError(request.full_url,401,'',{},BytesIO(b'{"error":{"message":"bad key fixture-secret"}}'))

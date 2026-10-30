@@ -18,9 +18,16 @@ ENDPOINT = 'https://ark.cn-beijing.volces.com/api/v3/images/generations'
 
 
 def output_size(width, height, long=2048):
-    """按输入比例给出具体像素，长边约 2048，宽高取 8 的倍数，避免服务按默认比例改构图。"""
+    """按输入比例给出具体像素，长边约 2048，宽高取 8 的倍数，避免服务按默认比例改构图。
+    Seedream 5.0 要求总像素在 921,600–4,624,220 之间（官方文档），细长图会低于下限，按比例放大到范围内。"""
     scale = long / max(width, height)
-    return f'{max(64, round(width*scale/8)*8)}x{max(64, round(height*scale/8)*8)}'
+    w, h = width * scale, height * scale
+    low, high = 921_600, 4_624_220
+    if w * h < low: w, h = w * (low / (w * h)) ** .5, h * (low / (w * h)) ** .5
+    if w * h > high: w, h = w * (high / (w * h)) ** .5, h * (high / (w * h)) ** .5
+    w, h = max(64, int(w // 8) * 8), max(64, int(h // 8) * 8)
+    while w * h < low: w, h = w + 8, h + max(8, int(8 * height / width) // 8 * 8)
+    return f'{w}x{h}'
 
 
 def jimeng_edit(key, model, image, prompt, *, opener=_open):

@@ -120,6 +120,34 @@ struct ImageService: Decodable, Identifiable {
     let title: String
     let defaultModel: String
     let paid: Bool
+    /// 推荐模型，第一个最新（引擎按官方文档维护）
+    var models: [String] = []
+    enum CodingKeys: String, CodingKey { case id, title, defaultModel, paid, models }
+    init(id: String, title: String, defaultModel: String, paid: Bool, models: [String] = []) {
+        self.id = id; self.title = title; self.defaultModel = defaultModel; self.paid = paid; self.models = models
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id); title = try c.decode(String.self, forKey: .title)
+        defaultModel = try c.decode(String.self, forKey: .defaultModel); paid = try c.decode(Bool.self, forKey: .paid)
+        models = try c.decodeIfPresent([String].self, forKey: .models) ?? []
+    }
+}
+
+/// 模型名按新旧排：比较名字里的数字（版本号、日期），大的在前；明显不是对话用的（嵌入、语音、审核等）过滤掉。
+enum ModelList {
+    static func newestFirst(_ names: [String]) -> [String] {
+        let skip = ["embed", "tts", "whisper", "audio", "transcri", "moderation", "rerank", "realtime", "search", "dall-e", "speech"]
+        let usable = names.filter { name in !skip.contains { name.lowercased().contains($0) } }
+        return usable.sorted { a, b in
+            let x = numbers(a), y = numbers(b)
+            for (p, q) in zip(x, y) where p != q { return p > q }
+            return x.count != y.count ? x.count > y.count : a < b
+        }
+    }
+    private static func numbers(_ name: String) -> [Int] {
+        name.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+    }
 }
 
 struct VariantPreview: Identifiable {

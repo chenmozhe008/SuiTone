@@ -76,6 +76,11 @@ struct ImageServiceSheet: View {
     @State private var selected = ""
     @State private var key = ""
     @State private var model = ""
+    @State private var manualModel = false
+    private var modelChoice: Binding<String> {
+        Binding(get: { manualModel ? "\u{0}manual" : (model.isEmpty ? service?.defaultModel ?? "" : model) },
+                set: { if $0 == "\u{0}manual" { manualModel = true } else { model = $0; manualModel = false } })
+    }
 
     private var service: ImageService? { store.imageServices.first { $0.id == selected } }
     private var savedKey: Bool { UserDefaults.standard.bool(forKey: "imageKeySaved." + selected) }
@@ -88,9 +93,17 @@ struct ImageServiceSheet: View {
                 }
                 if selected != "mock" {
                     SecureField("API 密钥", text: $key, prompt: Text(savedKey ? "已保存，留空则不修改" : "粘贴密钥"))
-                    TextField("模型", text: $model, prompt: Text(service?.defaultModel ?? ""))
+                    Picker("模型", selection: modelChoice) {
+                        ForEach(Array((service?.models ?? []).enumerated()), id: \.element) { index, name in
+                            Text(index == 0 ? name + "（最新）" : name).tag(name)
+                        }
+                        if !model.isEmpty && !(service?.models ?? []).contains(model) && !manualModel { Text(model).tag(model) }
+                        Divider()
+                        Text("手动填写…").tag("\u{0}manual")
+                    }
+                    if manualModel { TextField("模型名称", text: $model, prompt: Text("按服务商文档填写")) }
                 }
-            }.formStyle(.grouped).scrollDisabled(true).frame(height: selected == "mock" ? 80 : 160)
+            }.formStyle(.grouped).scrollDisabled(true).frame(height: selected == "mock" ? 80 : (manualModel ? 200 : 160))
             Text("密钥保存在本机钥匙串。出图按服务商标准计费。保存时不会调用服务，出图能力要等第一次真正生成后才算验证过。")
                 .font(.callout).foregroundStyle(.secondary).padding(.horizontal, 24)
             HStack {

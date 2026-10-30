@@ -316,14 +316,18 @@ struct APISettingsSheet: View {
                     }
                     SecureField("API 密钥", text: $key, prompt: Text(savedKey ? "已保存，留空则不修改" : "粘贴密钥"))
                     Picker("模型", selection: modelChoice) {
-                        if !provider.models.isEmpty {
-                            Section("常用模型") { ForEach(provider.models, id: \.self) { Text($0).tag($0) } }
+                        if !fetched.isEmpty {
+                            Section("服务商当前提供（最新在前）") {
+                                ForEach(Array(fetched.enumerated()), id: \.element) { index, name in
+                                    Text(index == 0 ? name + "（最新）" : name).tag(name)
+                                }
+                            }
                         }
-                        let others = fetched.filter { !provider.models.contains($0) }
-                        if !others.isEmpty {
-                            Section("服务商提供") { ForEach(others, id: \.self) { Text($0).tag($0) } }
+                        let preset = provider.models.filter { !fetched.contains($0) }
+                        if !preset.isEmpty && fetched.isEmpty {
+                            Section("预置（填好密钥后会换成服务商的最新列表）") { ForEach(preset, id: \.self) { Text($0).tag($0) } }
                         }
-                        if !trimmedModel.isEmpty && !provider.models.contains(trimmedModel) && !fetched.contains(trimmedModel) {
+                        if !trimmedModel.isEmpty && !fetched.contains(trimmedModel) && !(fetched.isEmpty && provider.models.contains(trimmedModel)) {
                             Text(trimmedModel).tag(trimmedModel)
                         }
                         Divider()
@@ -376,6 +380,8 @@ struct APISettingsSheet: View {
         .onAppear {
             model = store.apiModels[provider.id] ?? provider.models.first ?? ""
             baseURL = store.customBaseURL
+            // 存过密钥就自动拉一次模型列表（不收费），最新的排最前，免得名单过时
+            if savedKey && (!provider.needsBaseUrl || !trimmedURL.isEmpty) { loadModels(pickNewest: store.apiModels[provider.id] == nil) }
         }
         .onChange(of: key) { _, _ in result = nil; fetched = [] }
         .onChange(of: baseURL) { _, _ in result = nil; fetched = [] }
@@ -394,6 +400,16 @@ struct APISettingsSheet: View {
         }
     }
 
+    private func loadModels(pickNewest: Bool) {
+        let secret = resolvedKey(), address = provider.needsBaseUrl ? trimmedURL : ""
+        guard !secret.isEmpty else { return }
+        Task {
+            guard let models = try? await store.fetchModels(provider: provider.id, key: secret, baseURL: address) else { return }
+            fetched = ModelList.newestFirst(models)
+            if pickNewest, let newest = fetched.first { model = newest }
+        }
+    }
+
     private func testConnection() {
         fetching = true; result = nil
         let secret = resolvedKey()
@@ -404,8 +420,8 @@ struct APISettingsSheet: View {
                 let models = try await store.fetchModels(provider: provider.id, key: secret, baseURL: address)
                 guard resolvedKey() == secret,
                       (provider.needsBaseUrl ? trimmedURL : "") == address else { return }
-                fetched = models
-                result = (true, models.isEmpty ? "接口已响应，模型能力未验证" : "已获取 \(models.count) 个模型，能力未验证")
+                fetched = ModelList.newestFirst(models)
+                result = (true, models.isEmpty ? "接口已响应，模型能力未验证" : "已获取 \(fetched.count) 个模型，按新旧排序，能力未验证")
             } catch {
                 guard resolvedKey() == secret,
                       (provider.needsBaseUrl ? trimmedURL : "") == address else { return }
