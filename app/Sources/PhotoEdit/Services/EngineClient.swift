@@ -9,6 +9,7 @@ struct EnginePaths {
     let root: URL
     let script: URL
     let python: URL
+    var bundledExecutable = false
 
     static func resolve(explicitRoot: URL?, resourceRoot: URL?, projectRoot: String?, home: URL) -> EnginePaths {
         if let explicitRoot {
@@ -16,6 +17,11 @@ struct EnginePaths {
                                python: home.appendingPathComponent(".cache/photo-edit/venv/bin/python"))
         }
         if let resources = resourceRoot {
+            let executable = resources.appendingPathComponent("engine-bin/suitone-engine")
+            if FileManager.default.fileExists(atPath: executable.path) {
+                return EnginePaths(root: home.appendingPathComponent("Library/Application Support/SuiTone", isDirectory: true),
+                                   script: executable, python: executable, bundledExecutable: true)
+            }
             let script = resources.appendingPathComponent("engine/service.py")
             let python = resources.appendingPathComponent("python/bin/python3")
             if FileManager.default.fileExists(atPath: script.path) || FileManager.default.fileExists(atPath: python.path) {
@@ -64,7 +70,7 @@ actor EngineClient {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let task = Process()
         task.executableURL = python
-        task.arguments = ["-B", script.path, "--root", root.path]
+        task.arguments = paths.bundledExecutable ? ["--root", root.path] : ["-B", script.path, "--root", root.path]
         task.currentDirectoryURL = root
         var environment = ProcessInfo.processInfo.environment
         environment["PHOTO_EDIT_SESSION_TOKEN"] = token

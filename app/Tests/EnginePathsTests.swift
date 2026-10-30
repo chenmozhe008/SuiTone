@@ -24,5 +24,11 @@ import Testing
 
         let development = EnginePaths.resolve(explicitRoot: nil, resourceRoot: nil, projectRoot: project.path, home: home)
         #expect(development.root == project)
+        let bin = resources.appendingPathComponent("engine-bin/suitone-engine")
+        try FileManager.default.createDirectory(at: bin.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: bin)
+        let frozen = EnginePaths.resolve(explicitRoot: nil, resourceRoot: resources, projectRoot: project.path, home: home)
+        #expect(frozen.bundledExecutable && frozen.python == bin)
+        #expect(frozen.root == home.appendingPathComponent("Library/Application Support/SuiTone", isDirectory: true))
     }
 }
