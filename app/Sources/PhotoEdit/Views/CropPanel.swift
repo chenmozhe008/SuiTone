@@ -148,7 +148,7 @@ struct CropPanel: View {
                             }.buttonStyle(.plain)
                         }
                     }
-                    Text("拖动边缘或角调整范围，拖动框内移动。")
+                    Text("在照片上拖出裁切范围，也可拖动边缘或角调整。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
@@ -289,6 +289,13 @@ struct CropOverlay: View {
                     path.addLine(to: CGPoint(x: point.x, y: point.y + dy * arm))
                 }
             }.stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .square))
+            Path { path in
+                let arm: CGFloat = 9
+                path.move(to: CGPoint(x: rect.midX - arm, y: rect.minY)); path.addLine(to: CGPoint(x: rect.midX + arm, y: rect.minY))
+                path.move(to: CGPoint(x: rect.midX - arm, y: rect.maxY)); path.addLine(to: CGPoint(x: rect.midX + arm, y: rect.maxY))
+                path.move(to: CGPoint(x: rect.minX, y: rect.midY - arm)); path.addLine(to: CGPoint(x: rect.minX, y: rect.midY + arm))
+                path.move(to: CGPoint(x: rect.maxX, y: rect.midY - arm)); path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY + arm))
+            }.stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .square))
         }
         .frame(width: w, height: h)
         .contentShape(Rectangle())
@@ -296,7 +303,7 @@ struct CropOverlay: View {
     }
 
     private enum Handle {
-        case inside, topLeft, topRight, bottomLeft, bottomRight, top, bottom, left, right
+        case draw, inside, topLeft, topRight, bottomLeft, bottomRight, top, bottom, left, right
 
         var corner: Bool {
             switch self { case .topLeft, .topRight, .bottomLeft, .bottomRight: return true; default: return false }
@@ -312,7 +319,7 @@ struct CropOverlay: View {
             case .bottom: return CGPoint(x: rect.midX, y: rect.maxY)
             case .left: return CGPoint(x: rect.minX, y: rect.midY)
             case .right: return CGPoint(x: rect.maxX, y: rect.midY)
-            case .inside: return CGPoint(x: rect.midX, y: rect.midY)
+            case .inside, .draw: return CGPoint(x: rect.midX, y: rect.midY)
             }
         }
     }
@@ -340,12 +347,20 @@ struct CropOverlay: View {
                         else if abs(point.x - rect.maxX) < 16 && (rect.minY...rect.maxY).contains(point.y) { activeHandle = .right }
                         else if abs(point.y - rect.minY) < 16 && (rect.minX...rect.maxX).contains(point.x) { activeHandle = .top }
                         else if abs(point.y - rect.maxY) < 16 && (rect.minX...rect.maxX).contains(point.x) { activeHandle = .bottom }
-                        else { activeHandle = .inside }
+                        else {
+                            let full = start[0] < 0.001 && start[1] < 0.001 && start[2] > 0.999 && start[3] > 0.999
+                            activeHandle = store.cropAspect == "free" && (full || !rect.contains(point)) ? .draw : .inside
+                        }
                     }
                 }
                 let handle = activeHandle ?? .inside
-                let minSize = 0.08
+                let minSize = 0.005
                 switch handle {
+                case .draw:
+                    if let drawn = CropGeometry.drawn(from: value.startLocation, to: value.location, size: size) {
+                        store.cropDraft = drawn
+                    }
+                    return
                 case .inside:
                     let nx = min(max(0, start[0] + dx), 1 - start[2])
                     let ny = min(max(0, start[1] + dy), 1 - start[3])
@@ -390,6 +405,17 @@ struct CropOverlay: View {
 
 /// Keep the selected crop ratio while resizing; coordinates are normalized to the image.
 enum CropGeometry {
+    static func drawn(from start: CGPoint, to end: CGPoint, size: CGSize) -> [Double]? {
+        guard size.width > 0, size.height > 0 else { return nil }
+        let x0 = min(1, max(0, Double(start.x / size.width)))
+        let y0 = min(1, max(0, Double(start.y / size.height)))
+        let x1 = min(1, max(0, Double(end.x / size.width)))
+        let y1 = min(1, max(0, Double(end.y / size.height)))
+        let width = abs(x1 - x0), height = abs(y1 - y0)
+        guard width >= 0.005, height >= 0.005 else { return nil }
+        return [min(x0, x1), min(y0, y1), width, height]
+    }
+
     static func locked(current: [Double], start: [Double], handle: String) -> [Double] {
         let ratio = start[2] / start[3]
         var width = current[2], height = current[3]
