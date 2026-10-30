@@ -431,21 +431,9 @@ class Engine:
         path=self.folder/(uuid4().hex+'-local-overlay.png');save_new(overlay,path)
         return dict(overlay=str(path))
 
-    def cutout(self,key,point,raw,quality=None,destination=None):
-        shape_input(point=point)
-        if point is None: raise ValueError('请先点选要抠出的主体')
-        from cutout import subject_alpha
+    def render_full_png(self,key,raw,quality=None):
+        """按原尺寸渲染调色、修复和画质后的成品，存成会话内临时 PNG（抠图等后续处理用，不是导出）。"""
         asset=self.asset(key);p=parameters(raw);q=quality_settings(quality)
-        context,_=self.analysis(key)
-        alpha=subject_alpha(context.image,point)
-        if destination is None:
-            preview=self.preview(key,p,q)['preview']
-            with Image.open(preview) as image: result=image.convert('RGBA')
-            result.putalpha(alpha.resize(result.size,Image.Resampling.LANCZOS))
-            path=self.folder/(uuid4().hex+'-cutout.png');save_new(result,path)
-            return dict(preview=str(path))
-        path=Path(destination).expanduser()
-        if path.suffix.lower()!='.png':raise ValueError('抠图只能保存为 PNG')
         image,pixels=load_pixels(asset.path)
         for op in asset.operations:
             from inpaint import remove
@@ -456,10 +444,9 @@ class Engine:
             from enhance import prepare_quality
             image,pixels=prepare_quality(image,pixels,**q)
         from render import render_full
-        result=render_full(image,p,preview,pixels=pixels).convert('RGBA')
-        result.putalpha(alpha.resize(result.size,Image.Resampling.LANCZOS))
-        save_new(result,path)
-        return dict(path=str(path))
+        result=render_full(image,p,preview,pixels=pixels)
+        path=self.folder/(uuid4().hex+'-full.png');save_new(result,path)
+        return dict(path=str(path),width=result.width,height=result.height)
 
     def export(self, items, destination, options):
         if not items: raise ValueError('没有可导出的照片')
@@ -571,7 +558,7 @@ def serve(root, token, watch_stdin=True):
                     elif self.path=='/repair-mask': result=engine.repair_mask(data['id'],data['box'],data.get('classes'),data.get('keep'),
                                                                               data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'))
                     elif self.path=='/manual-mask-overlay': result=engine.manual_mask_overlay(data['id'],data['params'],data['name'])
-                    elif self.path=='/cutout': result=engine.cutout(data['id'],data.get('point'),data.get('params',{}),data.get('quality'),data.get('destination'))
+                    elif self.path=='/render-full': result=engine.render_full_png(data['id'],data.get('params',{}),data.get('quality'))
                     elif self.path=='/export': result=engine.export(data['items'],data['destination'],data.get('options',{}))
                     elif self.path=='/restore':
                         p=parameters(data.get('params',{}))

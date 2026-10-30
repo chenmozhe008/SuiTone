@@ -6,7 +6,7 @@ struct CutoutPanel: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("点照片中的人物或物体，生成透明背景预览。")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Text("这是基础自动抠图，头发和复杂边缘可能不准确，请先检查预览。")
+            Text("使用系统自带的主体识别（与照片 App 长按抠图相同），不联网。保存时按原尺寸重新抠一次。")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if store.busy { ProgressView("正在识别主体…") }
             if store.cutoutPreview != nil {
