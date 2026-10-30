@@ -22,8 +22,8 @@ struct AboutView: View {
         return "随心修图 \(AppIdentity.version)（\(build)），\(ProcessInfo.processInfo.operatingSystemVersionString)"
     }
     private let features: [(String, String, String)] = [
-        ("slider.horizontal.3", "照片调色", "用光线、颜色、质感滑块调整照片，也可应用风格或参考图。"),
         ("text.bubble", "对话调整", "用自然语言描述想法，AI 分析照片后调整可继续编辑的参数。"),
+        ("slider.horizontal.3", "照片调色", "用光线、颜色、质感滑块调整照片，也可应用风格或参考图。"),
         ("lasso", "局部选区", "用画笔、套索、点选或方框选择区域，支持添加和减去。"),
         ("bandage", "移除杂物", "选择不需要的内容后预览修复效果，确认后应用，可撤销。"),
         ("scissors", "主体抠图", "点击照片中的主体，检查透明预览后保存为新的 PNG。"),
@@ -35,7 +35,7 @@ struct AboutView: View {
                 Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 78, height: 78)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("随心修图").font(.system(size: 27, weight: .bold))
-                    Text("用自然语言和手动工具，把照片修成你想要的样子")
+                    Text("跟 AI 对话，随心修出想要的照片")
                         .font(.callout)
                     Text("版本 \(AppIdentity.version)　·　SuiTone")
                         .font(.callout).opacity(0.8)
@@ -62,16 +62,23 @@ struct AboutView: View {
     private var intro: some View {
         VStack(alignment: .leading, spacing: 22) {
             sectionTitle("它是什么")
-            Text("随心修图是一款 Mac 照片编辑工具。可以用滑块、风格或对话调整光影与色彩，也可以选择局部、移除杂物、抠图和使用 AI 改图。")
-                .font(.callout).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+            Text("随心修图是一款以 AI 对话为核心的 Mac 照片编辑工具。用自己的话告诉 AI 想怎么修，它会看照片、理解要求并调整光影与色彩；调整后还可以自己继续拉滑块，让照片更符合你的想法。")
+                .font(.body).lineSpacing(6).fixedSize(horizontal: false, vertical: true)
+            card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("选择适合你的 AI 服务").font(.body.weight(.semibold))
+                    Text("使用本机已安装并登录的 Codex 或 Claude Code，或在设置中填写支持的 AI 服务 API。")
+                    Text("换背景、添加内容等需要生成新画面时，可使用 AI 改图服务，确认后生成新版本。")
+                }.font(.body).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+            }
             sectionTitle("能做什么")
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                 ForEach(features, id: \.1) { feature in
                     card {
                         VStack(alignment: .leading, spacing: 9) {
                             Image(systemName: feature.0).font(.title3).foregroundStyle(.cyan)
-                            Text(feature.1).font(.callout.weight(.semibold))
-                            Text(feature.2).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Text(feature.1).font(.body.weight(.semibold))
+                            Text(feature.2).font(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
                         }.frame(minHeight: 112, alignment: .topLeading)
                     }
@@ -173,7 +180,7 @@ struct AboutView: View {
     private func bullet(_ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 9) {
             Text("•").foregroundStyle(.cyan)
-            Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
+            Text(text).font(.body).fixedSize(horizontal: false, vertical: true)
         }
     }
     private func copy(_ text: String) {
