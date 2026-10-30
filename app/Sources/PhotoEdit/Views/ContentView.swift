@@ -39,6 +39,7 @@ struct ContentView: View {
 
 private struct WorkspaceHeader: View {
     @Bindable var store: WorkspaceStore
+    @Environment(\.openWindow) private var openWindow
     @State private var showingReset = false
     private var resetTitle: String {
         store.targets.count > 1 ? "把所选的 \(store.targets.count) 张照片复原成原图？" : "把这张照片复原成原图？"
@@ -47,12 +48,14 @@ private struct WorkspaceHeader: View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(AppIdentity.name).font(.system(size: 15, weight: .semibold))
-                Text(store.photos.isEmpty ? AppIdentity.englishName : "\(AppIdentity.englishName) · \(store.included.count) 张照片")
+                Text(store.photos.isEmpty ? "照片编辑" : "\(store.included.count) 张照片")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Button { store.chooseImport() } label: { Label("添加照片", systemImage: "plus") }
                 .disabled(store.controlsBlocked)
             Spacer(minLength: 16)
+            Button("关于") { AboutState.shared.tab = .intro; openWindow(id: "about") }
+                .help("关于随心修图、更新记录与反馈")
             if !store.photos.isEmpty {
                 HStack(spacing: 6) {
                     Button { store.undo() } label: { Label("撤销", systemImage: "arrow.uturn.backward") }

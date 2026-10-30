@@ -8,6 +8,8 @@
 
 ## 近期补充（2026-10-30）
 
+- 应用显示名改为「随心修图」，英文及项目目录为 `SuiTone`；保留内部 bundle ID、数据目录和钥匙串服务名。新增关于、反馈邮件草稿、本地开发记录，以及手动查询拟用 GitHub 仓库 `chenmozhe008/SuiTone` 的正式版和历史记录；该仓库尚未创建，查询暂不可验收。当前仅提供前往发布页下载，尚未实现应用内下载替换和自动检查。正式分发所需的可迁移打包、签名、公证和依赖授权核查仍未完成，见 `docs/RELEASE_READINESS.md`。用户要求先验收，再商量 GitHub 上传。
+
 - **当前施工计划以 `docs/IMAGE_EDIT_ROADMAP.md` 的「2026-10-30 评审调整」节为准**（用户确认按调整后的方案逐项施工）。该节 1–6 项及第二、三轮（选区加减、统一设置、AI 改图面板、按钮带文字、服务只在设置里管、模型用最新、一键复原）已全部完成并提交（系统主体抠图、工具栏按钮与选区轮廓、生成版本数据层、对话生成确认卡、即梦适配器、看图测试），剩下的都需要用户出面（真实密钥、收费调用、试用、两个待决定项），清单在该节末尾。下面几条是上一轮另一个 agent 完成的内容，第 0 节是 10-29 的基线状态。
 
 - **2026-10-30 图片编辑进度**：对话明细折叠、图片工具菜单、选区转移、API 测试状态澄清已做；基础点选抠图可预览和另存透明 PNG，但公开样片头发边缘残留背景。Gemini 仅有未接入 UI 的模拟测试适配器，即梦和生成式模式未实现；具体缺口、验证和下一步见 `docs/IMAGE_EDIT_ROADMAP.md`。
@@ -246,7 +248,7 @@
 ### 常用命令
 
 ```bash
-cd '/Users/forwardyan/Coding/Coding Project/photo-edit'
+cd '/Users/forwardyan/Coding/Coding Project/SuiTone'
 ./script/test.sh                              # Swift + Python 测试；本机只有命令行工具，参数见 script/swift_env.sh
 bash script/build_and_run.sh --build-only    # 只编译签名，不关正在用的 App
 bash script/build_and_run.sh --verify        # 会停掉旧 App 并重启，先确认用户没有未保存的编辑

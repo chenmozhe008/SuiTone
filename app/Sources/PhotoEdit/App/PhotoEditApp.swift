@@ -32,6 +32,9 @@ struct PhotoEditApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unifiedCompact)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                AboutMenu()
+            }
             CommandGroup(replacing: .appSettings) {
                 Button("设置…") { store.settingsTab = "chat" }.keyboardShortcut(",")
             }
@@ -54,5 +57,18 @@ struct PhotoEditApp: App {
                 Button("选择全部照片") { store.selectedIDs = Set(store.photos.map(\.id)) }.keyboardShortcut("a")
             }
         }
+        Window("关于随心修图", id: "about") {
+            AboutView().preferredColorScheme(.dark)
+        }
+        .windowResizability(.contentSize)
+    }
+}
+
+private struct AboutMenu: View {
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Button("关于随心修图") { AboutState.shared.tab = .intro; openWindow(id: "about") }
+        Button("更新记录") { AboutState.shared.tab = .changelog; openWindow(id: "about") }
+        Button("反馈") { AboutState.shared.tab = .feedback; openWindow(id: "about") }
     }
 }

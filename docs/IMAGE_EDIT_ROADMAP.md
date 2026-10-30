@@ -95,4 +95,4 @@
 
 ## 接手检查
 
-项目目录：`/Users/forwardyan/Coding/Coding Project/photo-edit`。先读 `CLAUDE.md`、`docs/HANDOFF.md` 和本文；本机 Python 为 `~/.cache/photo-edit/venv/bin/python`。修改引擎后先运行 `cli.py grade` 冒烟，再运行 `./script/test.sh`。构建 `bash script/build_and_run.sh --build-only`；不要关闭用户正在使用的 App、读取密钥或上传私人照片。分阶段本地提交，不 push。大型界面调整须用独立测试副本和公开样片检查；记录已完成、未完成、准确测试证据和下一步。
+项目目录：`/Users/forwardyan/Coding/Coding Project/SuiTone`。先读 `CLAUDE.md`、`docs/HANDOFF.md` 和本文；本机 Python 为 `~/.cache/photo-edit/venv/bin/python`。修改引擎后先运行 `cli.py grade` 冒烟，再运行 `./script/test.sh`。构建 `bash script/build_and_run.sh --build-only`；不要关闭用户正在使用的 App、读取密钥或上传私人照片。分阶段本地提交，不 push。大型界面调整须用独立测试副本和公开样片检查；记录已完成、未完成、准确测试证据和下一步。

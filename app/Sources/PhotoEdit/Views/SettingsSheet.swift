@@ -107,7 +107,7 @@ struct SettingsSheet: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 Text(provider.available ? "使用本机已登录的 \(provider.title)，用你自己的订阅额度，不需要密钥。"
-                                        : "这台电脑上没有找到 \(provider.title)。安装并登录后重新打开随心调色即可使用。")
+                                        : "这台电脑上没有找到 \(provider.title)。安装并登录后重新打开随心修图即可使用。")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
                 if provider.id == store.assistantProvider {
                     Text(store.visionEnabled ? "已允许它看照片预览。" : "第一次对话时会请你允许它看照片预览。")
