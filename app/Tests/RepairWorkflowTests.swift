@@ -99,7 +99,7 @@ import Testing
         store.resetCutout()
         #expect(store.cutoutPreview == nil && store.cutoutSnapshot == nil)
         #expect(store.repairPoint == nil && store.selectionBox == nil)
-        #expect(store.status == "点击照片中的人物或物体")
+        #expect(store.status == "点击照片中要保留的主体")
     }
 
     @Test @MainActor func testChatBoxDoesNotReuseOldBrushOrObjectSelection() {

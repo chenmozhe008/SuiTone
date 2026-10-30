@@ -119,9 +119,6 @@ struct PhotoCanvas: View {
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
                 .overlay(alignment:.top) {
                     if store.repairEnabled && store.usesSelectionParts && store.repairDraft == nil { SelectionToolbar(store:store).padding(.top,6) }
-                    else if store.inspectorTab == "cutout" && store.cutoutPreview == nil && !store.busy {
-                        canvasLabel("点击照片中的人物或物体").padding(.top, 10)
-                    }
                 }
                 .overlay(alignment:.bottomLeading) {
                     if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}

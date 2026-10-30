@@ -6,7 +6,7 @@ struct CutoutPanel: View {
         VStack(alignment: .leading, spacing: 16) {
             if store.busy { ProgressView("正在处理，请稍候…") }
             else if store.cutoutPreview == nil {
-                Label("点击照片中的人物或物体", systemImage: "hand.tap")
+                Label("点击照片中要保留的主体", systemImage: "hand.tap")
                     .font(.headline).fixedSize(horizontal: false, vertical: true)
                 Text("点中后会自动抠图并显示透明背景预览。")
                     .font(.callout).foregroundStyle(.secondary)

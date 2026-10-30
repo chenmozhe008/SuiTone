@@ -88,7 +88,7 @@ private struct CanvasHeader: View {
             toggle("选区", "lasso", tool("selection"), labels, help: "画选区，可以多笔加减").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "selection")
             toggle("移除", "bandage", tool("repair"), labels, help: "移除杂物").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
             toggle("AI 改图", "sparkles", tool("aiedit"), labels, help: "用 AI 生成新图：换背景、加东西、去掉大物体").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "aiedit")
-            toggle("抠图", "scissors", tool("cutout"), labels, help: "抠出人物或物体，另存透明 PNG").disabled(store.current == nil || store.controlsBlocked)
+            toggle("抠图", "scissors", tool("cutout"), labels, help: "抠出照片中的主体，另存透明 PNG").disabled(store.current == nil || store.controlsBlocked)
             toggle("画质", "wand.and.stars", tool("quality"), labels, help: "降噪与放大").disabled(store.current == nil || store.controlsBlocked)
         }.fixedSize()
     }

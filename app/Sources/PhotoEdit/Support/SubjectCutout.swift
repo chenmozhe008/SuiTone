@@ -24,11 +24,11 @@ enum SubjectCutout {
         let request = VNGenerateForegroundInstanceMaskRequest()
         try handler.perform([request])
         guard let observation = request.results?.first, !observation.allInstances.isEmpty else {
-            throw Failure(message: "没有找到可以抠出的主体，照片里可能没有清晰的人物或物体")
+            throw Failure(message: "没有找到可以抠出的主体，请换一张主体清晰的照片")
         }
         let label = instance(at: point, in: observation.instanceMask)
         guard label != 0 else {
-            throw Failure(message: "点到的是背景，请点在人物或物体上")
+            throw Failure(message: "点到的是背景，请点击要保留的主体")
         }
         let mask = try observation.generateScaledMaskForImage(forInstances: IndexSet(integer: label), from: handler)
         let (pixels, coverage) = try composite(image, mask: mask)
