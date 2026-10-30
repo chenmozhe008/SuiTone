@@ -173,9 +173,8 @@ struct AIEditPanel: View {
             if store.aiMentionDemo {
                 Task {
                     try? await Task.sleep(for: .milliseconds(600))
-                    editor.setText("把照片换成")
-                    if figures.count > 1 { editor.insert(name: figures[1].name, path: figures[1].path) }
-                    editor.view?.appendText("的样子")
+                    editor.setText("")
+                    for figure in figures.prefix(3) { editor.insert(name: figure.name, path: figure.path) }
                 }
             }
         }

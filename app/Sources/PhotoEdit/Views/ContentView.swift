@@ -176,7 +176,11 @@ private struct CanvasHeader: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) { title; Spacer(minLength: 12); toolButtons(spacing: 8); gridPicker }
             HStack(spacing: 10) { Spacer(minLength: 0); toolButtons(spacing: 6); gridPicker }
-            HStack(spacing: 6) { Spacer(minLength: 0); toolButtons(spacing: 4).controlSize(.small); gridPicker }
+            HStack(spacing: 6) {
+                ScrollView(.horizontal) { toolButtons(spacing: 4).controlSize(.small) }
+                    .scrollIndicators(.visible)
+                gridPicker
+            }
         }.padding(.horizontal, 18).frame(height: 54)
     }
 

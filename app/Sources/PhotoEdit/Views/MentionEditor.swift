@@ -94,6 +94,8 @@ final class MentionTextView: NSTextView {
         guard let storage = textStorage else { return }
         let chip = NSMutableAttributedString(attachment: chipAttachment(name: name, path: path))
         chip.addAttribute(.mentionName, value: name, range: NSRange(location: 0, length: chip.length))
+        chip.addAttribute(.font, value: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                          range: NSRange(location: 0, length: chip.length))
         chip.append(NSAttributedString(string: " ", attributes: [
             .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
             .foregroundColor: NSColor.labelColor,
@@ -165,7 +167,8 @@ final class MentionTextView: NSTextView {
         let height: CGFloat = 20
         let font = NSFont.systemFont(ofSize: 12, weight: .medium)
         let text = name as NSString
-        let textWidth = text.size(withAttributes: [.font: font]).width
+        let textSize = text.size(withAttributes: [.font: font])
+        let textWidth = textSize.width
         let thumbSide: CGFloat = 14
         let width = 3 + thumbSide + 3 + textWidth + 6
         let size = NSSize(width: ceil(width), height: height)
@@ -190,8 +193,8 @@ final class MentionTextView: NSTextView {
             NSGraphicsContext.restoreGraphicsState()
         }
 
-        let textRect = NSRect(x: 3 + thumbSide + 3, y: (height - text.size(withAttributes: [.font: font]).height) / 2,
-                              width: textWidth, height: height)
+        let textRect = NSRect(x: 3 + thumbSide + 3, y: (height - textSize.height) / 2,
+                              width: textWidth, height: textSize.height)
         text.draw(in: textRect, withAttributes: [.font: font, .foregroundColor: NSColor.white])
         Self.chipCache.setObject(image, forKey: key)
         return image

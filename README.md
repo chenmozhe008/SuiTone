@@ -35,7 +35,7 @@
 | --- | --- | --- |
 | ![人像调整界面](docs/images/adjust-043.png) | ![夜景调整界面](docs/images/night-043.png) | ![裁切与旋转界面](docs/images/crop-043.png) |
 
-样片来源：[Outdoor portrait](https://commons.wikimedia.org/wiki/File:Outdoor_portrait_(Unsplash).jpg)、[Shinjuku](https://commons.wikimedia.org/wiki/File:Shinjuku_-_Shinjuku255.jpg)，原文件均标注 CC0。
+样片来源：[Outdoor portrait](https://commons.wikimedia.org/wiki/File:Outdoor_portrait_(Unsplash).jpg)、[Shinjuku](https://commons.wikimedia.org/wiki/File:Shinjuku_-_Shinjuku255.jpg) 和 Alf van Beem 的 [Interior of old Cafe](https://commons.wikimedia.org/wiki/File:Interior_of_old_Cafe.JPG) 均标注 CC0；Mark Sherman 的 [Portrait of a woman](https://commons.wikimedia.org/wiki/File:Portrait-of-a-woman.jpg) 使用 [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) 授权。
 
 ## 可以做什么
 
@@ -53,19 +53,19 @@
 
 ### AI 改图是怎么工作的
 
-AI 改图和上面的调色面板是两个界面。切到「AI 改图」后，右边写清想要什么、选好出图服务，点生成；生成结果直接落成这张照片的一个新版本，右下角就是它已经攒下的几个版本。
-
-<div align="center">
-<img src="docs/images/ai-edit-workbench.jpg" alt="随心修图：AI 改图面板" width="900">
-</div>
-
-同一张照片，连着说两句话，每一步都能单独撤销：
+切到「AI 改图」，写下想要的效果并选择出图服务，就可以生成照片的新版本。下面是同一张照片的实际案例：先说「加一群海鸥」，再说「天空换成晚霞」：
 
 <div align="center">
 <img src="docs/images/ai-edit-steps.jpg" alt="同一张照片：原图 → 加一群海鸥 → 天空换成晚霞" width="1000">
 </div>
 
 生成结果会作为这张照片的新版本存下来，原图不动；你的调色参数继续套在最新版本上。不满意就撤销，回到上一步。
+
+也可以添加参考图，分别说明想借鉴的场景、光线或风格。下图是当前版本的操作示意，展示原图、三张参考图和提示词；示例未发起生成。
+
+<div align="center">
+<img src="docs/images/ai-edit-demo-044.png" alt="AI 改图操作示意：原图、三张参考图和文字要求" width="900">
+</div>
 
 ## 支持的 AI 服务
 
