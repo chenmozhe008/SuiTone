@@ -57,7 +57,10 @@ struct AboutView: View {
         var entries: [(String, [String])] = []
         for line in text.components(separatedBy: .newlines) {
             if line.hasPrefix("## ") { entries.append((String(line.dropFirst(3)), [])) }
-            else if line.hasPrefix("- "), !entries.isEmpty { entries[entries.count - 1].1.append(String(line.dropFirst(2))) }
+            else if line.hasPrefix("- "), !entries.isEmpty {
+                // 本机 CHANGELOG 用 Markdown 加粗关键词，界面里不渲染星号。
+                entries[entries.count - 1].1.append(String(line.dropFirst(2)).replacingOccurrences(of: "**", with: ""))
+            }
         }
         return entries
     }

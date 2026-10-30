@@ -59,6 +59,21 @@ actor EngineClient {
 
     func start() throws {
         if process?.isRunning == true { return }
+        var lastMessage = ""
+        // 引擎偶尔会因为上一次的进程还没退干净而起不来，重试两次基本都能过。
+        for attempt in 0..<3 {
+            do { try launch(); return }
+            catch {
+                lastMessage = error.localizedDescription
+                process?.terminate()
+                process = nil
+                if attempt < 2 { Thread.sleep(forTimeInterval: 0.6) }
+            }
+        }
+        throw EngineError(message: lastMessage)
+    }
+
+    private func launch() throws {
         let python = paths.python
         guard FileManager.default.isExecutableFile(atPath: python.path) else {
             throw EngineError(message: "找不到专用 Python 环境：\(python.path)。请按 engine/README.md 配置。")
@@ -73,6 +88,16 @@ actor EngineClient {
         task.arguments = paths.bundledExecutable ? ["--root", root.path] : ["-B", script.path, "--root", root.path]
         task.currentDirectoryURL = root
         var environment = ProcessInfo.processInfo.environment
+        // 从终端、编辑器或自动化工具里启动时，环境里可能带进调试注入（PYTHONPATH、各家的钩子变量），
+        // 它们会替换掉引擎的 Python 运行时、甚至拦住写文件，导致「引擎启动失败」。
+        // 引擎只认自己的参数，这些一律不往下传。
+        for key in ["PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONEXECUTABLE", "PYTHONNOUSERSITE"] {
+            environment.removeValue(forKey: key)
+        }
+        for key in environment.keys where key.hasPrefix("CODEBUDDY_") || key.hasPrefix("CLAUDE_")
+            || key.hasPrefix("WORKBUDDY_") || key.hasPrefix("SAFE_DELETE_") {
+            environment.removeValue(forKey: key)
+        }
         environment["PHOTO_EDIT_SESSION_TOKEN"] = token
         environment["PYTHONUNBUFFERED"] = "1"
         // 发行包把模型放在 App 内；源码运行时引擎用 ~/.cache/photo-edit。
@@ -81,24 +106,38 @@ actor EngineClient {
             environment["PHOTO_EDIT_ASSETS"] = models.path
         }
         task.environment = environment
-        let output = Pipe(), input = Pipe()
+        let output = Pipe(), input = Pipe(), errors = Pipe()
         task.standardOutput = output
         task.standardInput = input
-        task.standardError = FileHandle.standardError
-        try task.run()
+        task.standardError = errors
+        do {
+            try task.run()
+        } catch {
+            throw EngineError(message: "本地引擎没能启动：\(error.localizedDescription)")
+        }
         self.process = task
         self.input = input
         var line = Data()
         while line.count < 16384 {
             guard let byte = try output.fileHandleForReading.read(upToCount: 1), !byte.isEmpty else {
-                throw EngineError(message: "本地引擎启动失败，请检查 Python 依赖与模型文件。")
+                // 引擎没起来。把它最后几行报错带出来，不然只剩一句没有线索的提示。
+                let detail = (try? errors.fileHandleForReading.read(upToCount: 4096)) ?? nil
+                let text = detail.map { String(decoding: $0, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+                if text.isEmpty {
+                    throw EngineError(message: "本地引擎启动失败，请重试；仍不行请检查 engine/README.md 里的 Python 依赖与模型文件。")
+                }
+                throw EngineError(message: "本地引擎启动失败：\n" + String(text.suffix(500)))
             }
             if byte.first == 10 { break }
             line.append(byte)
         }
         struct Startup: Decodable { var port: Int }
-        let startup = try JSONDecoder().decode(Startup.self, from: line)
-        endpoint = URL(string: "http://127.0.0.1:\(startup.port)")
+        do {
+            let startup = try JSONDecoder().decode(Startup.self, from: line)
+            endpoint = URL(string: "http://127.0.0.1:\(startup.port)")
+        } catch {
+            throw EngineError(message: "本地引擎返回了看不懂的启动信息：\(String(decoding: line.prefix(200), as: UTF8.self))")
+        }
     }
 
     func request<T: Decodable>(_ path: String, body: [String: Any] = [:], as: T.Type = T.self) async throws -> T {

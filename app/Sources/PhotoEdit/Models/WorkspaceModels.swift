@@ -12,6 +12,8 @@ struct WorkspaceChange {
     var label:String
     var before:[String:EditSnapshot]
     var after:[String:EditSnapshot]
+    /// 对应图集里那一条历史记录（撤销时一起抹掉）
+    var stepID:String? = nil
 }
 
 struct RepairDraft {

@@ -28,13 +28,15 @@ DEFAULTS = dict(water=[54., -17., -7.], water_var=.6, dehaze_amt=1., sky_hue=-10
                 skin_protect=True, smooth=0., bright=0., match_strength=1., enabled={}, regions={},auto_dehaze=True,
                 temperature=0.,tint=0.,highlights=0.,shadows=0.,effect_strength=1.,
                 shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.,
-                whites=0.,blacks=0.,light=0.,vibrance=0.,texture=0.,local={},manual_masks={})
+                whites=0.,blacks=0.,light=0.,vibrance=0.,texture=0.,local={},manual_masks={},
+                rotation=0, angle=0., flip='', crop=None)
 LIMITS = dict(water_var=(0, 2), dehaze_amt=(0, 1), sky_hue=(-180, 180), autumn=(0, 1),
               black_white=(0, 1), contrast=(0, 2), exposure=(-3, 3), saturation=(0, 2),
               smooth=(0, 1), bright=(0, 1), match_strength=(0, 1),temperature=(-1,1),tint=(-1,1),
               highlights=(-1,1),shadows=(-1,1),effect_strength=(0,1),
               shadow_hue=(-180,180),shadow_chroma=(0,30),highlight_hue=(-180,180),highlight_chroma=(0,30),fade=(0,1),
-              whites=(-1,1),blacks=(-1,1),light=(-1,1),vibrance=(-1,1),texture=(0,1))
+              whites=(-1,1),blacks=(-1,1),light=(-1,1),vibrance=(-1,1),texture=(0,1),
+              rotation=(0,270),angle=(-45,45))
 
 
 def _coordinate(value):
@@ -138,6 +140,15 @@ def parameters(raw):
     for name, values in p['local'].items():
         if not isinstance(values, dict) or set(values)-set(LOCAL_FIELDS):raise ValueError('局部参数格式不正确')
         for key, value in values.items():number(value, *LOCAL_FIELDS[key])
+    if p['rotation'] % 90: raise ValueError('旋转角度只能是 90 度的整数倍')
+    if p['flip'] not in ('', 'h', 'v'): raise ValueError('翻转方式无效')
+    crop = p['crop']
+    if crop is not None:
+        if not isinstance(crop, list) or len(crop) != 4 or not all(_coordinate(x) for x in crop):
+            raise ValueError('裁切范围无效')
+        if not (0 < crop[2] <= 1 and 0 < crop[3] <= 1) or crop[0] + crop[2] > 1.0001 or crop[1] + crop[3] > 1.0001:
+            raise ValueError('裁切范围超出画面')
+        p['crop'] = [float(crop[0]), float(crop[1]), float(crop[2]), float(crop[3])]
     return p
 
 
@@ -161,7 +172,17 @@ def _alive(pid):
 
 
 def clean_temporary(tmp, cache_limit=500*1024*1024):
-    """启动时清理：已退出的会话文件夹整个删掉（还在运行的其他窗口不动）；识别缓存超过上限时从最旧的删。"""
+    """启动时清理：已退出的会话文件夹整个删掉（还在运行的其他窗口不动）；识别缓存超过上限时从最旧的删。
+
+    清不掉（权限、文件被占用、系统策略拦截）就跳过——清理只是省空间，不能因为它起不来。
+    """
+    try:
+        _clean_temporary(tmp, cache_limit)
+    except Exception:
+        pass
+
+
+def _clean_temporary(tmp, cache_limit):
     import shutil
     for folder in tmp.glob('app-session-*'):
         try:pid=int((folder/'owner.pid').read_text())
@@ -201,6 +222,11 @@ def replay_operations(asset):
     """按原尺寸重放这张照片的编辑操作：移除杂物在原图上重做；换成生成图时直接改用存下的生成图（RAW 浮点像素随之丢弃）。"""
     image,pixels=load_pixels(asset.path)
     for op in asset.operations:
+        if op.get('geometry'):
+            import geometry as geometry_module
+            image = geometry_module.apply(image, op['geometry'])
+            pixels = None
+            continue
         if op.get('generated'):
             path=Path(op['generated'])
             if not path.is_file():raise ValueError('找不到 AI 生成版本，可能已被移走：'+str(path))
@@ -389,7 +415,9 @@ class Engine:
             self.previews.move_to_end(cache_key)
             return dict(preview=self.previews[cache_key],render_ms=(perf_counter()-start)*1000,
                         cache_hit=True,inference_count=segmentation.inference_count,dehaze_amt=p['dehaze_amt'])
-        image=grade(a.image,analysis=a,**p)
+        import geometry as geometry_module
+        image=grade(a.image,analysis=a,**geometry_module.color_params(p))
+        image=geometry_module.apply(image,p)
         path=self.folder/(uuid4().hex+'.png'); save_new(image,path)
         self.previews[cache_key]=str(path)
         while len(self.previews)>64: self.previews.popitem(last=False)
@@ -542,6 +570,25 @@ class Engine:
                                   asset.operations+[dict(box=[0.,0.,1.,1.],generated=str(stored))],None)
         return dict(id=new_key,source=str(path),stored=str(stored),width=image.width,height=image.height)
 
+    def bake_geometry(self,key,raw):
+        """把裁切和旋转写进这张照片的编辑操作，之后的选区、移除和 AI 改图都按新画面来，不会错位。"""
+        import geometry as geometry_module
+        asset=self.asset(key); p=parameters(raw)
+        if geometry_module.is_neutral(p):raise ValueError('还没有需要应用的裁切或旋转')
+        image,pixels=replay_operations(asset)
+        baked=geometry_module.apply(image,p)
+        working=baked.copy();working.thumbnail((1200,1200),Image.Resampling.LANCZOS)
+        thumb=baked.copy();thumb.thumbnail((200,160))
+        new_key=uuid4().hex
+        path=self.folder/(new_key+'-source.png');save_new(working,path)
+        thumb_path=self.folder/(new_key+'-thumb.jpg');save_new(thumb,thumb_path)
+        operation=dict(box=[0.,0.,1.,1.],geometry=dict(rotation=int(p['rotation'])%360,angle=float(p['angle']),
+                                                       flip=p['flip'],crop=p['crop']))
+        self.assets[new_key]=Asset(new_key,asset.path,path,asset.original_path,thumb_path,asset.fingerprint,
+                                   asset.operations+[operation],None)
+        self.analyses.pop(key,None)
+        return dict(id=new_key,width=baked.width,height=baked.height,operation=operation)
+
     def render_full_png(self,key,raw,quality=None):
         """按原尺寸渲染调色、修复和画质后的成品，存成会话内临时 PNG（抠图等后续处理用，不是导出）。"""
         asset=self.asset(key);p=parameters(raw);q=quality_settings(quality)
@@ -552,6 +599,8 @@ class Engine:
             image,pixels=prepare_quality(image,pixels,**q)
         from render import render_full
         result=render_full(image,p,preview,pixels=pixels)
+        import geometry as geometry_module
+        result=geometry_module.apply(result,p)
         path=self.folder/(uuid4().hex+'-full.png');save_new(result,path)
         return dict(path=str(path),width=result.width,height=result.height)
 
@@ -584,6 +633,8 @@ class Engine:
                 image,pixels=prepare_quality(image,pixels,**quality)
             from render import render_full
             rendered=render_full(image,p,preview,pixels=pixels)
+            import geometry as geometry_module
+            rendered=geometry_module.apply(rendered,p)
             if options.get('info_bar'):
                 from info_bar import with_bar,meta
                 rendered=with_bar(rendered,meta(str(asset.path)),options.get('place',''))
@@ -667,6 +718,7 @@ def serve(root, token, watch_stdin=True):
                     if self.path=='/scan':result=engine.scan_paths(data['paths'])
                     elif self.path=='/import': result=engine.import_paths(data['paths'])
                     elif self.path=='/analyze': result=engine.analyze(data['id'])
+                    elif self.path=='/bake-geometry': result=engine.bake_geometry(data['id'],data.get('params',{}))
                     elif self.path=='/preview': result=engine.preview(data['id'],data.get('params',{}),data.get('quality'))
                     elif self.path=='/suggestions': result=engine.suggestions(data['id'])
                     elif self.path=='/region-at': result=engine.region_at(data['id'],data['x'],data['y'])

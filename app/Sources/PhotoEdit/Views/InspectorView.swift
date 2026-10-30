@@ -3,7 +3,7 @@ import SwiftUI
 /// 右栏：「对话」（默认）和「调整」两页；修复、画质由画布工具栏进入，点「完成」回到原来的页。
 struct InspectorView: View {
     @Bindable var store: WorkspaceStore
-    private static let titles = ["repair": "移除杂物", "quality": "画质增强", "cutout": "抠图", "selection": "选区", "aiedit": "AI 改图"]
+    private static let titles = ["repair": "移除杂物", "quality": "画质增强", "cutout": "抠图", "selection": "选区", "aiedit": "AI 改图", "crop": "裁切与旋转"]
     private var toolMode: Bool { Self.titles[store.inspectorTab] != nil }
 
     var body: some View {
@@ -28,6 +28,7 @@ struct InspectorView: View {
             case "cutout": CutoutPanel(store: store)
             case "selection": SelectionPanel(store: store)
             case "aiedit": AIEditPanel(store: store)
+            case "crop": CropPanel(store: store)
             case "adjust": AdjustPanel(store: store)
             default: AssistantPanel(store: store)
             }
@@ -41,6 +42,8 @@ struct InspectorView: View {
                 if tab == "chat" || tab == "adjust" { store.lastMainTab = tab }
                 if Self.titles[tab] != nil { store.grid = false }
                 if tab == "adjust" { store.loadStyleTiles(); if store.analysis == nil { store.loadAnalysis() } }
+                // 从裁切页退出来就算确认，不用再单独点一次。
+                if tab != "crop", store.cropDraft != nil { store.commitCrop() }
                 // 进 AI 改图页也要把已有选区画出来，不然不知道这次会改哪一块。
                 if tab == "aiedit", !store.selectionParts.isEmpty, store.selectionOverlay == nil { store.refreshSelection() }
             }

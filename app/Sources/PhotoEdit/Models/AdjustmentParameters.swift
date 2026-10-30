@@ -70,6 +70,14 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
     var regions: [String: RegionAdjustment] = [:]
     var local: [String: LocalAdjustment] = [:]
     var manualMasks: [String: RemovalOperation] = [:]
+    /// 几何调整：旋转（90 的整数倍）、拉直角度、翻转、裁切范围（0–1 比例）
+    var rotation = 0.0
+    var angle = 0.0
+    var flip = ""
+    var crop: [Double]? = nil
+    var hasGeometry: Bool {
+        (Int(rotation) % 360 != 0) || abs(angle) >= 0.01 || !flip.isEmpty || crop != nil
+    }
     var hasReferenceMatch: Bool { regions.values.contains { $0.referenceCount > 0 } }
 
     init() {}
@@ -78,6 +86,7 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
         case temperature,tint,highlights,shadows,effectStrength,skinProtect,smooth,bright,matchStrength,enabled,regions
         case shadowHue,shadowChroma,highlightHue,highlightChroma,fade
         case whites,blacks,light,vibrance,texture,local,manualMasks
+        case rotation,angle,flip,crop
     }
     init(from decoder:Decoder) throws {
         self.init()
@@ -115,6 +124,10 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
         texture=try c.decodeIfPresent(Double.self,forKey:.texture) ?? 0
         local=try c.decodeIfPresent([String:LocalAdjustment].self,forKey:.local) ?? [:]
         manualMasks=try c.decodeIfPresent([String:RemovalOperation].self,forKey:.manualMasks) ?? [:]
+        rotation=try c.decodeIfPresent(Double.self,forKey:.rotation) ?? 0
+        angle=try c.decodeIfPresent(Double.self,forKey:.angle) ?? 0
+        flip=try c.decodeIfPresent(String.self,forKey:.flip) ?? ""
+        crop=try c.decodeIfPresent([Double].self,forKey:.crop)
     }
 }
 
@@ -161,6 +174,15 @@ struct RemovalOperation: Codable, Equatable, Sendable {
     var generated: String? = nil
     /// 多笔选区（按顺序加减）；有它时忽略上面的单笔字段
     var parts: [SelectionPart]? = nil
+    /// 已经应用过的裁切旋转（烘焙成新版本时记下，重新打开照片要照它重现）
+    var geometry: GeometryAdjustment? = nil
+}
+
+struct GeometryAdjustment: Codable, Equatable, Sendable {
+    var rotation = 0.0
+    var angle = 0.0
+    var flip = ""
+    var crop: [Double]? = nil
 }
 
 struct EditSnapshot: Equatable {
@@ -194,6 +216,9 @@ struct PhotoRecord: Identifiable {
     var notes: [String] = []
     var ready = false
     var quality = QualitySettings()
+
+    /// 当前这一版是不是 AI 生成的（换过底片），界面要标出来，别让人以为是拍的。
+    var aiGenerated: Bool { operations.contains { $0.generated != nil } }
 
     var snapshot: EditSnapshot {
         EditSnapshot(assetID: assetID, parameters: parameters, operations: operations, label: "调整",lookName:lookName,notes:notes,quality:quality)

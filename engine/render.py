@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 from PIL import Image
 from grade import grade_array,quantize,rgb2lab
+from geometry import color_params
 
 
 def rows(field, width, height, top, bottom):
@@ -15,7 +16,8 @@ def rows(field, width, height, top, bottom):
 
 
 def render_full(image,params,preview,pixels=None,band=384):
-    params=dict(params)
+    # 裁切旋转由调用方在最后套用，这里只算颜色。
+    params=color_params(dict(params))
     if params.get('auto_dehaze'):
         params['dehaze_amt']=preview.recommended_dehaze()
         params['auto_dehaze']=False

@@ -105,6 +105,18 @@ final class WorkspaceStore {
     var lastExport: String?
     var undoChanges: [WorkspaceChange] = []
     var redoChanges: [WorkspaceChange] = []
+    /// 图集（导入批次）记录：关掉应用再打开还在，跟 Lightroom 的目录一样。
+    var albums: [LibraryAlbum] = []
+    var currentAlbumID: String?
+    var albumSteps: [LibraryStep] = []
+    var showLibrary = true
+    var libraryTask: Task<Void, Never>?
+    /// 只在单元测试里设置：把图集写到指定目录，几个测试并行时不互相踩。
+    var libraryDirectory: URL?
+    /// 裁切页正在框的范围（0–1 比例）和拖拽起点；裁切比例选的是哪一档
+    var cropDraft: [Double]?
+    var cropAnchor: [Double]?
+    var cropAspect = "original"
     var providers: [AssistantProvider] = []
     var assistantProvider = UserDefaults.standard.string(forKey: "assistantProvider") ?? "codex" {
         didSet { UserDefaults.standard.set(assistantProvider, forKey: "assistantProvider") }
@@ -217,6 +229,11 @@ final class WorkspaceStore {
                let first = providers.first(where: \.available) { assistantProvider = first.id }
             loadAPIKey()
             applyLaunchOptions()
+            // 上次关掉时正在弄的那批照片，重新打开就接着弄；图集列表也一并读回来。
+            // 用命令行指定了要导入的图时（验收截图）不自动打开，免得把刚导入的顶掉。
+            loadLibrary()
+            if UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)["importOnLaunch"] == nil,
+               let recent = albums.first { openAlbum(recent) }
         } catch { self.error = error.localizedDescription; status = "引擎未就绪" }
     }
 
@@ -295,7 +312,10 @@ final class WorkspaceStore {
                 guard let photo = current else { return }
                 do {
                     let start = Date()
-                    let response: PreviewResponse = try await engine.request("preview", body: ["id": photo.assetID, "params": try EngineClient.object(photo.parameters), "quality": try EngineClient.object(photo.quality)])
+                    var previewParams = photo.parameters
+                    // 裁切页要看到完整画面（含将被裁掉的部分），框才不会错位。
+                    if inspectorTab == "crop" { previewParams.crop = nil }
+                    let response: PreviewResponse = try await engine.request("preview", body: ["id": photo.assetID, "params": try EngineClient.object(previewParams), "quality": try EngineClient.object(photo.quality)])
                     if version == previewVersion, currentID == photo.id, let i = currentIndex, photos[i].quality == photo.quality {
                         photos[i].previewPath = response.preview
                         if photos[i].parameters.autoDehaze == true { photos[i].parameters.dehazeAmt = response.dehazeAmt }
@@ -321,7 +341,9 @@ final class WorkspaceStore {
             if previous != now { old[id] = previous; new[id] = now }
         }
         guard !old.isEmpty else { return nil }
-        let change = WorkspaceChange(label: label, before: old, after: new)
+        var change = WorkspaceChange(label: label, before: old, after: new)
+        // 撤销栈只在本次运行有效；改动同时记进图集，重启后左侧「历史」里还能看到、能点回去。
+        change.stepID = noteStep(label, after: new)
         undoChanges.append(change)
         if undoChanges.count > 100 { undoChanges.removeFirst() }
         redoChanges = []
@@ -378,13 +400,18 @@ final class WorkspaceStore {
         guard let last = undoChanges.popLast() else { return }
         for i in chatMessages.indices where chatMessages[i].changeID == last.id { chatMessages[i].wasUndone = true }
         redoChanges.append(last); applyStates(last.before)
+        if let stepID = last.stepID { albumSteps.removeAll { $0.id == stepID } }
+        syncAlbum()
+        syncAlbum()
         status = "已撤销：\(last.label) · \(last.before.count) 张"
     }
 
     func redo() {
-        guard let next = redoChanges.popLast() else { return }
+        guard var next = redoChanges.popLast() else { return }
         for i in chatMessages.indices where chatMessages[i].changeID == next.id { chatMessages[i].wasUndone = false }
-        undoChanges.append(next); applyStates(next.after)
+        applyStates(next.after)
+        next.stepID = noteStep(next.label, after: next.after)
+        undoChanges.append(next)
         status = "已重做：\(next.label) · \(next.after.count) 张"
     }
 
@@ -401,8 +428,14 @@ final class WorkspaceStore {
         beginEditing("恢复快照"); applySnapshot(snapshot); finishEditing()
     }
 
-    func toggleStar(_ id: String) { if let i = photos.firstIndex(where: { $0.id == id }) { photos[i].starred.toggle() } }
-    func toggleExcluded(_ id: String) { if let i = photos.firstIndex(where: { $0.id == id }) { photos[i].excluded.toggle() } }
+    func toggleStar(_ id: String) {
+        if let i = photos.firstIndex(where: { $0.id == id }) { photos[i].starred.toggle() }
+        syncAlbum()
+    }
+    func toggleExcluded(_ id: String) {
+        if let i = photos.firstIndex(where: { $0.id == id }) { photos[i].excluded.toggle() }
+        syncAlbum()
+    }
 
     func selectPhoto(_ id: String, modifiers: NSEvent.ModifierFlags) {
         if modifiers.contains(.shift), let start = photos.firstIndex(where: { $0.id == currentID }), let end = photos.firstIndex(where: { $0.id == id }) {

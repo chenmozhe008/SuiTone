@@ -10,6 +10,8 @@ extension WorkspaceStore {
 
     func importURLs(_ urls: [URL], reference: Bool = false) {
         guard !controlsBlocked else { return }
+        // 空工作区里导入＝开一个新图集；已经有照片时再导入，照片并进当前图集。
+        let startsNewAlbum = photos.isEmpty
         finishEditing(); importing = true; progressDone = 0; progressTotal = 0
         status = reference ? "正在读取参考图…" : "正在查找照片…"
         importTask = Task {
@@ -40,7 +42,13 @@ extension WorkspaceStore {
                 if !Task.isCancelled { status = reference ? "参考图已就绪" : "照片已导入 · \(included.count) 张" }
                 if !failures.isEmpty { error = failures.joined(separator: "\n") }
                 if !reference, photos.count > 1, inspectorTab != "repair" { grid = true }
-                if !reference { refreshGrid();loadStyleTiles() }
+                if !reference {
+                    if !Task.isCancelled {
+                        adoptImportedPhotos(intoNewAlbum: startsNewAlbum, title: albumTitle(for: urls),
+                                            source: urls.first.map { $0.hasDirectoryPath ? $0.path : $0.deletingLastPathComponent().path } ?? "")
+                    }
+                    refreshGrid(); loadStyleTiles()
+                }
             } catch { self.error = error.localizedDescription }
         }
     }
@@ -117,6 +125,9 @@ extension WorkspaceStore {
                     record.lookName = "已保存的调整"; record.ready = true; records.append(record)
                 }
                 photos = records; exportOptions = project.options; undoChanges = []; redoChanges = []
+                currentAlbumID = nil; albumSteps = []
+                adoptImportedPhotos(intoNewAlbum: true, title: url.deletingPathExtension().lastPathComponent,
+                                    source: url.deletingLastPathComponent().path)
                 selectedIDs = Set(records.prefix(1).map(\.id)); activate(records.first?.id); grid = records.count > 1; refreshGrid()
                 if !result.errors.isEmpty { error = result.errors.joined(separator: "\n") }
             } catch { self.error = error.localizedDescription }

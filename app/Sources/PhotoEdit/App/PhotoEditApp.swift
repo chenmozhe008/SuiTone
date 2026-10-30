@@ -29,6 +29,9 @@ struct PhotoEditApp: App {
                     if url.pathExtension=="photoedit" {store.openProject(url)}
                     else {store.importURLs([url])}
                 }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    store.flushLibrary()
+                }
         }
         .defaultSize(width: 1360, height: 880)
         .windowStyle(.titleBar)
@@ -41,6 +44,7 @@ struct PhotoEditApp: App {
                 Button("设置…") { store.settingsTab = "chat" }.keyboardShortcut(",")
             }
             CommandGroup(replacing: .newItem) {
+                Button("新建图集…") { store.startFreshWorkspace() }.keyboardShortcut("n")
                 Button("导入照片…") { store.chooseImport() }.keyboardShortcut("o")
                 Button("添加参考图…") { store.chooseImport(reference: true) }.keyboardShortcut("r", modifiers: [.command,.shift])
                 Divider()
@@ -57,6 +61,9 @@ struct PhotoEditApp: App {
                 Button("保存快照") { store.snapshot() }.keyboardShortcut("k").disabled(store.current == nil)
                 Button("移除杂物") { store.inspectorTab = "repair" }.keyboardShortcut("r").disabled(store.current == nil || store.controlsBlocked)
                 Button("选择全部照片") { store.selectedIDs = Set(store.photos.map(\.id)) }.keyboardShortcut("a")
+                Divider()
+                Button(store.showLibrary ? "隐藏图集栏" : "显示图集栏") { store.showLibrary.toggle() }
+                    .keyboardShortcut("l", modifiers: [.command, .option])
             }
         }
         Window("关于随心修图", id: "about") {

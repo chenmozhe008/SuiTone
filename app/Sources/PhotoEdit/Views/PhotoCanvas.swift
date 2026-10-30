@@ -7,7 +7,7 @@ struct PhotoCanvas: View {
     var body: some View {
         GeometryReader {geometry in
             if let photo=store.current {
-                let ratio=CGFloat(photo.imported.width)/CGFloat(photo.imported.height)
+                let ratio=displayRatio(photo)
                 let w=max(1,min(geometry.size.width-48,(geometry.size.height-48)*ratio))
                 let h=w/ratio
                 ZStack {
@@ -57,6 +57,10 @@ struct PhotoCanvas: View {
                         Rectangle().stroke(.white,lineWidth:1).background(.white.opacity(0.08))
                             .frame(width:w*(box[2]-box[0]),height:h*(box[3]-box[1]))
                             .position(x:w*(box[0]+box[2])/2,y:h*(box[1]+box[3])/2)
+                    }
+                    // 裁切页：框出要留下的范围，外面压暗。
+                    if store.inspectorTab == "crop", store.cropDraft != nil {
+                        CropOverlay(store: store, size: CGSize(width: w, height: h))
                     }
                 }
                 .frame(width:w,height:h)
@@ -121,6 +125,9 @@ struct PhotoCanvas: View {
                 .overlay(alignment:.top) {
                     if store.repairEnabled && store.usesSelectionParts && store.repairDraft == nil { SelectionToolbar(store:store).padding(.top,6) }
                 }
+                .overlay(alignment:.topTrailing) {
+                    if store.inspectorTab != "cutout", store.current?.aiGenerated == true { aiBadge }
+                }
                 .overlay(alignment:.bottomLeading) {
                     if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}
                     else if store.showOriginal {canvasLabel("原图").padding(10)}
@@ -144,9 +151,21 @@ struct PhotoCanvas: View {
         .dropDestination(for:URL.self) {urls,_ in store.importURLs(urls);return true}
     }
 
+    /// 画面显示比例：按裁切和旋转后实际要出的形状算，裁切页里仍显示完整画面以便重新框。
+    private func displayRatio(_ photo: PhotoRecord) -> CGFloat {
+        var width = Double(photo.imported.width), height = Double(photo.imported.height)
+        if store.inspectorTab != "crop" {
+            if let crop = photo.parameters.crop, crop[2] > 0, crop[3] > 0 {
+                width *= crop[2]; height *= crop[3]
+            }
+            if Int(photo.parameters.rotation) % 180 == 90 { swap(&width, &height) }
+        }
+        guard width > 0, height > 0 else { return 1 }
+        return CGFloat(width / height)
+    }
+
     /// 画笔轨迹（半透明红，粗细即笔刷大小）、套索轮廓、点选位置。
-    @ViewBuilder private func repairShapes(w:CGFloat,h:CGFloat)->some View {
-        // 正在画的这一笔：添加用红色，减去用橙色
+    @ViewBuilder private func repairShapes(w:CGFloat,h:CGFloat)->some View {        // 正在画的这一笔：添加用红色，减去用橙色
         let red=store.usesSelectionParts && store.selectionSubtract ? Color.orange : Color(red:0.95,green:0.3,blue:0.3)
         Canvas {context,_ in
             for stroke in store.repairStrokes {
@@ -174,6 +193,24 @@ struct PhotoCanvas: View {
     private var splitActive: Bool {
         store.splitCompare && !store.showOriginal && !store.repairEnabled && store.repairDraft == nil && store.overlay.isEmpty
             && !(store.inspectorTab == "aiedit" && !store.selectionParts.isEmpty)
+    }
+
+    /// AI 生成的版本要一眼看得出来：实底徽标，不用半透明，避免"看不清"。
+    private var aiBadge: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "sparkles").font(.system(size: 10, weight: .bold))
+            Text("AI 生成").font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(
+            LinearGradient(colors: [Color(red: 0.56, green: 0.29, blue: 0.96), Color(red: 0.31, green: 0.55, blue: 1.0)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.4), lineWidth: 0.6))
+        .shadow(color: .black.opacity(0.4), radius: 5, y: 1)
+        .padding(10)
+        .allowsHitTesting(false)
     }
 
     private func canvasLabel(_ text:String, color: Color = .white)->some View {

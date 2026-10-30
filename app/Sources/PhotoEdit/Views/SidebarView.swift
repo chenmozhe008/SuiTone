@@ -34,6 +34,17 @@ struct FilmstripView: View {
                                     .overlay(alignment: .topTrailing) {
                                         if photo.starred { Image(systemName: "star.fill").font(.caption2).padding(4).background(Color(white: 0.12)) }
                                     }
+                                    .overlay(alignment: .bottomLeading) {
+                                        if photo.aiGenerated {
+                                            HStack(spacing: 2) {
+                                                Image(systemName: "sparkles").font(.system(size: 7, weight: .bold))
+                                                Text("AI").font(.system(size: 8, weight: .bold))
+                                            }
+                                            .foregroundStyle(.white).padding(.horizontal, 4).padding(.vertical, 2)
+                                            .background(Color(red: 0.5, green: 0.3, blue: 0.95), in: Capsule())
+                                            .padding(4)
+                                        }
+                                    }
                                 Text(photo.imported.name).font(.system(size: 10)).lineLimit(1)
                                     .foregroundStyle(photo.id == store.currentID ? .primary : .secondary)
                             }.frame(width: 112).opacity(photo.excluded ? 0.35 : 1)

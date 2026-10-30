@@ -6,24 +6,30 @@ struct ContentView: View {
         VStack(spacing: 0) {
             WorkspaceHeader(store: store)
             Divider()
-            if store.photos.isEmpty {
-                WelcomeView(store: store)
-            } else {
-                HSplitView {
-                    VStack(spacing: 0) {
-                        CanvasHeader(store: store)
-                        if store.grid { ComparisonGrid(store: store) }
-                        else { PhotoCanvas(store: store) }
-                        Divider()
-                        FilmstripView(store: store).frame(height: 150)
-                    }.frame(minWidth: 560)
-                    InspectorView(store: store).frame(minWidth: 320, idealWidth: 350, maxWidth: 390)
+            HStack(spacing: 0) {
+                if store.showLibrary {
+                    LibrarySidebar(store: store).frame(width: 216)
+                    Divider()
+                }
+                if store.photos.isEmpty {
+                    WelcomeView(store: store)
+                } else {
+                    HSplitView {
+                        VStack(spacing: 0) {
+                            CanvasHeader(store: store)
+                            if store.grid { ComparisonGrid(store: store) }
+                            else { PhotoCanvas(store: store) }
+                            Divider()
+                            FilmstripView(store: store).frame(height: 150)
+                        }.frame(minWidth: 560)
+                        InspectorView(store: store).frame(minWidth: 320, idealWidth: 350, maxWidth: 390)
+                    }
                 }
             }
             Divider()
             WorkspaceStatus(store: store)
         }
-        .frame(minWidth: 1050, minHeight: 720)
+        .frame(minWidth: 1180, minHeight: 720)
         .background(Color(white: 0.18))
         .tint(Color(white: 0.8))
         .alert("操作未完成", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {
@@ -53,6 +59,8 @@ private struct WorkspaceHeader: View {
             }
             Button { store.chooseImport() } label: { Label("添加照片", systemImage: "plus") }
                 .disabled(store.controlsBlocked)
+            Button { store.showLibrary.toggle() } label: { Label("图集", systemImage: "sidebar.left") }
+                .help("显示／隐藏左边的图集和历史记录")
             Spacer(minLength: 16)
             if !store.photos.isEmpty {
                 HStack(spacing: 6) {
@@ -89,6 +97,7 @@ private struct CanvasHeader: View {
             toggle("选区", "lasso", tool("selection"), labels, help: "画选区，可以多笔加减").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "selection")
             toggle("移除", "bandage", tool("repair"), labels, help: "移除杂物").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
             toggle("AI 改图", "sparkles", tool("aiedit"), labels, help: "用 AI 生成新图：换背景、加东西、去掉大物体").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "aiedit")
+            toggle("裁切", "crop.rotate", tool("crop"), labels, help: "裁切、旋转、翻转和拉直照片").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "crop")
             toggle("抠图", "scissors", tool("cutout"), labels, help: "抠出照片中的主体，另存透明 PNG").disabled(store.current == nil || store.controlsBlocked)
             toggle("画质", "wand.and.stars", tool("quality"), labels, help: "降噪与放大").disabled(store.current == nil || store.controlsBlocked)
         }.fixedSize()
@@ -191,6 +200,10 @@ private struct WelcomeView: View {
                 Text("照片调色").font(.system(size: 28, weight: .medium))
                 Text("导入照片后，用对话或手动工具开始调整。")
                     .font(.callout).foregroundStyle(.secondary)
+                if !store.albums.isEmpty {
+                    Text("左侧可以打开之前导入的图集。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Button("导入照片或文件夹…") { store.chooseImport() }
                 .buttonStyle(.borderedProminent).controlSize(.large).disabled(store.importing)
