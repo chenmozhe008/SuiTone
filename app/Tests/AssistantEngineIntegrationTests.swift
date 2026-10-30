@@ -24,10 +24,9 @@ import Testing
         service.serve(sys.argv[sys.argv.index('--root')+1],os.environ['PHOTO_EDIT_SESSION_TOKEN'])
         """
         try script.write(to: engineDir.appendingPathComponent("service.py"), atomically: true, encoding: .utf8)
-        let sample = root.appendingPathComponent("tmp/local-quality-20261030/public-small.jpg")
-        guard FileManager.default.fileExists(atPath: sample.path) else { return }
-        let paths = ["first", "second", "third"].map { fixture.appendingPathComponent($0 + ".jpg") }
-        for path in paths { try FileManager.default.copyItem(at: sample, to: path) }
+        let image = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGO0qdjCgA0wYRUdtBIAHQ8BeIKmlrAAAAAASUVORK5CYII="))
+        let paths = ["first", "second", "third"].map { fixture.appendingPathComponent($0 + ".png") }
+        for path in paths { try image.write(to: path) }
         let store = WorkspaceStore(engine: EngineClient(root: fixture))
         let imported: ImportResponse = try await store.engine.request("import", body: ["paths": paths.map(\.path)])
         #expect(imported.photos.count == 3)
