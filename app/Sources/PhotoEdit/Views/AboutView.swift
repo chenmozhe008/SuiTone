@@ -11,12 +11,41 @@ enum AboutTab: String, CaseIterable { case intro = "介绍", changelog = "更新
 struct AboutView: View {
     @ObservedObject private var state = AboutState.shared
     @EnvironmentObject private var updates: UpdateChecker
-    @State private var history: [(String, String)] = []
+    @State private var history: [ReleasedVersion] = []
     @State private var historyMessage: String?
     @State private var loadingHistory = false
     @State private var copied = ""
     private let repo = "chenmozhe008/SuiTone"
     private let email = "327529709@qq.com"
+
+    /// 一条更新记录：线上（GitHub Releases）有就用线上的说明并附上发布页，没有就用 App 自带的 CHANGELOG。
+    private struct ReleasedVersion {
+        let version: String
+        let date: String?
+        let notes: [String]
+        let page: URL?
+    }
+
+    private var releasesPage: URL { URL(string: "https://github.com/\(repo)/releases")! }
+
+    /// 线上记录与本机更新记录按版本号合并，新的在前；同一版本不重复显示。
+    private var mergedReleases: [ReleasedVersion] {
+        var byVersion: [String: ReleasedVersion] = [:]
+        for row in history { byVersion[row.version] = row }
+        for (title, items) in localChangelog where !title.contains("开发版") {
+            let parts = title.components(separatedBy: " · ")
+            let version = (parts.first ?? title).trimmingCharacters(in: .whitespaces)
+            let date = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : nil
+            if let online = byVersion[version] {
+                if online.date == nil {
+                    byVersion[version] = ReleasedVersion(version: version, date: date, notes: online.notes, page: online.page)
+                }
+            } else {
+                byVersion[version] = ReleasedVersion(version: version, date: date, notes: items, page: nil)
+            }
+        }
+        return byVersion.values.sorted { UpdateChecker.isNewer($0.version, than: $1.version) }
+    }
     private var diagnostics: String {
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
         return "随心修图 \(AppIdentity.version)（\(build)），\(ProcessInfo.processInfo.operatingSystemVersionString)"
@@ -114,30 +143,29 @@ struct AboutView: View {
 
     private var changelog: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            HStack(spacing: 12) {
                 sectionTitle("更新记录")
                 Spacer()
-                Button(loadingHistory ? "正在获取…" : "刷新发布记录") { Task { await loadHistory() } }.disabled(loadingHistory)
+                Button(loadingHistory ? "正在获取…" : "刷新") { Task { await loadHistory() } }.disabled(loadingHistory)
+                Link(destination: releasesPage) { Label("发布页", systemImage: "arrow.up.right.square") }
             }
             if let historyMessage { Text(historyMessage).font(.callout).foregroundStyle(.secondary) }
-            ForEach(Array(history.enumerated()), id: \.offset) { _, release in
+            ForEach(mergedReleases, id: \.version) { release in
                 card {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(release.0).font(.callout.weight(.bold)).foregroundStyle(.cyan)
-                        Text(.init(release.1)).font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(release.version).font(.body.weight(.bold)).foregroundStyle(.cyan)
+                            if let date = release.date { Text(date).font(.caption).foregroundStyle(.secondary) }
+                            Spacer()
+                            Link(destination: release.page ?? releasesPage) {
+                                Label(release.page == nil ? "查看" : "发布页", systemImage: "arrow.up.right.square")
+                                    .font(.caption)
+                            }
+                        }
+                        ForEach(Array(release.notes.enumerated()), id: \.offset) { _, item in bullet(item) }
                     }
                 }
             }
-            ForEach(Array(localChangelog.enumerated()), id: \.offset) { _, entry in
-                card {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(entry.0).font(.body.weight(.bold)).foregroundStyle(.cyan)
-                        ForEach(Array(entry.1.enumerated()), id: \.offset) { _, item in bullet(item) }
-                    }
-                }
-            }
-            Text("正式发布后可在此查看各版本的更新说明。")
-                .font(.callout).foregroundStyle(.secondary)
         }.task(id: state.tab) {
             if state.tab == .changelog && history.isEmpty && historyMessage == nil { await loadHistory() }
         }
@@ -210,15 +238,36 @@ struct AboutView: View {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200,
                   let releases = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-                historyMessage = "暂时无法获取发布记录，仓库可能尚未发布或网络不可用。"; return
+                historyMessage = "没连上 GitHub，下面是应用自带的更新记录。"; return
             }
             history = releases.filter { !($0["draft"] as? Bool ?? true) && !($0["prerelease"] as? Bool ?? true) }
                 .compactMap { release in
                     guard let tag = release["tag_name"] as? String else { return nil }
-                    let notes = (release["body"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    return (tag, notes.isEmpty ? "这个版本没有填写更新说明。" : notes)
+                    let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+                    let page = (release["html_url"] as? String).flatMap(URL.init(string:))
+                    let date = (release["published_at"] as? String).map { String($0.prefix(10)) }
+                    let body = release["body"] as? String ?? ""
+                    // 优先取「这一版的变化 / 更新内容」这一节的条目，没有就退回全文里的条目。
+                    var section: [String] = [], all: [String] = [], inChangelog = false
+                    for line in body.components(separatedBy: .newlines) {
+                        if line.hasPrefix("#") {
+                            inChangelog = ["更新内容", "变化", "更新"].contains { line.contains($0) }
+                            continue
+                        }
+                        guard line.hasPrefix("- ") else { continue }
+                        let item = String(line.dropFirst(2)).replacingOccurrences(of: "**", with: "")
+                        all.append(item)
+                        if inChangelog { section.append(item) }
+                    }
+                    var notes = section.isEmpty ? all : section
+                    if notes.isEmpty {
+                        notes = body.components(separatedBy: .newlines)
+                            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.hasPrefix("#") }
+                            .prefix(4).map { $0.replacingOccurrences(of: "**", with: "") }
+                    }
+                    return ReleasedVersion(version: version, date: date, notes: notes, page: page)
                 }
-            historyMessage = history.isEmpty ? "暂时没有正式发布记录。" : nil
-        } catch { historyMessage = "无法获取发布记录，请检查网络后重试。" }
+            historyMessage = history.isEmpty ? "线上还没有取到发布记录，下面是应用自带的更新记录。" : nil
+        } catch { historyMessage = "没能连上 GitHub，下面是应用自带的更新记录。" }
     }
 }
