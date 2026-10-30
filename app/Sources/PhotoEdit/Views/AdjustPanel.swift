@@ -57,17 +57,10 @@ struct AdjustPanel: View {
 
     private var styleSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("风格").font(.headline)
-                Spacer()
-                if store.styleFamily != "mine" && styles.count > 6 {
-                    Button(expandedStyles ? "收起" : "全部 \(styles.count) 款") { expandedStyles.toggle() }
-                        .buttonStyle(.link).font(.callout)
-                }
-            }
+            Text("风格").font(.headline)
             Picker("风格类型", selection: $store.styleFamily) {
                 Text("轻微调整").tag("natural")
-                Text("风格化").tag("creative")
+                Text("风格化调整").tag("creative")
                 Text("我的风格").tag("mine")
             }.pickerStyle(.segmented).labelsHidden()
                 .onChange(of: store.styleFamily) { _, _ in expandedStyles = false }
@@ -79,6 +72,16 @@ struct AdjustPanel: View {
                                       selected: store.current?.lookName == style.title)
                         }.buttonStyle(.plain).help(style.detail + "，应用到" + store.scopeLabel)
                     }
+                }
+                // 放在缩略图正下方：看完前几款，眼睛自然落到这里。
+                if styles.count > 6 {
+                    Button { withAnimation(.easeOut(duration: 0.2)) { expandedStyles.toggle() } } label: {
+                        HStack(spacing: 6) {
+                            Text(expandedStyles ? "收起" : "展开全部 \(styles.count) 款")
+                            Image(systemName: expandedStyles ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
+                        }.font(.callout.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 8)
+                            .background(Color(white: 0.22), in: RoundedRectangle(cornerRadius: 8))
+                    }.buttonStyle(.plain)
                 }
             }
             slider("强度", \.effectStrength, 0...1, reset: 1) { String(format: "%.0f", $0 * 100) }

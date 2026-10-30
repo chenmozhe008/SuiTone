@@ -61,7 +61,7 @@ generate：本地参数和本地修复做不到、必须生成新像素的要求
 如果用户要求轻微、自然或保留特定区域，则按要求克制调整，不夸大效果；暗部无法恢复的细节要如实说明。
 “稍微”约束风格力度，不等于变化可以难以察觉；应根据照片中目标区域的实际问题，调整到前后预览可辨认，同时避免破坏雾气、边缘和亮部渐变。
 用户明确要求变化能看出来时，自然与可见须同时满足：重点区域要有可辨认的改善，同时保留色彩、质感和高光细节。
-preset=keep 保留现有设置；其余 preset 见文末风格清单（自然＝微调求真，出片＝明显风格并带质感）。
+preset=keep 保留现有设置；其余 preset 见文末风格清单（轻微调整＝微调求真，风格化调整＝明显风格并带质感）。
 shadow_hue/highlight_hue[-180,180]、shadow_chroma/highlight_chroma[0,30] 可分离阴影高光染色，fade[0,1]褪黑。
 adjustments 为 set/add/multiply 数值操作：exposure[-3,3]EV、contrast[0,2]、saturation[0,2]、
 temperature[-1,1]正暖负冷、tint[-1,1]正洋红负绿、highlights/shadows[-1,1]、black_white[0,1]、
@@ -87,7 +87,7 @@ reply 用中文描述建议，不要提前宣称已完成；缺关键审美方�
 
 
 STYLE_GUIDE='风格清单：\n'+'\n'.join(
-    f"{style['id']}｜{style['title']}｜{'自然' if style['family']=='natural' else '出片'}｜{style['detail']}" for style in STYLES)
+    f"{style['id']}｜{style['title']}｜{'轻微调整' if style['family']=='natural' else '风格化调整'}｜{style['detail']}" for style in STYLES)
 SYSTEM+='\n'+STYLE_GUIDE
 
 
