@@ -116,6 +116,18 @@ struct QualityPanel: View {
                 .font(.callout).foregroundStyle(.secondary)
             Text("放大可能需要较长时间，也可能改变细节；调整后可预览、对比和撤销。")
                 .font(.callout).foregroundStyle(.secondary)
+            if store.topazPhotoURL != nil {
+                Divider().padding(.vertical, 4)
+                Text("Topaz Photo").font(.headline)
+                Text("将当前照片的编辑结果送到 Topaz Photo；在 Topaz 中处理并导出后，再导入处理好的图片。")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("在 Topaz Photo 中打开…") { store.openInTopazPhoto() }
+                    .buttonStyle(.borderedProminent)
+                Button("导入 Topaz 处理结果…") { store.chooseImport() }
+                    .buttonStyle(.bordered)
+                Text("结果作为新照片导入，原图不变。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Spacer()
         }.padding(16).disabled(store.controlsBlocked)
     }
