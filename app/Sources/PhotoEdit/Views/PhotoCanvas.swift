@@ -8,6 +8,7 @@ struct PhotoCanvas: View {
     /// 裁切拖动：按下时抓到的框和手柄，整段拖动沿用，不跟着重算
     @State private var cropStart: [Double]?
     @State private var cropHandle: CropGeometry.Handle?
+    @State private var cropRotationStart: Double?
     @State private var cropCursor: CropCursor = .arrow
     var body: some View {
         GeometryReader {geometry in
@@ -70,7 +71,11 @@ struct PhotoCanvas: View {
                     if store.inspectorTab == "crop", store.cropEditing {
                         CropOverlay(size: CGSize(width: w, height: h),
                                     box: store.cropDraft ?? [0, 0, 1, 1],
+                                    rotating: store.rotationEditing,
                                     pixels: PhotoSize.pixels(displayPath(photo)))
+                    }
+                    if store.inspectorTab == "crop", !store.cropEditing, store.rotationEditing {
+                        RotationGrid(size: CGSize(width: w, height: h))
                     }
                 }
                 .frame(width:w,height:h)
@@ -257,12 +262,24 @@ struct PhotoCanvas: View {
                             cropStart = box
                             cropHandle = CropGeometry.handle(at: from, box: box, size: size,
                                                              freeform: store.cropAspect == "free")
+                            if cropHandle == .rotate { cropRotationStart = -(store.current?.parameters.angle ?? 0) }
                         }
                         guard let start = cropStart, let handle = cropHandle else { return }
+                        if handle == .rotate, let initial = cropRotationStart {
+                            let center = CGPoint(x: (start[0] + start[2] / 2) * size.width,
+                                                 y: (start[1] + start[3] / 2) * size.height)
+                            let value = initial + CropGeometry.rotationDelta(from: from, to: to, center: center)
+                            let wrapped = (value + 180).truncatingRemainder(dividingBy: 360)
+                            store.straightenPreview(-(wrapped < 0 ? wrapped + 180 : wrapped - 180))
+                            return
+                        }
                         store.cropDraft = CropGeometry.dragged(start: start, handle: handle, from: from, to: to, size: size,
                                                                freeform: store.cropAspect == "free")
                     }
-                    .onEnded { _ in cropStart = nil; cropHandle = nil }
+                    .onEnded { _ in
+                        if cropHandle == .rotate { store.finishStraighten() }
+                        cropStart = nil; cropHandle = nil; cropRotationStart = nil
+                    }
             )
             .onContinuousHover { phase in
                 // 鼠标形状告诉人「这里能拖什么」：手形移动、箭头拉边、十字画框。
@@ -276,6 +293,7 @@ struct PhotoCanvas: View {
                 case .inside: next = .openHand
                 case .left, .right: next = .resizeHorizontal
                 case .top, .bottom: next = .resizeVertical
+                case .rotate: next = .rotate
                 default: next = .crosshair
                 }
                 if next != cropCursor { cropCursor = next; next.cursor.set() }
@@ -287,8 +305,8 @@ struct PhotoCanvas: View {
         guard store.cropEditing else { return "裁切已应用 · 点右栏「重新框选」再裁一次" }
         let box = store.cropDraft ?? [0, 0, 1, 1]
         let full = box[0] < 0.002 && box[1] < 0.002 && box[2] > 0.998 && box[3] > 0.998
-        return full ? "在照片上拖一下，框出要保留的范围"
-                    : "框内拖＝移动 · 四角四边＝改大小 · 框外拖＝重新框"
+        return full ? "拖动四角或边缘裁切 · 框内拖出新框 · 角外拖动旋转"
+                    : "框内拖＝移动 · 四角四边＝调整大小 · 角外拖＝旋转"
     }
 
     private func canvasLabel(_ text:String, color: Color = .white)->some View {
@@ -326,7 +344,13 @@ struct PhotoCanvas: View {
 
 /// 裁切页的鼠标形状，让人一眼看出这里是移动、拉边还是重新框。
 enum CropCursor {
-    case arrow, crosshair, openHand, resizeHorizontal, resizeVertical
+    case arrow, crosshair, openHand, resizeHorizontal, resizeVertical, rotate
+
+    private static let rotateCursor: NSCursor = {
+        guard let image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "旋转") else { return .crosshair }
+        image.size = NSSize(width: 20, height: 20)
+        return NSCursor(image: image, hotSpot: NSPoint(x: 10, y: 10))
+    }()
 
     var cursor: NSCursor {
         switch self {
@@ -335,6 +359,7 @@ enum CropCursor {
         case .openHand: return .openHand
         case .resizeHorizontal: return .resizeLeftRight
         case .resizeVertical: return .resizeUpDown
+        case .rotate: return Self.rotateCursor
         }
     }
 }

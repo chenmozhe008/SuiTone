@@ -66,12 +66,15 @@ extension WorkspaceStore {
     }
 
     func straightenPreview(_ angle: Double) {
-        // 拖动拉直滑杆时只改角度，不每一步都记历史。
+        rotationEditing = true
+        angleDraft = -CropGeometry.snappedAngle(angle)
         beginEditing("旋转画面")
         update { $0.angle = CropGeometry.snappedAngle(angle) }
     }
 
     func finishStraighten() {
+        rotationEditing = false
+        angleDraft = nil
         finishEditing()
     }
 
@@ -320,7 +323,7 @@ struct CropPanel: View {
                             }.buttonStyle(.plain)
                         }
                     }
-                    Text("在照片上直接拖出保留范围；框内拖动是移动，四角和四边可以拉动大小。")
+                    Text("拖动四角或四边调整范围；也可在照片上拖出新框。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -359,7 +362,7 @@ struct CropPanel: View {
                         Spacer()
                         Text("+180°").font(.caption2).foregroundStyle(.tertiary)
                     }
-                    Text("拖动旋转照片，双击滑杆归零；大角度旋转会裁去边缘空白。")
+                    Text("拖动滑杆或裁切框角外的区域旋转；网格可辅助对齐，双击滑杆归零。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -464,6 +467,7 @@ private struct StraightenSlider: View {
 struct CropOverlay: View {
     let size: CGSize
     let box: [Double]
+    var rotating = false
     /// 当前画面（旋转、拉直之后）的像素尺寸，用来显示框出来有多少像素
     var pixels: CGSize?
 
@@ -482,13 +486,14 @@ struct CropOverlay: View {
 
             // 三分线
             Path { path in
-                for i in 1...2 {
-                    let x = rect.minX + rect.width * CGFloat(i) / 3
-                    let y = rect.minY + rect.height * CGFloat(i) / 3
+                let divisions = rotating ? 8 : 3
+                for i in 1..<divisions {
+                    let x = rect.minX + rect.width * CGFloat(i) / CGFloat(divisions)
+                    let y = rect.minY + rect.height * CGFloat(i) / CGFloat(divisions)
                     path.move(to: CGPoint(x: x, y: rect.minY)); path.addLine(to: CGPoint(x: x, y: rect.maxY))
                     path.move(to: CGPoint(x: rect.minX, y: y)); path.addLine(to: CGPoint(x: rect.maxX, y: y))
                 }
-            }.stroke(Color.white.opacity(0.24), lineWidth: 0.7)
+            }.stroke(Color.white.opacity(rotating ? 0.55 : 0.34), lineWidth: 0.7)
 
             // 四角 L 形托角（Lightroom 那种）
             Path { path in
@@ -530,10 +535,24 @@ struct CropOverlay: View {
     }
 }
 
+struct RotationGrid: View {
+    let size: CGSize
+    var body: some View {
+        Path { path in
+            for i in 1..<8 {
+                let x = size.width * CGFloat(i) / 8, y = size.height * CGFloat(i) / 8
+                path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: size.height))
+                path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: size.width, y: y))
+            }
+        }.stroke(Color.white.opacity(0.55), lineWidth: 0.7)
+            .frame(width: size.width, height: size.height).allowsHitTesting(false)
+    }
+}
+
 /// 裁切拖拽的几何计算：命中哪个手柄、拖到什么位置。都是纯函数，方便测。
 enum CropGeometry {
     enum Handle: String {
-        case draw, inside, topLeft, topRight, bottomLeft, bottomRight, top, bottom, left, right
+        case draw, inside, rotate, topLeft, topRight, bottomLeft, bottomRight, top, bottom, left, right
     }
 
     static func drawn(from start: CGPoint, to end: CGPoint, size: CGSize) -> [Double]? {
@@ -559,17 +578,22 @@ enum CropGeometry {
             (.bottomLeft, CGPoint(x: rect.minX, y: rect.maxY)),
             (.bottomRight, CGPoint(x: rect.maxX, y: rect.maxY)),
         ]
-        if !full, let corner = corners.min(by: {
+        if let corner = corners.min(by: {
             hypot($0.1.x - point.x, $0.1.y - point.y) < hypot($1.1.x - point.x, $1.1.y - point.y)
-        }), hypot(corner.1.x - point.x, corner.1.y - point.y) <= 26 {
-            return corner.0
+        }) {
+            let distance = hypot(corner.1.x - point.x, corner.1.y - point.y)
+            if distance <= 18 { return corner.0 }
+            if !rect.contains(point), distance <= 55 { return .rotate }
+        }
+        if point.x >= rect.minX - 12, point.x <= rect.maxX + 12,
+           point.y >= rect.minY - 12, point.y <= rect.maxY + 12 {
+            if abs(point.x - rect.minX) <= 12 { return .left }
+            if abs(point.x - rect.maxX) <= 12 { return .right }
+            if abs(point.y - rect.minY) <= 12 { return .top }
+            if abs(point.y - rect.maxY) <= 12 { return .bottom }
         }
         if rect.contains(point) {
             guard !full else { return .draw }
-            if abs(point.x - rect.minX) <= 18 { return .left }
-            if abs(point.x - rect.maxX) <= 18 { return .right }
-            if abs(point.y - rect.minY) <= 18 { return .top }
-            if abs(point.y - rect.maxY) <= 18 { return .bottom }
             return .inside
         }
         // 框外拖动一律重新画；锁了比例时按原来的比例画，不会把比例弄丢。
@@ -581,6 +605,7 @@ enum CropGeometry {
                         size: CGSize, freeform: Bool) -> [Double] {
         guard size.width > 1, size.height > 1 else { return start }
         if handle == .draw {
+            guard abs(to.x - from.x) >= 24, abs(to.y - from.y) >= 24 else { return start }
             guard let drawn = drawn(from: from, to: to, size: size) else { return start }
             return freeform ? drawn : conform(drawn, ratio: start[2] / start[3])
         }
@@ -618,7 +643,7 @@ enum CropGeometry {
             current[2] = start[2] + (start[0] - nx); current[0] = nx
         case .right:
             current[2] = min(1, start[0] + start[2] + dx) - start[0]
-        case .draw:
+        case .draw, .rotate:
             return start
         }
         current[2] = max(minSize, min(current[2], 1 - current[0]))
@@ -685,5 +710,14 @@ enum CropGeometry {
     /// 0.5° 以内吸附到 0，避免「看起来正了其实还差 0.2°」。
     static func snappedAngle(_ angle: Double) -> Double {
         abs(angle) < 0.3 ? 0 : (angle * 10).rounded() / 10
+    }
+
+    static func rotationDelta(from start: CGPoint, to end: CGPoint, center: CGPoint) -> Double {
+        let a = atan2(start.y - center.y, start.x - center.x)
+        let b = atan2(end.y - center.y, end.x - center.x)
+        var degrees = (b - a) * 180 / .pi
+        if degrees > 180 { degrees -= 360 }
+        if degrees < -180 { degrees += 360 }
+        return degrees
     }
 }

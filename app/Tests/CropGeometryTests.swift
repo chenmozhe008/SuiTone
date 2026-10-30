@@ -33,12 +33,32 @@ import Testing
         #expect(CropGeometry.handle(at: CGPoint(x: 160, y: 20), box: box, size: size, freeform: true) == .topRight)
         #expect(CropGeometry.handle(at: CGPoint(x: 100, y: 20), box: box, size: size, freeform: true) == .top)
         #expect(CropGeometry.handle(at: CGPoint(x: 100, y: 50), box: box, size: size, freeform: true) == .inside)
-        #expect(CropGeometry.handle(at: CGPoint(x: 10, y: 90), box: box, size: size, freeform: true) == .draw)
+        #expect(CropGeometry.handle(at: CGPoint(x: 100, y: 95), box: box, size: size, freeform: true) == .draw)
         // 框外拖动一律重新画，锁了比例也照样能拖。
-        #expect(CropGeometry.handle(at: CGPoint(x: 10, y: 90), box: box, size: size, freeform: false) == .draw)
+        #expect(CropGeometry.handle(at: CGPoint(x: 100, y: 95), box: box, size: size, freeform: false) == .draw)
         // 一进裁切页框是整张画面：这时框内拖动必须当成重新画，否则怎么拖都没反应。
         #expect(CropGeometry.handle(at: CGPoint(x: 100, y: 50), box: [0, 0, 1, 1], size: size, freeform: true) == .draw)
         #expect(CropGeometry.handle(at: CGPoint(x: 100, y: 50), box: [0, 0, 1, 1], size: size, freeform: false) == .draw)
+    }
+
+    @Test func fullFrameHandlesAndAccidentalDrag() {
+        let size = CGSize(width: 400, height: 300), full = [0.0, 0.0, 1.0, 1.0]
+        #expect(CropGeometry.handle(at: CGPoint(x: 0, y: 0), box: full, size: size, freeform: true) == .topLeft)
+        #expect(CropGeometry.handle(at: CGPoint(x: 200, y: 0), box: full, size: size, freeform: true) == .top)
+        #expect(CropGeometry.handle(at: CGPoint(x: -20, y: -20), box: full, size: size, freeform: true) == .rotate)
+        let resized = CropGeometry.dragged(start: full, handle: .topLeft, from: .zero, to: CGPoint(x: 40, y: 30), size: size, freeform: true)
+        #expect(abs(resized[2] - 0.9) < 0.0001 && abs(resized[3] - 0.9) < 0.0001)
+        let accidental = CropGeometry.dragged(start: full, handle: .draw, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 120, y: 120), size: size, freeform: true)
+        #expect(accidental == full)
+        let deliberate = CropGeometry.dragged(start: full, handle: .draw, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 220, y: 200), size: size, freeform: true)
+        #expect(deliberate != full)
+    }
+
+    @Test func rotationDirectionAndWrapAcrossBoundary() {
+        let center = CGPoint(x: 100, y: 100)
+        #expect(abs(CropGeometry.rotationDelta(from: CGPoint(x: 200, y: 100), to: CGPoint(x: 100, y: 200), center: center) - 90) < 0.001)
+        let delta = CropGeometry.rotationDelta(from: CGPoint(x: 0, y: 101), to: CGPoint(x: 0, y: 99), center: center)
+        #expect(delta > 0 && delta < 2)
     }
 
     @Test func draggingInsideMovesWithoutChangingSize() {
@@ -62,7 +82,7 @@ import Testing
         #expect(abs(resized[0] - 0.2) < 0.0001 && abs(resized[1] - 0.2) < 0.0001)
         #expect(abs(resized[2] - 0.7) < 0.0001 && abs(resized[3] - 0.7) < 0.0001)
         let drawn = CropGeometry.dragged(start: start, handle: .draw, from: CGPoint(x: 20, y: 10),
-                                         to: CGPoint(x: 60, y: 30), size: size, freeform: true)
+                                         to: CGPoint(x: 60, y: 40), size: size, freeform: true)
         #expect(abs(drawn[0] - 0.1) < 0.0001 && abs(drawn[2] - 0.2) < 0.0001)
     }
 

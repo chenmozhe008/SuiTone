@@ -142,6 +142,7 @@ final class WorkspaceStore {
     var libraryDirectory: URL?
     /// 拖动自由旋转时的临时角度（度）：画面先在本地实时跟着转，松手才让引擎精确渲染
     var angleDraft: Double?
+    var rotationEditing = false
     /// 裁切页正在框的范围（0–1 比例）；裁切比例选的是哪一档
     var cropDraft: [Double]?
     /// 是否正在框选：确定、按回车、离开裁切页或换照片之后都算「裁完」，框收起来。
