@@ -664,6 +664,32 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(probabilities.shape,(2,2,2));self.assertEqual(labels[0],'sky')
             with np.load(cache/(digest+'.npz')) as saved:self.assertEqual(saved['p'].shape,(2,2,2))
 
+    def test_jimeng_adapter_sends_base64_keeps_ratio_and_hides_key(self):
+        from jimeng_edit import jimeng_edit,ENDPOINT,output_size
+        from io import BytesIO
+        from urllib.error import HTTPError
+        import json,base64
+        src=BytesIO();Image.new('RGB',(300,200),(10,20,30)).save(src,'JPEG')
+        out=BytesIO();Image.new('RGB',(2048,1368),(200,10,10)).save(out,'PNG')
+        calls=[]
+        class Response:
+            def __enter__(self):return self
+            def __exit__(self,*a):pass
+            def read(self,limit):return json.dumps({'data':[{'b64_json':base64.b64encode(out.getvalue()).decode()}]}).encode()
+        def opener(request,timeout):calls.append(request);return Response()
+        result=jimeng_edit('fixture-secret','doubao-seedream-4-0-250828',src.getvalue(),'换成雪山背景',opener=opener)
+        self.assertEqual(result[0]['mime'],'image/png')
+        body=json.loads(calls[0].data)
+        self.assertEqual(calls[0].full_url,ENDPOINT);self.assertEqual(calls[0].get_header('Authorization'),'Bearer fixture-secret')
+        self.assertTrue(body['image'].startswith('data:image/jpeg;base64,'))
+        self.assertEqual(body['size'],output_size(300,200));self.assertEqual(body['size'],'2048x1368')
+        self.assertFalse(body['watermark']);self.assertEqual(body['response_format'],'b64_json')
+        self.assertNotIn('fixture-secret',calls[0].data.decode())
+        def denied(request,timeout):raise HTTPError(request.full_url,401,'',{},BytesIO(b'{"error":{"message":"bad key fixture-secret"}}'))
+        with self.assertRaises(ValueError) as error:jimeng_edit('fixture-secret','m',src.getvalue(),'x',opener=denied)
+        self.assertNotIn('fixture-secret',str(error.exception))
+        with self.assertRaises(ValueError):jimeng_edit('','m',src.getvalue(),'x',opener=opener)
+
     def test_generation_proposal_is_validated_and_exclusive(self):
         from assistant import validate_plan
         from smart import neutral
