@@ -168,6 +168,21 @@ def clean_temporary(tmp, cache_limit=500*1024*1024):
         except OSError:continue
 
 
+def replay_operations(asset):
+    """按原尺寸重放这张照片的编辑操作：移除杂物在原图上重做；换成生成图时直接改用存下的生成图（RAW 浮点像素随之丢弃）。"""
+    image,pixels=load_pixels(asset.path)
+    for op in asset.operations:
+        if op.get('generated'):
+            path=Path(op['generated'])
+            if not path.is_file():raise ValueError('找不到 AI 生成版本，可能已被移走：'+str(path))
+            with Image.open(path) as generated:image=generated.convert('RGB')
+            pixels=None;continue
+        from inpaint import remove
+        image,mask=remove(image,**op)
+        if pixels is not None: pixels=np.where((np.asarray(mask)>0)[...,None],np.asarray(image,np.float32)/255,pixels)
+    return image,pixels
+
+
 class Engine:
     def __init__(self, root):
         self.root = Path(root).resolve()
@@ -188,6 +203,8 @@ class Engine:
         from ai_recommendation import RecommendationBridge
         self.ai_recommendations=RecommendationBridge(self)
         self.import_hashes={}
+        # AI 生成的新图要跨会话保存（工程重开、导出都要用），不能放会被清理的会话目录。
+        self.generated_dir=Path.home()/'Library/Application Support/SuiTone/generated'
 
     def scan_paths(self,paths):
         candidates=[];errors=[]
@@ -452,14 +469,33 @@ class Engine:
         path=self.folder/(uuid4().hex+'-local-overlay.png');save_new(overlay,path)
         return dict(overlay=str(path))
 
+    def adopt_generated(self,key,image_path):
+        """把 AI 生成的图片作为这张照片的新版本：按内容存进 generated 目录，建立新资产并记一步编辑操作。"""
+        asset=self.asset(key)
+        source=Path(image_path).expanduser().resolve(strict=True)
+        try:
+            with Image.open(source) as probe:
+                if probe.width*probe.height>60_000_000:raise ValueError('生成图尺寸过大')
+                image=probe.convert('RGB')
+        except ValueError:raise
+        except Exception:raise ValueError('生成结果不是有效的图片') from None
+        self.generated_dir.mkdir(parents=True,exist_ok=True)
+        from io import BytesIO
+        buffer=BytesIO();image.save(buffer,'PNG')
+        stored=self.generated_dir/(sha256(buffer.getvalue()).hexdigest()[:32]+'.png')
+        if not stored.exists():
+            temporary=stored.with_name(stored.stem+'-'+uuid4().hex+'.png');temporary.write_bytes(buffer.getvalue());os.replace(temporary,stored)
+        working=image.copy();working.thumbnail((1200,1200),Image.Resampling.LANCZOS)
+        new_key=uuid4().hex
+        path=self.folder/(new_key+'-source.png');save_new(working,path)
+        self.assets[new_key]=Asset(new_key,asset.path,path,asset.original_path,asset.thumbnail,asset.fingerprint,
+                                  asset.operations+[dict(box=[0.,0.,1.,1.],generated=str(stored))],None)
+        return dict(id=new_key,source=str(path),stored=str(stored),width=image.width,height=image.height)
+
     def render_full_png(self,key,raw,quality=None):
         """按原尺寸渲染调色、修复和画质后的成品，存成会话内临时 PNG（抠图等后续处理用，不是导出）。"""
         asset=self.asset(key);p=parameters(raw);q=quality_settings(quality)
-        image,pixels=load_pixels(asset.path)
-        for op in asset.operations:
-            from inpaint import remove
-            image,mask=remove(image,**op)
-            if pixels is not None: pixels=np.where((np.asarray(mask)>0)[...,None],np.asarray(image,np.float32)/255,pixels)
+        image,pixels=replay_operations(asset)
         preview,_=self.quality_analysis(asset.id,q)
         if q['denoise'] or q['scale']!=1:
             from enhance import prepare_quality
@@ -483,11 +519,7 @@ class Engine:
         for item,quality in zip(items,qualities):
             asset=self.asset(item['id']); p=parameters(item.get('params',{}))
             self.progress=dict(done=len(result),total=len(items),name=asset.path.name)
-            image,pixels=load_pixels(asset.path)
-            for op in asset.operations:
-                from inpaint import remove
-                image,repair_mask=remove(image,**op)
-                if pixels is not None: pixels=np.where((np.asarray(repair_mask)>0)[...,None],np.asarray(image,np.float32)/255,pixels)
+            image,pixels=replay_operations(asset)
             # 共用全图统计和缓存选区，在原尺寸逐条带计算颜色，避免 8K 照片占满内存。
             preview,_=self.quality_analysis(asset.id,quality)
             if quality['denoise'] or quality['scale']!=1:
@@ -580,13 +612,18 @@ def serve(root, token, watch_stdin=True):
                                                                               data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'))
                     elif self.path=='/region-outline': result=engine.region_outline(data['id'],data['params'],data['name'])
                     elif self.path=='/manual-mask-overlay': result=engine.manual_mask_overlay(data['id'],data['params'],data['name'])
+                    elif self.path=='/adopt-generated': result=engine.adopt_generated(data['id'],data['path'])
                     elif self.path=='/render-full': result=engine.render_full_png(data['id'],data.get('params',{}),data.get('quality'))
                     elif self.path=='/export': result=engine.export(data['items'],data['destination'],data.get('options',{}))
                     elif self.path=='/restore':
                         p=parameters(data.get('params',{}))
                         asset=engine.import_one(Path(data['path']).resolve(strict=True))
                         key=asset.id
-                        for operation in data.get('operations',[]): key=engine.remove(key,**operation)['id']
+                        for operation in data.get('operations',[]):
+                            if operation.get('generated'):
+                                if not Path(operation['generated']).is_file():raise ValueError('找不到这张照片的 AI 生成版本：'+operation['generated'])
+                                key=engine.adopt_generated(key,operation['generated'])['id']
+                            else:key=engine.remove(key,**{k:v for k,v in operation.items() if k!='generated'})['id']
                         result=dict(id=key,params=p)
                     else: return self.response(404,{'error':'未知操作'})
                 self.response(200,result)

@@ -8,6 +8,8 @@ enum PhotoOperation {
     case quality(denoise: Bool?, scale: Int?)
     case match(references: [String], scopes: [String: String], only: String)
     case repair(RemovalOperation)
+    /// 把 AI 生成的图片作为照片的新版本（之后照样能调色、撤销、导出）
+    case generated(path: String)
 }
 
 extension WorkspaceStore {
@@ -63,6 +65,15 @@ extension WorkspaceStore {
             let rendered: PreviewResponse = try await engine.request("preview", body: ["id": result.id,
                 "params": try EngineClient.object(photo.parameters), "quality": try EngineClient.object(photo.quality)])
             prepared.assetID = result.id; prepared.operations.append(removal); prepared.previewPath = rendered.preview
+        case let .generated(path):
+            struct Adopted: Decodable { var id: String; var stored: String }
+            let result: Adopted = try await engine.request("adopt-generated", body: ["id": photo.assetID, "path": path])
+            let rendered: PreviewResponse = try await engine.request("preview", body: ["id": result.id,
+                "params": try EngineClient.object(photo.parameters), "quality": try EngineClient.object(photo.quality)])
+            prepared.assetID = result.id
+            prepared.operations.append(RemovalOperation(box: [0, 0, 1, 1], generated: result.stored))
+            prepared.previewPath = rendered.preview
+            prepared.notes = ["已换成 AI 生成版本，调色参数继续作用于新图"]
         }
         try Task.checkCancellation()
         return prepared

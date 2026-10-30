@@ -140,6 +140,8 @@ struct RemovalOperation: Codable, Equatable, Sendable {
     var polygon: [[Double]]? = nil
     /// 点选物体的位置
     var point: [Double]? = nil
+    /// 换成 AI 生成图：存在 Application Support/SuiTone/generated 里的文件路径（此时 box 为整张）
+    var generated: String? = nil
 }
 
 struct EditSnapshot: Equatable {

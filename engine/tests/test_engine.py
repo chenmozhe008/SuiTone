@@ -664,6 +664,26 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(probabilities.shape,(2,2,2));self.assertEqual(labels[0],'sky')
             with np.load(cache/(digest+'.npz')) as saved:self.assertEqual(saved['p'].shape,(2,2,2))
 
+    def test_generated_version_persists_and_replays(self):
+        from service import Engine,replay_operations
+        import tempfile
+        root=Path(tempfile.mkdtemp());engine=Engine(root);engine.generated_dir=root/'generated'
+        original=root/'photo.jpg';Image.new('RGB',(300,200),(30,60,90)).save(original)
+        asset=engine.import_one(original)
+        made=root/'made.png';Image.new('RGB',(150,100),(220,40,40)).save(made)
+        result=engine.adopt_generated(asset.id,str(made))
+        stored=Path(result['stored']);self.assertTrue(stored.is_file());self.assertEqual(stored.parent,root/'generated')
+        made.unlink()  # 临时结果删掉后，版本仍从 generated 目录读取
+        new=engine.asset(result['id'])
+        self.assertEqual(new.operations[-1]['generated'],str(stored))
+        image,pixels=replay_operations(new)
+        self.assertEqual(image.size,(150,100));self.assertGreater(np.asarray(image)[50,75,0],200)
+        self.assertEqual(engine.adopt_generated(asset.id,str(stored))['stored'],str(stored))  # 同内容只存一份
+        stored.rename(root/'moved.png')
+        with self.assertRaises(ValueError):replay_operations(new)
+        bad=root/'bad.png';bad.write_bytes(b'not an image')
+        with self.assertRaises(ValueError):engine.adopt_generated(asset.id,str(bad))
+
     def test_region_outline_draws_only_the_edge(self):
         from service import Engine
         import tempfile

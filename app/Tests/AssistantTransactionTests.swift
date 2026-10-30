@@ -319,6 +319,16 @@ import Testing
         #expect(decoded.local["sky"]?.exposure == -0.3)
     }
 
+    @Test func testGeneratedVersionIsRecordedAsOperation() throws {
+        let generated = RemovalOperation(box: [0, 0, 1, 1], generated: "/gen/abc.png")
+        let object = try EngineClient.object(generated)
+        #expect(object["generated"] as? String == "/gen/abc.png")
+        let removal = try EngineClient.object(RemovalOperation(box: [0.1, 0.1, 0.2, 0.2], strokes: [[[0.1, 0.1]]], radius: 0.02))
+        #expect(removal["generated"] == nil)  // 普通移除不带生成字段，旧工程照常复原
+        let data = try JSONSerialization.data(withJSONObject: object)
+        #expect(try JSONDecoder().decode(RemovalOperation.self, from: data) == generated)
+    }
+
     @MainActor private func fixture() -> WorkspaceStore {
         let store = WorkspaceStore()
         let image = ImportedPhoto(id: "photo", path: "/fixture.jpg", name: "fixture.jpg", thumbnail: "/thumb.png",
