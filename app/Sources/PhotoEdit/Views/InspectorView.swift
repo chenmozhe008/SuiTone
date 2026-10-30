@@ -34,7 +34,7 @@ struct InspectorView: View {
         }.background(Color(white: 0.15))
             .onChange(of: store.inspectorTab) { _, tab in
                 store.finishRepairTransition(to: tab)
-                store.repairEnabled = ["repair", "cutout", "selection", "aiedit"].contains(tab)
+                store.repairEnabled = ["repair", "cutout", "selection"].contains(tab)
                 store.cutoutPreview = nil; store.cutoutSnapshot = nil
                 if tab == "cutout" { store.repairTool = "object" }
                 store.overlay = ""; store.showOriginal = false; store.localRegion = nil

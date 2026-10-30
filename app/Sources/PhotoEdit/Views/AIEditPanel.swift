@@ -20,6 +20,10 @@ struct AIEditPanel: View {
                         Text("整张照片").tag(false)
                         Text("只改选区").tag(true)
                     }.pickerStyle(.segmented).labelsHidden()
+                    if !onlySelection && hasSelection {
+                        Text("当前改整张照片，已有选区不会用于本次生成。")
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
                     if onlySelection && !hasSelection {
                         HStack {
                             Text("还没有选区。").font(.callout).foregroundStyle(.secondary)

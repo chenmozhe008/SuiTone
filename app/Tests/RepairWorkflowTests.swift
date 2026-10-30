@@ -91,6 +91,17 @@ import Testing
         #expect(store.validRepairSelection)
     }
 
+    @Test @MainActor func testResetCutoutReturnsToOriginalSelectionState() {
+        let store = fixture()
+        store.cutoutPreview = "/cutout.png"
+        store.cutoutSnapshot = store.current!.snapshot
+        store.repairPoint = [0.5, 0.5]
+        store.resetCutout()
+        #expect(store.cutoutPreview == nil && store.cutoutSnapshot == nil)
+        #expect(store.repairPoint == nil && store.selectionBox == nil)
+        #expect(store.status == "点击照片中的人物或物体")
+    }
+
     @Test @MainActor func testChatBoxDoesNotReuseOldBrushOrObjectSelection() {
         let store = fixture()
         store.repairTool = "brush"; store.repairMode = "keepSky"

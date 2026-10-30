@@ -37,7 +37,7 @@ struct PhotoCanvas: View {
                             canvasLabel("调整后").opacity(store.splitPosition<0.92 ? 1 : 0)
                         }.frame(width:w,height:h,alignment:.top)
                     }
-                    if store.usesSelectionParts, store.repairDraft == nil, store.repairMaskOverlay == nil, let overlay = store.selectionOverlay {
+                    if store.repairEnabled, store.usesSelectionParts, store.repairDraft == nil, store.repairMaskOverlay == nil, let overlay = store.selectionOverlay {
                         LocalPhoto(path: overlay).frame(width: w, height: h).allowsHitTesting(false)
                     }
                     if store.usesSelectionParts, let b = store.selectionDraftBox {
@@ -72,6 +72,7 @@ struct PhotoCanvas: View {
                     }
                     if store.repairEnabled {
                         guard !store.busy, store.repairDraft == nil else {return}
+                        if store.inspectorTab == "cutout" && store.cutoutPreview != nil { return }
                         if store.repairTool == "object" && tap {
                             store.repairPoint=point;store.updateRepairBounds()
                             if store.inspectorTab == "cutout" { store.previewCutout() } else { store.previewRepairMask() }
@@ -117,7 +118,10 @@ struct PhotoCanvas: View {
                 })
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
                 .overlay(alignment:.top) {
-                    if store.usesSelectionParts && store.repairDraft == nil { SelectionToolbar(store:store).padding(.top,6) }
+                    if store.repairEnabled && store.usesSelectionParts && store.repairDraft == nil { SelectionToolbar(store:store).padding(.top,6) }
+                    else if store.inspectorTab == "cutout" && store.cutoutPreview == nil && !store.busy {
+                        canvasLabel("点击照片中的人物或物体").padding(.top, 10)
+                    }
                 }
                 .overlay(alignment:.bottomLeading) {
                     if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}

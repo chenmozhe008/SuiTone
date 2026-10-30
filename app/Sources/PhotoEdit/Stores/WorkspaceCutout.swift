@@ -1,6 +1,11 @@
 import AppKit
 
 extension WorkspaceStore {
+    func resetCutout() {
+        cutoutPreview = nil; cutoutSnapshot = nil; repairPoint = nil; selectionBox = nil
+        status = "点击照片中的人物或物体"
+    }
+
     /// 在调好色的预览图上做系统主体抠图，生成透明预览。
     func previewCutout() {
         guard let photo = current, let point = repairPoint, !busy else { return }
