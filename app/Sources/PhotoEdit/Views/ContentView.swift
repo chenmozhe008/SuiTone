@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -32,6 +33,27 @@ struct ContentView: View {
         .frame(minWidth: 1180, minHeight: 720)
         .background(Color(white: 0.18))
         .tint(Color(white: 0.8))
+        // 裁切页按回车＝点「确定」：SwiftUI 的 default action 在有 ScrollView 的右栏里
+        // 经常抢不到，直接接键盘事件最稳。
+        .background(ReturnKeyCatcher { event in
+            // 确认卡片挂着的时候，回车＝「应用并切换」，Esc＝取消。
+            if store.cropSwitchPrompt {
+                if event.keyCode == 53 { store.cancelCropSwitch(); return true }
+                guard event.keyCode == 36 || event.keyCode == 76 else { return false }
+                store.confirmCropSwitch(apply: true)
+                return true
+            }
+            guard store.inspectorTab == "crop", !store.controlsBlocked else { return false }
+            guard event.keyCode == 36 || event.keyCode == 76 else { return false }
+            guard event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return false }
+            // 正在打字（输入框、重命名）时回车归输入框，不要抢。
+            if let window = event.window, window.firstResponder is NSTextView { return false }
+            store.finishCrop()
+            return true
+        })
+        .overlay {
+            if store.cropSwitchPrompt { CropSwitchDialog(store: store) }
+        }
         .alert("操作未完成", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {
             Button("好") { store.error = nil }
         } message: { Text(store.error ?? "") }

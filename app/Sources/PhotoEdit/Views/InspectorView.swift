@@ -39,7 +39,7 @@ struct InspectorView: View {
             default: AssistantPanel(store: store)
             }
         }.background(Color(white: 0.15))
-            .onChange(of: store.inspectorTab) { _, tab in
+            .onChange(of: store.inspectorTab) { old, tab in
                 store.finishRepairTransition(to: tab)
                 store.repairEnabled = ["repair", "cutout", "selection"].contains(tab)
                 store.cutoutPreview = nil; store.cutoutSnapshot = nil
@@ -50,6 +50,9 @@ struct InspectorView: View {
                 if tab == "adjust" { store.loadStyleTiles(); if store.analysis == nil { store.loadAnalysis() } }
                 // 从裁切页退出来就算确认，不用再单独点一次。
                 if tab != "crop", store.cropDraft != nil { store.commitCrop() }
+                // 离开 AI 改图页：那一轮的选区和临时版本预览都撤掉，回到正常画面。
+                // 切到选区／移除页不算离开——这几个页签共用同一批选区。
+                if old == "aiedit", !["selection", "repair"].contains(tab) { store.leaveAIEdit() }
                 // 进 AI 改图页也要把已有选区画出来，不然不知道这次会改哪一块。
                 if tab == "aiedit", !store.selectionParts.isEmpty, store.selectionOverlay == nil { store.refreshSelection() }
             }

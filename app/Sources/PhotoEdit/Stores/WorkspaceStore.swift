@@ -141,6 +141,9 @@ final class WorkspaceStore {
     /// 裁切页正在框的范围（0–1 比例）；裁切比例选的是哪一档
     var cropDraft: [Double]?
     var cropAspect = "original"
+    /// 裁切框没应用就要换照片时，先挂起目标，弹一句「应用还是不应用」
+    var pendingCropSwitchTarget: String?
+    var cropSwitchPrompt = false
     var providers: [AssistantProvider] = []
     var assistantProvider = UserDefaults.standard.string(forKey: "assistantProvider") ?? "codex" {
         didSet { UserDefaults.standard.set(assistantProvider, forKey: "assistantProvider") }
@@ -308,6 +311,38 @@ final class WorkspaceStore {
                                         return "\(inspectorTab) 已写入=\(String(describing: current?.parameters.crop))"
                                     })
             }
+            // 验收用：真按一次回车，确认它等于点「确定」。`-debugKey return`
+            if options["debugKey"] as? String == "return" {
+                try? await Task.sleep(for: .milliseconds(1200))
+                await DebugKey.pressReturn(box: { [weak self] in self?.cropDraft },
+                                           applied: { [weak self] in self?.current?.parameters.crop },
+                                           tab: { [weak self] in self?.inspectorTab ?? "?" })
+            }
+            // 验收用：模拟切到下一张，看「裁切是否应用」有没有拦住。`-debugSwitchPhoto apply|discard|cancel|ask`
+            if let mode = options["debugSwitchPhoto"] as? String, photos.count > 1 {
+                try? await Task.sleep(for: .milliseconds(1500))
+                activate(photos[1].id)
+                print("debugSwitchPhoto 切换请求后 当前=\(currentID ?? "-") 弹窗=\(cropSwitchPrompt) "
+                      + "目标=\(pendingCropSwitchTarget ?? "-")")
+                fflush(stdout)
+                if mode != "ask" {
+                    try? await Task.sleep(for: .milliseconds(800))
+                    if mode == "return" {
+                        // 卡片挂着时按回车，应当等于「应用并切换」。
+                        await DebugKey.pressReturn(box: { [weak self] in self?.cropDraft },
+                                                   applied: { [weak self] in self?.current?.parameters.crop },
+                                                   tab: { [weak self] in self?.inspectorTab ?? "?" })
+                    } else if mode == "cancel" {
+                        cancelCropSwitch()
+                    } else {
+                        confirmCropSwitch(apply: mode == "apply")
+                    }
+                    print("debugSwitchPhoto \(mode) 后 当前=\(currentID ?? "-") "
+                          + "第一张裁切=\(String(describing: photos[0].parameters.crop)) 框=\(String(describing: cropDraft)) "
+                          + "弹窗=\(cropSwitchPrompt)")
+                    fflush(stdout)
+                }
+            }
             // 验收用：跑一次「确定」，看会不会跳页。`-debugAction finishCrop`
             if options["debugAction"] as? String == "finishCrop" {
                 try? await Task.sleep(for: .milliseconds(600))
@@ -329,6 +364,14 @@ final class WorkspaceStore {
     }
 
     func activate(_ id: String?) {
+        // 裁切框还有没应用的改动就要换照片：先问一句「这张的裁切应用不应用」。
+        // 不问的话，上一张的框会留在下一张上，再点「确定」就裁错照片。
+        if requestCropSwitch(to: id) { return }
+        performActivate(id)
+    }
+
+    /// 真的换照片：清临时状态、换 currentID、按新照片重算预览。
+    func performActivate(_ id: String?) {
         finishEditing()
         repairRevision += 1; repairDraft = nil; repairShowingBefore = false
         // 换照片／换图集时把「正在看的版本」一起清掉：否则画布会一直显示上一张的版本图，
@@ -337,6 +380,8 @@ final class WorkspaceStore {
         let firstSelected = selected.count > 1 && id.map { selectedIDs.contains($0) } == true ? selected.first?.id : id
         currentID = firstSelected; analysis = nil; overlay = ""; clearRepairSelection(); localRegion = nil
         analysisTask?.cancel(); analysisTask = nil; analysisAssetID = nil; analysisError = nil
+        // 裁切框跟着照片一起换：不重置的话，上一张框好的范围会画在新照片上。
+        cropDraft = current.map { $0.parameters.crop ?? [0, 0, 1, 1] }
         guard current != nil else { return }
         styleTiles=[:]
         if current?.ready == true { schedulePreview(); loadStyleTiles(); loadAnalysis() }
@@ -505,6 +550,8 @@ final class WorkspaceStore {
     }
 
     func selectPhoto(_ id: String, modifiers: NSEvent.ModifierFlags) {
+        // 裁切还没应用：先问，别把选中态也一起改掉，取消时要能原样退回来。
+        if requestCropSwitch(to: id) { return }
         if modifiers.contains(.shift), let start = photos.firstIndex(where: { $0.id == currentID }), let end = photos.firstIndex(where: { $0.id == id }) {
             let range = Set(photos[min(start,end)...max(start,end)].map(\.id))
             selectedIDs = modifiers.contains(.command) ? selectedIDs.union(range) : range

@@ -80,6 +80,50 @@ extension WorkspaceStore {
         status = "裁切已应用，还能接着转、拉直，或者点上面的页签换一页"
     }
 
+    /// 画布上的框跟已经应用的范围不一样（有还没应用的改动）。
+    var cropDirty: Bool {
+        guard inspectorTab == "crop", let draft = cropDraft else { return false }
+        let full = draft[0] < 0.001 && draft[1] < 0.001 && draft[2] > 0.999 && draft[3] > 0.999
+        guard let existing = current?.parameters.crop else { return !full }
+        return !zip(draft, existing).allSatisfy { abs($0 - $1) < 0.0005 }
+    }
+
+    /// 换照片前把裁切这件事拦住：返回 true 表示已经挂起，调用方别再往下切。
+    /// 照 Lightroom 的做法——换照片等于「这一张的裁切到此为止」，所以给两个明确的选择，
+    /// 而不是默默套用（会裁错）或者默默丢掉（白框了）。
+    @discardableResult
+    func requestCropSwitch(to id: String?) -> Bool {
+        guard cropDirty, id != currentID else { return false }
+        pendingCropSwitchTarget = id
+        cropSwitchPrompt = true
+        return true
+    }
+
+    /// 用户的选择：应用这张的裁切再切过去；或者丢掉改动直接切。
+    func confirmCropSwitch(apply: Bool) {
+        let target = pendingCropSwitchTarget
+        pendingCropSwitchTarget = nil
+        cropSwitchPrompt = false
+        if apply { commitCrop() }
+        cropDraft = nil
+        selectedIDs = target.map { Set([$0]) } ?? Set<String>()
+        performActivate(target)
+        status = apply ? "裁切已应用" : "已放弃裁切"
+    }
+
+    func cancelCropSwitch() {
+        pendingCropSwitchTarget = nil
+        cropSwitchPrompt = false
+    }
+
+    /// 离开 AI 改图页：这一轮的选区和临时版本预览都撤掉，回到正常画面。
+    /// 留着的话，切到别的页还压着上一轮的青色选区，看着像没退出去。
+    func leaveAIEdit() {
+        versionPreview = nil
+        guard !selectionParts.isEmpty || selectionOverlay != nil else { return }
+        clearRepairSelection()
+    }
+
     /// 把框写进参数，画布随即按新构图显示。
     func commitCrop() {
         guard let photo = current, let draft = cropDraft else { return }
@@ -131,6 +175,104 @@ extension WorkspaceStore {
                 status = "裁切与旋转已应用，可以继续画选区了"
                 schedulePreview(); loadAnalysis()
             } catch { self.error = error.localizedDescription }
+        }
+    }
+}
+
+/// 键盘事件兜底：裁切页按回车应当等于点「确定」。
+/// SwiftUI 的 `.keyboardShortcut(.defaultAction)` 在带 ScrollView 的右栏里常常抢不到
+/// （按钮不在窗口的 keyEquivalent 链上），所以直接在窗口里监听一次 keyDown。
+struct ReturnKeyCatcher: NSViewRepresentable {
+    /// 返回 true 表示这个按键已经处理掉，不再往下传。
+    let handle: (NSEvent) -> Bool
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.handle = handle
+        context.coordinator.install()
+        return NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.handle = handle
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) { coordinator.remove() }
+
+    final class Coordinator {
+        var handle: ((NSEvent) -> Bool)?
+        private var token: Any?
+
+        func install() {
+            guard token == nil else { return }
+            token = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let handle = self.handle else { return event }
+                return MainActor.assumeIsolated { handle(event) } ? nil : event
+            }
+        }
+
+        func remove() {
+            if let token { NSEvent.removeMonitor(token) }
+            token = nil
+        }
+    }
+}
+
+/// 换照片时裁切的确认卡片。系统 confirmationDialog 在暗色底上把次按钮画成暗红字，
+/// 跟背景糊在一起看不清；这里自己画一张，应用／放弃／取消三档一眼分得开。
+struct CropSwitchDialog: View {
+    @Bindable var store: WorkspaceStore
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { store.cancelCropSwitch() }
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "crop.rotate")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 26, height: 26)
+                        .background(ToolAccent.blue.fill, in: RoundedRectangle(cornerRadius: 7))
+                    Text("这张照片的裁切还没应用")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                Text("应用后按框住的范围保存；放弃就保持原来的构图，切过去不会带着这个框。")
+                    .font(.callout)
+                    .foregroundStyle(Color.white.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    Button("取消") { store.cancelCropSwitch() }
+                        .buttonStyle(.plain)
+                        .font(.callout)
+                        .foregroundStyle(Color.white.opacity(0.75))
+                        .padding(.horizontal, 12).frame(height: 30)
+                    Button("放弃裁切") { store.confirmCropSwitch(apply: false) }
+                        .buttonStyle(.plain)
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).frame(height: 30)
+                        .background(Color(white: 0.28), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.14)))
+                    Button("应用并切换") { store.confirmCropSwitch(apply: true) }
+                        .buttonStyle(.plain)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16).frame(height: 30)
+                        .background(ToolAccent.blue.fill, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(ToolAccent.blue.border))
+                }
+            }
+            .padding(20)
+            .frame(width: 392)
+            .background(Color(white: 0.17), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12)))
+            .shadow(color: .black.opacity(0.55), radius: 26, y: 12)
         }
     }
 }

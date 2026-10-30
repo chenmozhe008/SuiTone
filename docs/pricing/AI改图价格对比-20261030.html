@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<!--
+  随心 AI 修图 · AI 改图 API 价格对比图
+  数据核对日期：2026-10-30
+  来源：
+    火山方舟模型价格页   https://console.volcengine.com/ark/region:cn-beijing/docs/model-pricing
+    Ideogram 4.5 模型页   https://ideogram.ai/models/4.5
+    Ideogram API 定价页   https://ideogram.ai/pricing/?pricing_tab=api
+  口径：美元按 $1 ≈ ¥7.1 折算；价格随时可能调整，改动前请重新核对。
+  渲染：Chrome headless --window-size=1080,1440 --force-device-scale-factor=2 → 2160×2880
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1080px; height:1440px; }
+  body {
+    background:#FBF9F6;
+    font-family:"PingFang SC","Hiragino Sans GB","Helvetica Neue",Arial,sans-serif;
+    color:#1E1B18;
+    -webkit-font-smoothing:antialiased;
+    padding:76px 80px 60px;
+    display:flex; flex-direction:column;
+    position:relative;
+  }
+  /* 顶部细线装饰 */
+  .rule { position:absolute; left:80px; right:80px; top:0; height:6px; background:#1E1B18; }
+
+  .eyebrow {
+    font-size:19px; letter-spacing:.22em; color:#8C857C; font-weight:500;
+    display:flex; align-items:center; gap:14px;
+  }
+  .eyebrow::after{ content:""; flex:1; height:1px; background:#DED8CE; }
+
+  h1 {
+    font-size:82px; line-height:1.06; font-weight:700; letter-spacing:-.02em;
+    margin-top:26px;
+  }
+  h1 em { font-style:normal; color:#C0492C; }
+
+  .sub {
+    margin-top:20px; font-size:23px; color:#6E675E; line-height:1.55; letter-spacing:.01em;
+  }
+
+  /* 图表 */
+  .chart { margin-top:44px; flex:1; display:flex; flex-direction:column; justify-content:center; gap:0; }
+  .row { display:flex; align-items:center; height:86px; }
+  .row + .row { border-top:1px solid #EDE7DD; }
+  .label { width:392px; flex:none; padding-right:26px; }
+  .name { font-size:25px; font-weight:600; letter-spacing:-.01em; white-space:nowrap; }
+  .spec { font-size:16px; color:#8C857C; margin-top:5px; letter-spacing:.02em; white-space:nowrap; }
+  .barwrap { flex:1; height:26px; position:relative; }
+  .bar { height:26px; border-radius:3px; }
+  .price { width:168px; flex:none; text-align:right; }
+  .num { font-size:34px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .num small { font-size:19px; font-weight:600; margin-right:2px; }
+  .usd { font-size:15px; color:#A39B91; margin-top:3px; font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+
+  .doubao .bar { background:#C0492C; }
+  .ideo  .bar { background:#33505F; }
+
+  .badge {
+    display:inline-block; vertical-align:3px; margin-left:10px;
+    font-size:14px; font-weight:600; padding:3px 9px; border-radius:99px;
+    letter-spacing:.04em;
+  }
+  .badge.you { background:#C0492C; color:#fff; }
+  .badge.cheap { background:#3E6B4F; color:#fff; }
+
+  /* 结论条 */
+  .callout {
+    margin-top:30px; background:#1E1B18; color:#F6F2EC; border-radius:4px;
+    padding:24px 34px 26px; display:flex; align-items:center; gap:34px;
+  }
+  .callout .k { font-size:18px; letter-spacing:.14em; color:#B7AEA1; line-height:1.5; width:150px; flex:none; }
+  .callout .cells { display:flex; flex:1; gap:0; }
+  .callout .cell { flex:1; padding-left:28px; border-left:1px solid #423C35; }
+  .callout .cell:first-child { border-left:none; padding-left:0; }
+  .callout .cell .cl { font-size:15px; color:#B7AEA1; letter-spacing:.06em; white-space:nowrap; }
+  .callout .cell .cv { font-size:31px; font-weight:700; margin-top:5px; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .callout .cell .cv small { font-size:20px; font-weight:600; }
+  .callout .cell.now .cv { color:#F0A07F; }
+
+  /* 备注 */
+  .notes { margin-top:34px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:26px; }
+  .note { border-top:2px solid #1E1B18; padding-top:14px; }
+  .note .t { font-size:17px; font-weight:700; letter-spacing:.06em; }
+  .note .d { font-size:16px; color:#6E675E; line-height:1.62; margin-top:8px; letter-spacing:.01em; }
+
+  .foot {
+    margin-top:auto; padding-top:30px; border-top:1px solid #EDE7DD;
+    display:flex; justify-content:space-between; font-size:15px; color:#A39B91; letter-spacing:.04em;
+  }
+</style>
+</head>
+<body>
+  <div class="rule"></div>
+
+  <div class="eyebrow">AI 修图 API · 单张成本 · 2026.10.30</div>
+  <h1>一张图，<em>多少钱</em>？</h1>
+  <div class="sub">同一张照片交给不同模型改一版，成品单价相差 <b>26 倍</b>。<br>人民币口径，按 $1 ≈ ¥7.1 折算。</div>
+
+  <div class="chart">
+
+    <div class="row ideo">
+      <div class="label">
+        <div class="name">Ideogram 4.5 · High</div>
+        <div class="spec">编辑 / 带参考图</div>
+      </div>
+      <div class="barwrap"><div class="bar" style="width:100%"></div></div>
+      <div class="price"><div class="num"><small>¥</small>1.56</div><div class="usd">$0.22 / 张</div></div>
+    </div>
+
+    <div class="row doubao">
+      <div class="label">
+        <div class="name">豆包 Seedream 5.0 pro</div>
+        <div class="spec">4:3 · 314 万像素 · 出稿件</div>
+      </div>
+      <div class="barwrap"><div class="bar" style="width:38.5%"></div></div>
+      <div class="price"><div class="num"><small>¥</small>0.60</div><div class="usd">> 261 万像素档</div></div>
+    </div>
+
+    <div class="row ideo">
+      <div class="label">
+        <div class="name">Ideogram 4.5 · Medium</div>
+        <div class="spec">编辑 · 默认质量</div>
+      </div>
+      <div class="barwrap"><div class="bar" style="width:27.6%"></div></div>
+      <div class="price"><div class="num"><small>¥</small>0.43</div><div class="usd">$0.06 / 张</div></div>
+    </div>
+
+    <div class="row doubao">
+      <div class="label">
+        <div class="name">豆包 Seedream 5.0 pro</div>
+        <div class="spec">16:9 · 236 万像素 · 低档</div>
+      </div>
+      <div class="barwrap"><div class="bar" style="width:19.2%"></div></div>
+      <div class="price"><div class="num"><small>¥</small>0.30</div><div class="usd">≤ 261 万像素档</div></div>
+    </div>
+
+    <div class="row ideo">
+      <div class="label">
+        <div class="name">Ideogram 4.5 · Low</div>
+        <div class="spec">编辑 / 带参考图</div>
+      </div>
+      <div class="barwrap"><div class="bar" style="width:13.5%"></div></div>
+      <div class="price"><div class="num"><small>¥</small>0.21</div><div class="usd">$0.03 / 张</div></div>
+    </div>
+
+    <div class="row doubao">
+      <div class="label">
+        <div class="name">豆包 Seedream 5.0 flash<span class="badge you">日常在用</span></div>
+        <div class="spec">不分像素档 · 固定价 · 默认</div>
+      </div>
+      <div class="barwrap"><div class="bar" style="width:7.7%"></div></div>
+      <div class="price"><div class="num"><small>¥</small>0.12</div><div class="usd">官方刊例价</div></div>
+    </div>
+
+    <div class="row ideo">
+      <div class="label">
+        <div class="name">Ideogram 4.5 · Very Low<span class="badge cheap">最省</span></div>
+        <div class="spec">编辑 / 带参考图 · 试稿用</div>
+      </div>
+      <div class="barwrap"><div class="bar" style="width:4%"></div></div>
+      <div class="price"><div class="num"><small>¥</small>0.06</div><div class="usd">$0.008 / 张</div></div>
+    </div>
+
+  </div>
+
+  <div class="callout">
+    <div class="k">同样一张<br>4:3 修图</div>
+    <div class="cells">
+      <div class="cell now">
+        <div class="cl">你现在（flash）</div>
+        <div class="cv"><small>¥</small>0.12</div>
+      </div>
+      <div class="cell">
+        <div class="cl">Ideogram Medium</div>
+        <div class="cv"><small>¥</small>0.43</div>
+      </div>
+      <div class="cell">
+        <div class="cl">豆包 pro（要画质时）</div>
+        <div class="cv"><small>¥</small>0.60</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <div class="t">豆包按像素分档</div>
+      <div class="d">≤ 261 万像素 ¥0.30，超过就翻倍到 ¥0.60。第 2 张起输入图每张 +¥0.02。</div>
+    </div>
+    <div class="note">
+      <div class="t">Ideogram 固定价</div>
+      <div class="d">不随提示词长度、参考图张数、输出分辨率变化。1K 与 2K 同价。</div>
+    </div>
+    <div class="note">
+      <div class="t">原图尺寸差一点</div>
+      <div class="d">豆包成品会压到 2048 长边；Ideogram 编辑按原图宽高输出，不缩图。</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div>数据来源：火山方舟模型价格页 · ideogram.ai API 定价页</div>
+    <div>价格核对 2026.10.30 · 以官网实时价为准</div>
+  </div>
+</body>
+</html>

@@ -118,4 +118,93 @@ import Testing
         store.beginCrop()
         #expect(store.cropDraft == [0.1, 0.2, 0.3, 0.4])
     }
+
+    /// 第二张照片：切过去时框不该沿用上一张的。
+    @MainActor private func addSecond(_ store: WorkspaceStore) {
+        let imported = ImportedPhoto(id: "photo2", path: "/second.jpg", name: "second.jpg", thumbnail: "/thumb2.png",
+                                     original: "/source2.png", width: 1200, height: 800, similarTo: nil)
+        store.photos.append(PhotoRecord(imported: imported, assetID: "original2"))
+    }
+
+    @Test @MainActor func switchingPhotoWithUnappliedCropAsksFirst() {
+        let store = fixture()
+        addSecond(store)
+        store.cropDraft = [0.2, 0.2, 0.5, 0.5]
+        #expect(store.cropDirty)
+        store.activate("photo2")
+        // 还没答复：照片不换，问句挂着。
+        #expect(store.currentID == "photo")
+        #expect(store.cropSwitchPrompt)
+        #expect(store.pendingCropSwitchTarget == "photo2")
+    }
+
+    @Test @MainActor func applyingThenSwitchingWritesCropAndResetsTheBox() throws {
+        let store = fixture()
+        addSecond(store)
+        store.cropDraft = [0.2, 0.2, 0.5, 0.5]
+        store.activate("photo2")
+        store.confirmCropSwitch(apply: true)
+        #expect(store.currentID == "photo2")
+        let written = try #require(store.photos.first?.parameters.crop)
+        #expect(zip(written, [0.2, 0.2, 0.5, 0.5]).allSatisfy { abs($0 - $1) < 0.0001 })
+        // 新照片没有裁切，框回到整张，不会把上一张的框带过来。
+        #expect(store.cropDraft == [0, 0, 1, 1])
+    }
+
+    @Test @MainActor func discardingThenSwitchingLeavesThePhotoUntouched() {
+        let store = fixture()
+        addSecond(store)
+        store.cropDraft = [0.2, 0.2, 0.5, 0.5]
+        store.activate("photo2")
+        store.confirmCropSwitch(apply: false)
+        #expect(store.currentID == "photo2")
+        #expect(store.photos.first?.parameters.crop == nil)
+    }
+
+    @Test @MainActor func cancelKeepsThePhotoAndTheBox() {
+        let store = fixture()
+        addSecond(store)
+        store.cropDraft = [0.3, 0.3, 0.4, 0.4]
+        store.activate("photo2")
+        store.cancelCropSwitch()
+        #expect(store.currentID == "photo")
+        #expect(store.cropDraft == [0.3, 0.3, 0.4, 0.4])
+        #expect(!store.cropSwitchPrompt)
+    }
+
+    /// 框跟已应用的一样，就不该拦人。
+    @Test @MainActor func cleanCropSwitchesWithoutAsking() {
+        let store = fixture()
+        addSecond(store)
+        store.cropDraft = [0.1, 0.1, 0.4, 0.4]
+        store.commitCrop()
+        #expect(!store.cropDirty)
+        store.activate("photo2")
+        #expect(store.currentID == "photo2")
+        #expect(!store.cropSwitchPrompt)
+    }
+}
+
+/// 离开 AI 改图页：那一轮的选区和临时版本预览都要撤掉。
+@MainActor @Suite struct AIEditExitTests {
+    @MainActor private func fixture() -> WorkspaceStore {
+        let store = WorkspaceStore()
+        let imported = ImportedPhoto(id: "photo", path: "/fixture.jpg", name: "fixture.jpg", thumbnail: "/thumb.png",
+                                     original: "/source.png", width: 1200, height: 800, similarTo: nil)
+        store.photos = [PhotoRecord(imported: imported, assetID: "original")]
+        store.currentID = "photo"
+        store.inspectorTab = "aiedit"
+        return store
+    }
+
+    @Test @MainActor func leavingDropsSelectionAndVersionPreview() {
+        let store = fixture()
+        store.selectionParts = [SelectionPart(box: [0.2, 0.2, 0.6, 0.6])]
+        store.selectionOverlay = "/tmp/overlay.png"
+        store.versionPreview = "/tmp/version.png"
+        store.leaveAIEdit()
+        #expect(store.selectionParts.isEmpty)
+        #expect(store.selectionOverlay == nil)
+        #expect(store.versionPreview == nil)
+    }
 }

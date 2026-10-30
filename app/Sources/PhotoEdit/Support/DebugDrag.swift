@@ -60,3 +60,39 @@ enum DebugDrag {
         }
     }
 }
+
+/// 验收用：往窗口里补一个真实按键，验证「回车＝确定」这条路通不通。
+/// 和真手一样走 `NSApp.sendEvent`，会先经过 local key monitor，所以能验证兜底逻辑。
+enum DebugKey {
+    private static func log(_ text: String) {
+        print(text)
+        fflush(stdout)
+    }
+
+    @MainActor
+    static func pressReturn(box: @escaping () -> [Double]?, applied: @escaping () -> [Double]?, tab: @escaping () -> String) async {
+        var window: NSWindow?
+        for _ in 0..<40 {
+            window = NSApp.windows
+                .filter({ $0.isVisible && $0.contentView != nil })
+                .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+            if window != nil { break }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        guard let window else { log("debugKey 找不到窗口"); return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        try? await Task.sleep(for: .milliseconds(600))
+        log("debugKey 回车前 页=\(tab()) 框=\(String(describing: box())) 已写入=\(String(describing: applied()))")
+        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                           timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: window.windowNumber, context: nil,
+                                           characters: "\r", charactersIgnoringModifiers: "\r",
+                                           isARepeat: false, keyCode: 36) else {
+            log("debugKey 造不出回车事件"); return
+        }
+        NSApp.sendEvent(event)
+        try? await Task.sleep(for: .milliseconds(800))
+        log("debugKey 回车后 页=\(tab()) 框=\(String(describing: box())) 已写入=\(String(describing: applied()))")
+    }
+}
