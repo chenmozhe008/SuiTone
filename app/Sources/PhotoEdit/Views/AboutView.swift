@@ -21,6 +21,16 @@ struct AboutView: View {
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
         return "随心修图 \(AppIdentity.version)（\(build)），\(ProcessInfo.processInfo.operatingSystemVersionString)"
     }
+    private var localChangelog: [(String, [String])] {
+        guard let url = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        var entries: [(String, [String])] = []
+        for line in text.components(separatedBy: .newlines) {
+            if line.hasPrefix("## ") { entries.append((String(line.dropFirst(3)), [])) }
+            else if line.hasPrefix("- "), !entries.isEmpty { entries[entries.count - 1].1.append(String(line.dropFirst(2))) }
+        }
+        return entries
+    }
     private let features: [(String, String, String)] = [
         ("text.bubble", "对话调整", "用自然语言描述想法，AI 分析照片后调整可继续编辑的参数。"),
         ("slider.horizontal.3", "照片调色", "用光线、颜色、质感滑块调整照片，也可应用风格或参考图。"),
@@ -118,13 +128,12 @@ struct AboutView: View {
                     }
                 }
             }
-            card {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("开发阶段 · 当前版本 \(AppIdentity.version)").font(.callout.weight(.bold)).foregroundStyle(.cyan)
-                    bullet("对话与手动调色，支持风格、参考图和局部调整。")
-                    bullet("支持选区加减、移除杂物、主体抠图和画质调整。")
-                    bullet("支持 AI 改图和生成版本，提供撤销与原图复原。")
-                    bullet("优化抠图提示、选区操作和风格展开入口。")
+            ForEach(Array(localChangelog.enumerated()), id: \.offset) { _, entry in
+                card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(entry.0).font(.body.weight(.bold)).foregroundStyle(.cyan)
+                        ForEach(Array(entry.1.enumerated()), id: \.offset) { _, item in bullet(item) }
+                    }
                 }
             }
             Text("正式发布后可在此查看各版本的更新说明。")

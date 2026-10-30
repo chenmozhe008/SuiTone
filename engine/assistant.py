@@ -128,7 +128,8 @@ def executable(provider):
         'codex':[shutil.which('codex'),'/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex',
                  str(Path.home()/'.local/bin/codex'),'/opt/homebrew/bin/codex','/usr/local/bin/codex'],
         'claude':[shutil.which('claude'),str(Path.home()/'.local/bin/claude'),'/usr/local/bin/claude','/opt/homebrew/bin/claude'],
-        'codebuddy':[str(Path.home()/'Library/Application Support/SuiTone/codebuddy/node_modules/.bin/codebuddy'),shutil.which('codebuddy')],
+        'codebuddy':[str(Path.home()/'Library/Application Support/SuiTone/codebuddy/node_modules/.bin/codebuddy'),
+                     shutil.which('codebuddy'),str(Path.home()/'.local/bin/codebuddy'),'/opt/homebrew/bin/codebuddy','/usr/local/bin/codebuddy'],
     }
     return next((p for p in candidates.get(provider,[]) if p and os.path.isfile(p) and os.access(p,os.X_OK)),None)
 
@@ -383,6 +384,8 @@ class AssistantBridge:
                 if images:command.extend(['--input-format','stream-json','--verbose'])
             environment=os.environ.copy()
             environment.pop('CLAUDECODE',None)
+            # Finder 启动的应用可能没有 Homebrew 的 PATH；npm 安装的 CLI 用 env 查找 node。
+            environment['PATH']=os.pathsep.join(filter(None,[environment.get('PATH',''),'/opt/homebrew/bin','/usr/local/bin']))
             # 凭证只交给既有 CLI，不落入日志、提示或返回值。
             with TemporaryFile() as stdout,TemporaryFile() as stderr:
                 if cancel.is_set():raise InterruptedError()

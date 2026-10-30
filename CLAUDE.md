@@ -30,6 +30,8 @@ photo-edit/
 
 ## 运行
 
+- 每次向用户交付有功能或界面变化的新版时，更新根目录 `VERSION` 和 `CHANGELOG.md`；构建脚本从这两处生成应用版本和关于页记录。开发版与已公开发行的版本须明确区分，不能伪造历史发布。
+
 - Python：`~/.cache/photo-edit/venv/bin/python`；模型在 `~/.cache/photo-edit/`（不入 git，下载地址见 engine/README.md）。
 - 改了 engine 先跑 `cli.py grade` 冒烟测试，再跑 docs/APP_SPEC.md 第 6 节验收用例里相关的那几条。
 - 测试只用 `./script/test.sh`（Swift＋Python）；构建 `./script/build_and_run.sh --build-only`。本机没有 Xcode，直接 `swift test` 会失败，原因和截图验收方法见 HANDOFF 第 0 节「开发环境的坑」。

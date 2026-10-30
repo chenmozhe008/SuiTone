@@ -21,6 +21,8 @@ stop_app() {
 swift build --package-path "$ROOT_DIR/app" -c release
 BUILD_BINARY="$(swift build --package-path "$ROOT_DIR/app" -c release --show-bin-path)/$APP_NAME"
 mkdir -p "$APP_MACOS"
+mkdir -p "$APP_BUNDLE/Contents/Resources"
+cp "$ROOT_DIR/CHANGELOG.md" "$APP_BUNDLE/Contents/Resources/CHANGELOG.md"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 if [[ -f "$ROOT_DIR/app/Resources/AppIcon.icns" ]]; then
@@ -32,8 +34,9 @@ export PHOTO_EDIT_BUILD_ROOT="$ROOT_DIR"
 import os,plistlib
 from pathlib import Path
 root=Path(os.environ['PHOTO_EDIT_BUILD_ROOT'])
+version=(root/'VERSION').read_text().strip()
 info=dict(CFBundleExecutable='SuiTone',CFBundleIdentifier='local.photo-edit.app',CFBundleName='随心修图',
-          CFBundleDisplayName='随心修图',CFBundlePackageType='APPL',CFBundleVersion='1',CFBundleShortVersionString='0.1.0',
+          CFBundleDisplayName='随心修图',CFBundlePackageType='APPL',CFBundleVersion=version,CFBundleShortVersionString=version,
           LSMinimumSystemVersion='14.0',NSPrincipalClass='NSApplication',NSHighResolutionCapable=True,
           PhotoEditProjectRoot=str(root))
 if (root/'app/Resources/AppIcon.icns').is_file():info['CFBundleIconFile']='AppIcon'
