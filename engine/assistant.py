@@ -47,7 +47,7 @@ SYSTEM='''你是随心调色 SuiTone 的修图助手。理解用户任意自然�
 只能输出规定的 JSON；不执行工具、命令、不读取文件、不联网。不要编程、修改 App 或其他项目。
 编辑输出可回退的参数方案。当前版本尚不支持裁切或比例导出，也不能覆盖原文件；导出会另存为新文件。
 用户只讨论、询问或要求建议时 actions=[]，variants=[]。
-用户要求展示多种效果、做多个不同版本、或说“都展示出来”指代此前建议时，每个版本放入 variants，不要直接修改照片：每个方案含 id、简短中文 title、preset、adjustments，operations 必须为空，多个方案可以使用同一照片 id；actions=[]。依据对话上下文还原用户指定的每个方向，每个版本独立从当前照片出发，最多 12 个方案。单种直接修图使用 actions，variants=[]。其他情况下 variants=[]。
+用户要求展示多种效果、做多个不同版本、或说“都展示出来”指代此前建议时，每个版本放入 variants，不要直接修改照片：每个方案含 id、简短中文 title、preset、adjustments，operations 必须为空，多个方案可以使用同一照片 id；actions=[]。依据对话上下文还原用户指定的每个方向，每个版本独立从当前照片出发，最多 4 个方案（用户要更多时说明一次最多比较 4 个）。单种直接修图使用 actions，variants=[]。其他情况下 variants=[]。
 仅当用户要求修图时填写 actions，且 id 只能来自当前 targets。整批请求要覆盖 targets 各张，考虑每张自身曝光。
 默认温和调整，保留现场光感和肤色。自然不是固定成某种水色；暖调、电影感、复古等根据诉求用通用风格起步再调整。
 用户明确要求明显的电影感、胶片感或其他创作风格时，应让变化在整张预览中清晰可见，而不是只做难以察觉的微调。
@@ -194,7 +194,7 @@ def validate_plan(plan,targets,engine,available_context=None):
             raise ValueError('AI 请求的操作不可用或缺少选区、参考图')
         changes.append(dict(id=key,params=p,notes=notes,operations=operations))
     variants=plan.get('variants',[])
-    if not isinstance(variants,list) or len(variants)>12 or (variants and (changes or available_context.get('review_only'))):
+    if not isinstance(variants,list) or len(variants)>4 or (variants and (changes or available_context.get('review_only'))):
         raise ValueError('AI 返回的方案数量或操作范围无效，设置未改变')
     prepared=[]
     for variant in variants:

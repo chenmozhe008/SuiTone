@@ -664,6 +664,19 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(probabilities.shape,(2,2,2));self.assertEqual(labels[0],'sky')
             with np.load(cache/(digest+'.npz')) as saved:self.assertEqual(saved['p'].shape,(2,2,2))
 
+    def test_region_outline_draws_only_the_edge(self):
+        from service import Engine
+        import tempfile
+        engine=Engine.__new__(Engine);engine.folder=Path(tempfile.mkdtemp())
+        sky=np.zeros((100,200));sky[:40]=1
+        context=SimpleNamespace(image=Image.new('RGB',(200,100)),sky=sky,region=lambda name:sky)
+        engine.analysis=lambda key:(context,True)
+        out=np.asarray(Image.open(engine.region_outline('a',{},'sky')['outline']))
+        self.assertEqual(out.shape,(100,200,4))
+        self.assertEqual(out[10,100,3],0);self.assertEqual(out[80,100,3],0)   # 区域内外都透明
+        self.assertGreater(out[39:42,100,3].max(),200)                        # 边缘有线
+        with self.assertRaises(ValueError):engine.region_outline('a',{},'unknown')
+
     def test_reference_strength_drops_when_reference_differs_a_lot(self):
         from match import suggested_strength
         names={'sky':'天空','water':'水'}

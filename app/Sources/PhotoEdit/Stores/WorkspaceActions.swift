@@ -71,22 +71,20 @@ extension WorkspaceStore {
         }
     }
 
-    func selectLocalRegion(_ region: String?, previewDuration: Duration = .seconds(2)) {
-        localRegion = region
-        showLocalOverlay(region)
+    /// 选中局部区域：照片上常驻一圈细轮廓（不遮挡颜色），整片染色只在点「显示选区」时出现。
+    func selectLocalRegion(_ region: String?) {
+        localRegion = region; localOutline = nil
+        showLocalOverlay(nil)
         if region != nil && analysis == nil { loadAnalysis() }
         guard let region, let photo = current else { return }
-        overlayPreviewTask = Task {
-            // 从遮罩真正可见时开始计时，避免模型加载慢时还没看到就消失。
-            while !Task.isCancelled && current?.id == photo.id && localRegion == region && overlay == region {
-                let ready = region.hasPrefix("selection-") ? manualOverlay != nil : analysis?.overlays[region] != nil
-                if ready {
-                    do { try await Task.sleep(for: previewDuration) } catch { return }
-                    guard !Task.isCancelled, current?.id == photo.id, localRegion == region, overlay == region else { return }
-                    overlay = ""; manualOverlay = nil
-                    return
-                }
-                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+        Task {
+            struct Outline: Decodable { var outline: String }
+            do {
+                let result: Outline = try await engine.request("region-outline", body: ["id": photo.assetID,
+                    "params": try EngineClient.object(photo.parameters), "name": region])
+                if current?.id == photo.id && localRegion == region { localOutline = result.outline }
+            } catch {
+                if current?.id == photo.id && localRegion == region { status = "选区轮廓暂不可用，可点「显示选区」查看" }
             }
         }
     }

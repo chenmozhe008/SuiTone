@@ -419,6 +419,27 @@ class Engine:
         path=self.folder/(uuid4().hex+'-repair-overlay.png');save_new(overlay,path)
         return dict(overlay=str(path),pixels=int((m>0).sum()))
 
+    def region_outline(self,key,raw,name):
+        """选区轮廓：透明底上只画边缘（白线＋浅黑描边），叠在预览上常驻显示，不遮挡颜色。"""
+        import cv2
+        from grade import local_mask
+        p=parameters(raw);context,_=self.analysis(key)
+        if name.startswith('selection-'):
+            if name not in p['manual_masks']:raise ValueError('选区不存在')
+            mask=local_mask(context,name,0,context.image.width,p['manual_masks'])
+        elif name in ('water','sky','land','person'):mask=context.region(name)
+        else:raise ValueError('未知区域')
+        inside=(np.asarray(mask)>.5).astype(np.uint8)
+        if not inside.any():raise ValueError('这个区域在照片里找不到')
+        width=max(2,context.image.width//500)
+        kernel=np.ones((width*2+1,width*2+1),np.uint8)
+        line=cv2.dilate(inside,kernel)-cv2.erode(inside,np.ones((3,3),np.uint8))
+        shadow=cv2.dilate(line,np.ones((3,3),np.uint8))
+        rgba=np.zeros((*inside.shape,4),np.uint8)
+        rgba[shadow>0]=(0,0,0,110);rgba[line>0]=(255,255,255,235)
+        path=self.folder/(uuid4().hex+'-outline.png');save_new(Image.fromarray(rgba,'RGBA'),path)
+        return dict(outline=str(path))
+
     def manual_mask_overlay(self,key,raw,name):
         from grade import local_mask
         p=parameters(raw)
@@ -557,6 +578,7 @@ def serve(root, token, watch_stdin=True):
                                                                     data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'))
                     elif self.path=='/repair-mask': result=engine.repair_mask(data['id'],data['box'],data.get('classes'),data.get('keep'),
                                                                               data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'))
+                    elif self.path=='/region-outline': result=engine.region_outline(data['id'],data['params'],data['name'])
                     elif self.path=='/manual-mask-overlay': result=engine.manual_mask_overlay(data['id'],data['params'],data['name'])
                     elif self.path=='/render-full': result=engine.render_full_png(data['id'],data.get('params',{}),data.get('quality'))
                     elif self.path=='/export': result=engine.export(data['items'],data['destination'],data.get('options',{}))

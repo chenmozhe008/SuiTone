@@ -16,25 +16,19 @@ import Testing
         return store
     }
 
-    @Test @MainActor func testSelectionPreviewHidesAndManualDisplayStaysVisible() async throws {
+    @Test @MainActor func testSelectingRegionShowsOutlineNotTintUntilAsked() async throws {
         let store = fixture()
         store.analysis = AnalysisResponse(regions: [:], overlays: ["sky": "/mask.png", "water": "/water.png"],
                                           cacheHit: true, analysisMs: 0, inferenceCount: 0)
-        store.selectLocalRegion("sky", previewDuration: .milliseconds(40))
-        #expect(store.overlay == "sky")
-        try await Task.sleep(for: .milliseconds(90))
+        store.selectLocalRegion("sky")
         #expect(store.overlay.isEmpty && store.localRegion == "sky")
-        store.selectLocalRegion("water", previewDuration: .milliseconds(40))
-        store.showLocalOverlay("water")
+        store.showLocalOverlay("sky")
         try await Task.sleep(for: .milliseconds(90))
-        #expect(store.overlay == "water")
-        store.showLocalOverlay(nil)
-        #expect(store.overlay.isEmpty)
-        store.selectLocalRegion("sky", previewDuration: .milliseconds(40))
-        store.selectLocalRegion("water", previewDuration: .milliseconds(150))
-        try await Task.sleep(for: .milliseconds(90))
-        #expect(store.overlay == "water")
+        #expect(store.overlay == "sky")  // 手动显示的染色不会自动消失
+        store.selectLocalRegion("water")
+        #expect(store.overlay.isEmpty && store.localRegion == "water" && store.localOutline == nil)
         store.selectLocalRegion(nil)
+        #expect(store.localRegion == nil)
     }
 
     @Test @MainActor func testChatSelectionTransfersToRepair() {

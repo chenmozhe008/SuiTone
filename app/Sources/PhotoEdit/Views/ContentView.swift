@@ -64,6 +64,9 @@ private struct WorkspaceHeader: View {
 
 private struct CanvasHeader: View {
     @Bindable var store: WorkspaceStore
+    private func tool(_ name: String) -> Binding<Bool> {
+        Binding(get: { store.inspectorTab == name }, set: { store.inspectorTab = $0 ? name : store.lastMainTab })
+    }
     var body: some View {
         HStack(spacing: 12) {
             Text(store.grid ? "整批预览" : store.current?.imported.name ?? "")
@@ -72,21 +75,17 @@ private struct CanvasHeader: View {
                 Text(photo.lookName).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Toggle(isOn: $store.splitCompare) { Label("左右对比", systemImage: "rectangle.split.2x1") }
+            Toggle(isOn: $store.splitCompare) { Label("对比", systemImage: "rectangle.split.2x1") }
                 .toggleStyle(.button).help("拖动画面上的分隔线比较原图和调整后").disabled(store.grid)
             Toggle(isOn: $store.showOriginal) { Label("原图", systemImage: "circle.lefthalf.filled") }
                 .toggleStyle(.button).help("按 \\ 切换整张原图")
-            Menu {
-                Button { store.inspectorTab = "repair" } label: { Label("移除杂物", systemImage: "bandage") }
-                    .disabled(store.controlsBlocked && store.inspectorTab != "repair")
-                Button { store.inspectorTab = "cutout" } label: { Label("抠图", systemImage: "scissors") }
-                    .disabled(store.controlsBlocked)
-                Button { store.inspectorTab = "quality" } label: { Label("画质增强", systemImage: "wand.and.stars") }
-                    .disabled(store.controlsBlocked)
-            } label: {
-                Label(store.inspectorTab == "repair" ? "移除杂物" : store.inspectorTab == "quality" ? "画质增强" : store.inspectorTab == "cutout" ? "抠图" : "图片工具",
-                      systemImage: "slider.horizontal.3")
-            }.help("移除杂物、抠图和画质增强").disabled(store.current == nil)
+            // 图片工具直接放按钮，一眼可见；再点一次回到原来的页。
+            Toggle(isOn: tool("repair")) { Label("移除", systemImage: "bandage") }
+                .toggleStyle(.button).help("移除杂物").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
+            Toggle(isOn: tool("cutout")) { Label("抠图", systemImage: "scissors") }
+                .toggleStyle(.button).help("抠出人物或物体，另存透明 PNG").disabled(store.current == nil || store.controlsBlocked)
+            Toggle(isOn: tool("quality")) { Label("画质", systemImage: "wand.and.stars") }
+                .toggleStyle(.button).help("降噪与放大").disabled(store.current == nil || store.controlsBlocked)
             Picker("预览方式", selection: $store.grid) {
                 Image(systemName: "rectangle").tag(false)
                 Image(systemName: "square.grid.2x2").tag(true)

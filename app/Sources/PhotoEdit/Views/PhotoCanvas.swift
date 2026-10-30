@@ -37,6 +37,10 @@ struct PhotoCanvas: View {
                             canvasLabel("调整后").opacity(store.splitPosition<0.92 ? 1 : 0)
                         }.frame(width:w,height:h,alignment:.top)
                     }
+                    if store.inspectorTab == "adjust", store.localRegion != nil, store.overlay.isEmpty, !splitActive,
+                       let outline = store.localOutline {
+                        LocalPhoto(path: outline).frame(width: w, height: h).allowsHitTesting(false)
+                    }
                     if (store.repairEnabled || (store.inspectorTab == "chat" && store.repairTool != "box")) && store.repairDraft == nil && store.repairMaskOverlay == nil {
                         repairShapes(w:w,h:h)
                     }

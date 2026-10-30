@@ -14,6 +14,8 @@ final class WorkspaceStore {
     var analysis: AnalysisResponse?
     var overlay = ""
     var manualOverlay: String?
+    /// 局部区域的轮廓图（透明底，只画边缘），选中区域时常驻显示
+    var localOutline: String?
     var overlayPreviewTask: Task<Void, Never>?
     var showOriginal = false
     /// 左右滑动对比：左侧原图、右侧调整后；splitPosition 为分隔线位置（0–1）。
