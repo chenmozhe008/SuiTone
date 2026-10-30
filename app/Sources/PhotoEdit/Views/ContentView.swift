@@ -62,8 +62,8 @@ private struct WorkspaceHeader: View {
                     Button { showingReset = true } label: { Label("复原", systemImage: "arrow.counterclockwise") }
                         .help("把照片恢复成导入时的原图").disabled(store.targets.isEmpty || store.controlsBlocked)
                 }.labelStyle(.titleAndIcon)
-                    .confirmationDialog(resetTitle, isPresented: $showingReset, titleVisibility: .visible) {
-                        Button("复原", role: .destructive) { store.resetToOriginal() }
+                    .alert(resetTitle, isPresented: $showingReset) {
+                        Button("复原原图") { store.resetToOriginal() }
                         Button("取消", role: .cancel) {}
                     } message: {
                         Text("会去掉调色、移除杂物、AI 生成的版本和画质设置，换回导入时的原图。复原后可以用「撤销」找回。")

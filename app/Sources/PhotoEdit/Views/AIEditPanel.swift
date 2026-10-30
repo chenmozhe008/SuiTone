@@ -61,7 +61,7 @@ struct AIEditPanel: View {
                     } else {
                         HStack(spacing: 10) {
                             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
-                            Text("还没设置出图服务").font(.callout.weight(.semibold)).foregroundStyle(.yellow)
+                            Text("还没设置 AI 改图 API").font(.callout.weight(.semibold)).foregroundStyle(.yellow)
                             Spacer()
                             Button("去设置") { store.settingsTab = "image" }.buttonStyle(.borderedProminent)
                         }.padding(12).background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
