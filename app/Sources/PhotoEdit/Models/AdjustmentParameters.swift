@@ -69,6 +69,7 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
     var enabled: [String: Bool] = ["water":false,"sky":false,"land":false]
     var regions: [String: RegionAdjustment] = [:]
     var local: [String: LocalAdjustment] = [:]
+    var manualMasks: [String: RemovalOperation] = [:]
     var hasReferenceMatch: Bool { regions.values.contains { $0.referenceCount > 0 } }
 
     init() {}
@@ -76,7 +77,7 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
         case water,waterVar,dehazeAmt,autoDehaze,skyHue,autumn,blackWhite,contrast,exposure,saturation
         case temperature,tint,highlights,shadows,effectStrength,skinProtect,smooth,bright,matchStrength,enabled,regions
         case shadowHue,shadowChroma,highlightHue,highlightChroma,fade
-        case whites,blacks,light,vibrance,texture,local
+        case whites,blacks,light,vibrance,texture,local,manualMasks
     }
     init(from decoder:Decoder) throws {
         self.init()
@@ -113,6 +114,7 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
         vibrance=try c.decodeIfPresent(Double.self,forKey:.vibrance) ?? 0
         texture=try c.decodeIfPresent(Double.self,forKey:.texture) ?? 0
         local=try c.decodeIfPresent([String:LocalAdjustment].self,forKey:.local) ?? [:]
+        manualMasks=try c.decodeIfPresent([String:RemovalOperation].self,forKey:.manualMasks) ?? [:]
     }
 }
 
@@ -273,6 +275,7 @@ struct ProjectPhoto: Codable {
 enum RegionNames {
     static let all = ["water", "sky", "land", "person"]
     static func title(_ key: String) -> String {
-        ["water": "水面", "sky": "天空", "land": "地面", "person": "人物", "skin": "肤色"][key] ?? key
+        if key.hasPrefix("selection-") { return "选区" }
+        return ["water": "水面", "sky": "天空", "land": "地面", "person": "人物", "skin": "肤色"][key] ?? key
     }
 }

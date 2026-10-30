@@ -27,7 +27,7 @@ DEFAULTS = dict(water=[54., -17., -7.], water_var=.6, dehaze_amt=1., sky_hue=-10
                 skin_protect=True, smooth=0., bright=0., match_strength=1., enabled={}, regions={},auto_dehaze=True,
                 temperature=0.,tint=0.,highlights=0.,shadows=0.,effect_strength=1.,
                 shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.,
-                whites=0.,blacks=0.,light=0.,vibrance=0.,texture=0.,local={})
+                whites=0.,blacks=0.,light=0.,vibrance=0.,texture=0.,local={},manual_masks={})
 LIMITS = dict(water_var=(0, 2), dehaze_amt=(0, 1), sky_hue=(-180, 180), autumn=(0, 1),
               black_white=(0, 1), contrast=(0, 2), exposure=(-3, 3), saturation=(0, 2),
               smooth=(0, 1), bright=(0, 1), match_strength=(0, 1),temperature=(-1,1),tint=(-1,1),
@@ -109,7 +109,16 @@ def parameters(raw):
         number(region.get('reference_luma_mean'),0,100)
         number(region.get('strength',1),0,1)
     from grade import LOCAL_FIELDS
-    if not isinstance(p['local'], dict) or set(p['local'])-{'water','sky','land','person'}:
+    if not isinstance(p['manual_masks'],dict) or len(p['manual_masks'])>32:
+        raise ValueError('手动选区格式无效')
+    for key, selection in p['manual_masks'].items():
+        if not isinstance(key,str) or not key.startswith('selection-') or len(key)!=22 or not all(c in '0123456789abcdef' for c in key[10:]):
+            raise ValueError('手动选区编号无效')
+        if not isinstance(selection,dict) or set(selection)-{'box','strokes','radius','polygon','point'}:
+            raise ValueError('手动选区格式无效')
+        repair_input(selection.get('box'))
+        shape_input(selection.get('strokes'),selection.get('radius'),selection.get('polygon'),selection.get('point'))
+    if not isinstance(p['local'], dict) or set(p['local'])-({'water','sky','land','person'}|set(p['manual_masks'])):
         raise ValueError('未知局部区域')
     for name, values in p['local'].items():
         if not isinstance(values, dict) or set(values)-set(LOCAL_FIELDS):raise ValueError('局部参数格式不正确')
@@ -410,6 +419,18 @@ class Engine:
         path=self.folder/(uuid4().hex+'-repair-overlay.png');save_new(overlay,path)
         return dict(overlay=str(path),pixels=int((m>0).sum()))
 
+    def manual_mask_overlay(self,key,raw,name):
+        from grade import local_mask
+        p=parameters(raw)
+        if name not in p['manual_masks']:raise ValueError('选区不存在')
+        context,_=self.analysis(key)
+        feather=p['local'].get(name,{}).get('feather',.5)
+        mask=local_mask(context,name,feather,context.image.width,p['manual_masks'])*.45
+        rgb=context.rgb
+        overlay=Image.fromarray(np.uint8(np.clip(rgb*(1-mask[...,None])+np.array([.9,.35,.3])*mask[...,None],0,1)*255+.5))
+        path=self.folder/(uuid4().hex+'-local-overlay.png');save_new(overlay,path)
+        return dict(overlay=str(path))
+
     def export(self, items, destination, options):
         if not items: raise ValueError('没有可导出的照片')
         output_format=options.get('format') or 'jpeg'
@@ -519,6 +540,7 @@ def serve(root, token, watch_stdin=True):
                                                                     data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'))
                     elif self.path=='/repair-mask': result=engine.repair_mask(data['id'],data['box'],data.get('classes'),data.get('keep'),
                                                                               data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'))
+                    elif self.path=='/manual-mask-overlay': result=engine.manual_mask_overlay(data['id'],data['params'],data['name'])
                     elif self.path=='/export': result=engine.export(data['items'],data['destination'],data.get('options',{}))
                     elif self.path=='/restore':
                         p=parameters(data.get('params',{}))

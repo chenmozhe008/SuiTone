@@ -62,6 +62,8 @@ struct AssistantPanel: View {
                         if !store.suggestions.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("这张照片可以试试").font(.callout.weight(.semibold))
+                                Text(store.suggestionSource == "ai" ? "根据照片由 AI 推荐" : "根据原图亮度和识别区域推荐")
+                                    .font(.caption).foregroundStyle(.secondary)
                                 FlowLayout(spacing: 8) {
                                     ForEach(store.suggestions) { card in
                                         Button { store.applySuggestion(card) } label: {
@@ -102,10 +104,14 @@ struct AssistantPanel: View {
                                 if let changeID = message.changeID, !message.wasUndone {
                                     Button("撤销这次调整") { store.undoAssistantChange(changeID) }
                                         .disabled(store.chatting || store.controlsBlocked || store.undoChanges.last?.id != changeID)
-                                        .help(store.undoChanges.last?.id == changeID ? "撤销这次对话的全部调整" : "请先撤销之后的操作")
+                                        .help(store.undoChanges.last?.id == changeID ? "撤销这次调整" : "请先撤销之后的操作")
                                 }
-                                if !message.notes.isEmpty {
-                                    DisclosureGroup("查看实际调整 · 可撤销") {
+                                if !message.notes.isEmpty && message.text.hasPrefix("已应用：") {
+                                    ForEach(Array(message.notes.enumerated()), id: \.offset) { _, line in
+                                        Text(line).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                                    }
+                                } else if !message.notes.isEmpty {
+                                    DisclosureGroup("查看实际调整") {
                                         ForEach(Array(message.notes.enumerated()), id: \.offset) { _, line in
                                             Text(line).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                                         }
@@ -127,8 +133,9 @@ struct AssistantPanel: View {
             VStack(alignment: .leading, spacing: 8) {
                 if store.validRepairSelection {
                     HStack {
-                        Text("已选择当前照片中的修复区域").font(.callout).foregroundStyle(.secondary)
+                        Text("已选择当前照片中的区域").font(.callout).foregroundStyle(.secondary)
                         Spacer()
+                        Button("调整选区") { store.editSelectedRegion() }.disabled(store.chatting || store.controlsBlocked)
                         Button("取消选区") { store.clearRepairSelection() }
                     }
                 }
@@ -145,7 +152,7 @@ struct AssistantPanel: View {
                             }
                         }.scrollIndicators(.hidden)
                     }
-                    ChatInputField(text: $store.chatDraft, placeholder: "说一句调整要求，或框选杂物后说移除…",
+                    ChatInputField(text: $store.chatDraft, placeholder: "说一句要求，或先在照片上框一块再说…",
                                    onSubmit: { if canSend { store.sendChat() } })
                         .frame(minHeight: 44, maxHeight: 120).accessibilityLabel("修图对话输入")
                     HStack(spacing: 12) {

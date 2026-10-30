@@ -114,7 +114,7 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
                 match_strength=1.0, skin_protect=False, smooth=0.0, bright=0.0, analysis=None,auto_dehaze=False,
                 temperature=0.0,tint=0.0,highlights=0.0,shadows=0.0,effect_strength=1.0,
                 shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.,
-                whites=0.,blacks=0.,light=0.,vibrance=0.,texture=0.,local=None):
+                whites=0.,blacks=0.,light=0.,vibrance=0.,texture=0.,local=None,manual_masks=None):
     if auto_dehaze:
         if analysis is None:
             from analysis import Analysis
@@ -198,7 +198,7 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
         if analysis is None:
             from analysis import Analysis
             analysis=Analysis(img)
-        lab=apply_local(lab,analysis,local,W)
+        lab=apply_local(lab,analysis,local,W,manual_masks or {})
     if on('portrait') and (skin_protect or smooth or bright):
         if analysis is None:
             from analysis import Analysis
@@ -217,25 +217,40 @@ LOCAL_FIELDS=dict(exposure=(-1,1),contrast=(-1,1),highlights=(-1,1),temperature=
                   saturation=(-1,1),hue=(-180,180),feather=(0,1))
 
 
-def local_mask(analysis,name,feather,W):
+def local_mask(analysis,name,feather,W,manual_masks=None):
     """区域遮罩按羽化程度放宽边缘；分条渲染时直接取预览算好的那一份。"""
     cache=analysis.__dict__.setdefault('local_masks',{})
-    key=(name,round(float(feather),3))
+    selection=(manual_masks or {}).get(name)
+    if selection is None:key=(name,round(float(feather),3))
+    else:
+        import json
+        key=(name,round(float(feather),3),json.dumps(selection,sort_keys=True,separators=(',',':')))
     if getattr(analysis,'global_fields',False):return cache[key]
     if key not in cache:
-        if len(cache)>=8:cache.clear()
-        m=analysis.region(name)
+        if len(cache)>=64:cache.clear()
+        if selection is None:
+            m=analysis.region(name)
+        else:
+            from inpaint import shape_mask
+            from PIL import ImageDraw
+            image=analysis.image
+            if any(selection.get(k) is not None for k in ('strokes','polygon','point')):
+                m=shape_mask(image,selection.get('strokes'),selection.get('radius'),selection.get('polygon'),selection.get('point'))
+            else:
+                mask=Image.new('L',image.size,0);draw=ImageDraw.Draw(mask)
+                l,t,r,b=selection['box'];draw.rectangle((int(l*image.width),int(t*image.height),int(r*image.width),int(b*image.height)),fill=255)
+                m=np.asarray(mask,dtype=np.float32)/255
         cache[key]=np.clip(blur(m,max(2,feather*W/25)),0,1) if feather>.02 else m
     return cache[key]
 
 
-def apply_local(lab,analysis,local,W):
+def apply_local(lab,analysis,local,W,manual_masks=None):
     """局部光线和颜色：只在识别到的区域里生效，边缘随羽化过渡。"""
     L,A,B=lab[...,0].copy(),lab[...,1].copy(),lab[...,2].copy()
     for name,v in local.items():
         g=lambda k:float(v.get(k,0))
         if not any(g(k) for k in LOCAL_FIELDS if k!='feather'):continue
-        m=local_mask(analysis,name,g('feather'),W)
+        m=local_mask(analysis,name,g('feather'),W,manual_masks)
         L=L+g('exposure')*18*m
         L=L+g('contrast')*.4*(L-50)*m
         L=L+g('highlights')*18*ss(L,42,85)*m

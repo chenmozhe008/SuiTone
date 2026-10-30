@@ -87,7 +87,19 @@ extension WorkspaceStore {
         batchWorking = true; progressDone = 0; progressTotal = items.count; showOriginal = false
         batchTask = Task {
             var before: [String: EditSnapshot] = [:]
-            defer { recordChange(label, before: before); batchWorking = false; batchTask = nil }
+            defer {
+                let changeID = recordChange(label, before: before)
+                if case .suggestion = operation, let changeID {
+                    let changed = items.filter { before[$0.id] != nil }
+                    let notes = changed.flatMap { original in
+                        guard let photo = photos.first(where: { $0.id == original.id }) else { return [String]() }
+                        return changed.count > 1 ? photo.notes.map { photo.imported.name + "：" + $0 } : photo.notes
+                    }
+                    chatMessages.append(ChatMessage(role: "assistant", text: "已应用：" + label,
+                        notes: notes, affectedPhotos: changed.map(\.imported.name), changeID: changeID))
+                }
+                batchWorking = false; batchTask = nil
+            }
             var skipped = 0, unavailable = 0, processed = 0
             for photo in items {
                 if Task.isCancelled { status = "已停止，已完成的调整可以撤销"; return }

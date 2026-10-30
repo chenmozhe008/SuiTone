@@ -12,6 +12,7 @@ from uuid import uuid4
 import math
 import re
 import base64
+from hashlib import sha256
 from smart import STYLES
 
 PARAMETERS=['exposure','contrast','saturation','temperature','tint','highlights','shadows',
@@ -23,6 +24,7 @@ PARAMETERS += [r+'_'+c for r in ['water','sky','land','person'] for c in ['l','a
 PARAMETERS += ['whites','blacks','light','vibrance','texture']
 PARAMETERS += ['local_'+r+'_'+f for r in ['water','sky','land','person']
                for f in ['exposure','contrast','highlights','temperature','saturation','hue','feather']]
+PARAMETERS += ['local_selected_'+f for f in ['exposure','contrast','highlights','temperature','saturation','hue','feather']]
 SCHEMA=dict(type='object',additionalProperties=False,required=['reply','selection','actions'],properties=dict(
     reply=dict(type='string'),selection=dict(type='string',enum=['none','water','sky','land','person','skin']),
     actions=dict(type='array',items=dict(type='object',additionalProperties=False,required=['id','preset','adjustments','operations'],properties=dict(
@@ -62,7 +64,7 @@ repair 和 match 的 value 都为 0。修复只能在目标有用户提供的 re
 undo 的 value 为 0，只能在 undo_available 为 true 时单独使用，preset=keep、adjustments=[]，不能和其他操作混用。
 每张照片可先使用 preset 与 adjustments，再依序执行 operations；无需额外操作时 operations=[]。
 修复工具支持画笔、套索、点选物体和方框；点选无法用于大片背景。没有选区时可建议用户先用这些工具选择，但不能替用户猜测选区。用户可在调整面板保存个人风格，对话不能直接执行保存；液化、美妆和生成内容尚未支持，要如实解释，不返回假操作。
-用户画出的修复选区目前只能用于修复，不能作为任意局部调色蒙版。如果用户要求只调整框选或涂抹区域的光线或颜色，说明这一限制，不要用全局参数或语义区域假装作用于所画范围，actions=[]。用户明确要求对整个画面调整时，仍可使用全局参数。
+用户指定的框选、画笔、套索或点选区域可通过 local_selected_exposure/contrast/highlights/temperature/saturation/hue/feather 调整，只有 repair_selection 对应的照片可使用；只要求调整选区时不要改全局参数。用户明确要求对整个画面调整时可使用全局参数。
 用户提到画面中的人物或其他具体对象时，先核对已有信息：有预览图且对象明显不存在时，说明没有看到，别指示用户框选不存在的对象；
 看不到照片、对象过小或无法确定时，说明无法确认并请用户指出位置，不把用户描述当作已经验证的画面事实。
 视觉上若用户对当前画面颜色、明暗或主体的事实判断与预览明显不一致，要礼貌指出所见及不确定性；若方向因此不明确，先问用户想变暖还是变冷等具体问题，actions=[]。如果用户明确指定了创作方向，即使原片本来偏暖或偏冷也可按指定方向调整，不要擅自反转。
@@ -162,7 +164,13 @@ def validate_plan(plan,targets,engine,available_context=None):
         if available_context.get('review_only') and (preset!='keep' or action.get('operations')):
             raise ValueError('复看仅支持微调参数，不能应用风格或其他操作')
         p=parameters(available[key]['params']) if preset=='keep' else suggest(context,preset)['params']
-        p,notes=apply_operations(p,action['adjustments'],context)
+        selected=available_context.get('repair_selection')
+        if selected and selected['id']==key:
+            shape={k:deepcopy(v) for k,v in selected.items() if k in ('box','strokes','radius','polygon','point')}
+            digest=sha256(json.dumps(shape,sort_keys=True,separators=(',',':')).encode()).hexdigest()[:12]
+            selected=('selection-'+digest,shape)
+        else:selected=None
+        p,notes=apply_operations(p,action['adjustments'],context,selected=selected)
         if preset!='keep':notes.insert(0,'应用自适应风格：'+preset)
         operations=action.get('operations',[])
         if not isinstance(operations,list) or len(operations)>4:raise ValueError('AI 操作数量无效')
@@ -223,9 +231,11 @@ class AssistantBridge:
             item['params']=parameters(item['params']);item['quality']=quality_settings(item.get('quality'))
         selected=data.get('repair_selection')
         if selected is not None:
-            if not isinstance(selected,dict) or set(selected)!={'id','box'} or selected['id'] not in {t['id'] for t in targets}:
+            if not isinstance(selected,dict) or set(selected)-{'id','box','strokes','radius','polygon','point'} or 'box' not in selected or selected.get('id') not in {t['id'] for t in targets}:
                 raise ValueError('修复选区不属于当前范围')
             repair_input(selected['box'])
+            from service import shape_input
+            shape_input(selected.get('strokes'),selected.get('radius'),selected.get('polygon'),selected.get('point'))
         history=data.get('history',[])
         if not isinstance(history,list) or len(history)>16:raise ValueError('对话上下文过长')
         for item in history:

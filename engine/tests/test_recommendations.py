@@ -128,6 +128,7 @@ class RecommendationTests(unittest.TestCase):
 
     def test_background_model_choices_are_validated_without_changing_photo(self):
         class Analysis:
+            lab=np.full((10,10,3),50.)
             def summary(self):return {'sky':{'available':False},'person':{'available':True}}
         class Engine:
             def analysis(self,key):return Analysis(),True
@@ -153,6 +154,7 @@ class RecommendationTests(unittest.TestCase):
 
     def test_model_cannot_offer_missing_regions_or_invent_operations(self):
         class Analysis:
+            lab=np.full((10,10,3),50.)
             def summary(self):
                 return {'sky': {'available': False}, 'person': {'available': True}}
         pool=candidates(Analysis())

@@ -3,6 +3,21 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct AssistantTransactionTests {
+    @Test @MainActor func testReviewCannotAlterTheUserSelectionGeometry() async {
+        let store = fixture(), items = store.photos, key = "selection-123456789abc"
+        var first = items[0].parameters
+        first.manualMasks[key] = RemovalOperation(box: [0.1, 0.1, 0.4, 0.4])
+        var local = LocalAdjustment(); local.exposure = 0.2; first.local[key] = local
+        let job = AssistantJob(state: "done", reply: "", selection: "none", changes: [
+            AssistantChange(id: "original", params: first, notes: [])], error: nil)
+        await store.applyAssistantResult(job, items: items, review: { prepared in
+            var changed = prepared[0].parameters; changed.manualMasks[key]?.box = [0.5, 0.5, 0.9, 0.9]
+            return [AssistantChange(id: "original", params: changed, notes: [])]
+        })
+        store.previewTask?.cancel()
+        #expect(store.photos[0].parameters.manualMasks[key]?.box == [0.1, 0.1, 0.4, 0.4])
+        #expect(store.chatMessages.last!.notes.contains { $0.contains("未请求") })
+    }
     @Test @MainActor func testReceiptUndoOnlyUndoesItsOwnLatestChange() async {
         let store = fixture(), items = store.photos
         var params = items[0].parameters; params.exposure = 0.2
@@ -25,7 +40,7 @@ import Testing
         let operation = RemovalOperation(box: [0.1, 0.2, 0.4, 0.5])
         let selected = store.reviewSelection(photos: [edited], originals: originals, repair: ("original", operation))
         #expect(selected?.id == "repaired")
-        #expect(selected?.box == operation.box)
+        #expect(selected?.operation.box == operation.box)
         #expect(store.reviewSelection(photos: [edited], originals: originals, repair: ("other", operation)) == nil)
     }
     @Test @MainActor func testReviewFeedbackRemainsVisibleAfterSuccessfulAdjustment() async {

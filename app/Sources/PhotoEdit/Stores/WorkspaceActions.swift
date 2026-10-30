@@ -24,6 +24,8 @@ extension WorkspaceStore {
         guard let photo = current else { return }
         var params = photo.parameters
         params.regions = [:]  // 参考图反推的区域目标色属于原照片，不随风格带走
+        params.manualMasks = [:]
+        params.local = params.local.filter { !$0.key.hasPrefix("selection-") }
         let name = "我的风格 \(myStyles.count + 1)"
         myStyles.append(MyStyle(name: name, parameters: params))
         status = "已存为\(name)"
@@ -71,8 +73,22 @@ extension WorkspaceStore {
 
     func selectLocalRegion(_ region: String?) {
         localRegion = region
-        overlay = region ?? ""
+        showLocalOverlay(region)
         if region != nil && analysis == nil { loadAnalysis() }
+    }
+
+    func showLocalOverlay(_ region: String?) {
+        overlay = region ?? ""; manualOverlay = nil
+        guard let region, region.hasPrefix("selection-"), let photo = current else { return }
+        Task {
+            do {
+                struct Result: Decodable { var overlay: String }
+                let result: Result = try await engine.request("manual-mask-overlay", body: ["id": photo.assetID,
+                    "params": try EngineClient.object(photo.parameters), "name": region])
+                guard current?.assetID == photo.assetID, current?.parameters == photo.parameters, overlay == region else { return }
+                manualOverlay = result.overlay
+            } catch { if overlay == region { self.error = error.localizedDescription } }
+        }
     }
 
     func match() {

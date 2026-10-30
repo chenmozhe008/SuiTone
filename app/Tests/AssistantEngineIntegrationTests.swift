@@ -19,7 +19,7 @@ import Testing
             if card_id=='sky' and asset.path.stem=='second':
                 raise ValueError('这张照片没有可用的此项建议')
             p=service.parameters(raw); p['shadows']=0.12
-            return dict(params=p,title='测试建议',notes=[],preview=str(asset.image_path))
+            return dict(params=p,title='测试建议',notes=['阴影 0.00 → 0.12'],preview=str(asset.image_path))
         service.Engine.apply_suggestion=fake
         service.serve(sys.argv[sys.argv.index('--root')+1],os.environ['PHOTO_EDIT_SESSION_TOKEN'])
         """
@@ -37,6 +37,16 @@ import Testing
         await store.batchTask?.value
         #expect(store.photos[0].parameters.shadows == 0.12 && store.photos[1].parameters.shadows == 0.12)
         #expect(store.photos[2].parameters.shadows == 0)
+        #expect(store.chatMessages.last?.text == "已应用：提亮暗部")
+        #expect(store.chatMessages.last?.notes.count == 2)
+        #expect(store.chatMessages.last?.affectedPhotos.count == 2)
+        let changeID = try #require(store.chatMessages.last?.changeID)
+        store.undoAssistantChange(changeID)
+        #expect(store.chatMessages.last?.wasUndone == true)
+        store.previewTask?.cancel()
+        #expect(store.photos[0].parameters.shadows == 0 && store.photos[1].parameters.shadows == 0)
+        store.redo(); store.previewTask?.cancel()
+        #expect(store.chatMessages.last?.wasUndone == false)
         store.undo(); store.previewTask?.cancel()
         #expect(store.photos[0].parameters.shadows == 0 && store.photos[1].parameters.shadows == 0)
         store.applySuggestion(SuggestionCard(id: "sky", title: "天空更通透"))

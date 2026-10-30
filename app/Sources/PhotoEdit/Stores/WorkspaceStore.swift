@@ -13,6 +13,7 @@ final class WorkspaceStore {
     var currentID: String?
     var analysis: AnalysisResponse?
     var overlay = ""
+    var manualOverlay: String?
     var showOriginal = false
     /// 左右滑动对比：左侧原图、右侧调整后；splitPosition 为分隔线位置（0–1）。
     var splitCompare = false
@@ -114,6 +115,7 @@ final class WorkspaceStore {
         return !provider.needsBaseUrl || !credentials.baseURL.isEmpty
     }
     var suggestions: [SuggestionCard] = []
+    var suggestionSource = "local"
     var aiSuggestionCache: [String: [SuggestionCard]] = [:]
     var chatDraft = ""
     var chatMessages: [ChatMessage] = []

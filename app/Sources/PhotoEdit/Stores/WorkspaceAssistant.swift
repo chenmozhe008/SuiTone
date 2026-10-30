@@ -12,7 +12,7 @@ extension WorkspaceStore {
     }
 
     func loadSuggestions(for assetID: String) async {
-        suggestions = []
+        suggestions = []; suggestionSource = "local"
         let provider = assistantProvider, useVision = visionEnabled, credentials = apiCredentials, ready = assistantReady
         let cacheKey = provider + ":" + assetID
         do {
@@ -25,7 +25,7 @@ extension WorkspaceStore {
         }
         guard useVision, !Task.isCancelled, let photo = current, photo.assetID == assetID,
               ready else { return }
-        if let cached = aiSuggestionCache[cacheKey] { suggestions = cached; return }
+        if let cached = aiSuggestionCache[cacheKey] { suggestions = cached; suggestionSource = "ai"; return }
         struct Started: Decodable { var id: String }
         struct RecommendationJob: Decodable { var state: String; var cards: [SuggestionCard]? }
         var jobID: String?
@@ -46,7 +46,7 @@ extension WorkspaceStore {
                 let result: RecommendationJob = try await engine.get("recommendation-status", query: [URLQueryItem(name: "id", value: startedID)])
                 if result.state == "done", let cards = result.cards {
                     guard !Task.isCancelled, current?.assetID == assetID, visionEnabled, assistantProvider == provider else { break }
-                    aiSuggestionCache[cacheKey] = cards; suggestions = cards; return
+                    aiSuggestionCache[cacheKey] = cards; suggestions = cards; suggestionSource = "ai"; return
                 }
                 if result.state == "error" || result.state == "cancelled" { return }
                 try await Task.sleep(for: .milliseconds(600))
@@ -101,7 +101,11 @@ extension WorkspaceStore {
                     "targets": try items.map { ["id": $0.assetID, "params": try EngineClient.object($0.parameters),
                                                  "quality": try EngineClient.object($0.quality)] },
                     "reference_ids": referenceIDs, "undo_available": undoAvailable, "image_consent": sendImages]
-                if let repair { body["repair_selection"] = ["id": repair.id, "box": repair.operation.box] }
+                if let repair {
+                    var selection = try EngineClient.object(repair.operation)
+                    selection.removeValue(forKey: "classes"); selection.removeValue(forKey: "keep")
+                    selection["id"] = repair.id; body["repair_selection"] = selection
+                }
                 credentials?.apply(to: &body)
                 struct Started: Decodable { var id: String }
                 let started: Started = try await engine.request("assistant", body: body)
@@ -291,6 +295,7 @@ extension WorkspaceStore {
 
     private func reviewKeepsRequestedParameters(original: AdjustmentParameters, first: AdjustmentParameters,
                                                  reviewed: AdjustmentParameters) throws -> Bool {
+        guard first.manualMasks == reviewed.manualMasks else { return false }
         var baseline = original
         // 新建的局部滑块以 sourceMean 为未调整基准；不能把新字典里的全部通道都视为用户请求。
         for (name, region) in first.regions where baseline.regions[name] == nil && region.referenceCount == 0 {
@@ -328,10 +333,10 @@ extension WorkspaceStore {
     }
 
     func reviewSelection(photos: [PhotoRecord], originals: [PhotoRecord],
-                         repair: (id: String, operation: RemovalOperation)?) -> (id: String, box: [Double])? {
+                         repair: (id: String, operation: RemovalOperation)?) -> (id: String, operation: RemovalOperation)? {
         guard let repair, let original = originals.first(where: { $0.assetID == repair.id }),
               let edited = photos.first(where: { $0.id == original.id }) else { return nil }
-        return (edited.assetID, repair.operation.box)
+        return (edited.assetID, repair.operation)
     }
 
     private func reviewAssistantChanges(_ photos: [PhotoRecord], originals: [PhotoRecord], provider: String,
@@ -352,7 +357,9 @@ extension WorkspaceStore {
                         "params": try EngineClient.object(source.parameters), "quality": try EngineClient.object(source.quality)]
             }]
         if let selection = reviewSelection(photos: photos, originals: originals, repair: repair) {
-            body["repair_selection"] = ["id": selection.id, "box": selection.box]
+            var payload = try EngineClient.object(selection.operation)
+            payload.removeValue(forKey: "classes"); payload.removeValue(forKey: "keep")
+            payload["id"] = selection.id; body["repair_selection"] = payload
         }
         credentials?.apply(to: &body)
         struct Started: Decodable { var id: String }

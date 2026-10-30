@@ -58,6 +58,20 @@ extension WorkspaceStore {
                         max(start[0], end[0]), max(start[1], end[1])]
     }
 
+    func editSelectedRegion() {
+        guard validRepairSelection, let box = selectionBox, current != nil, !controlsBlocked else { return }
+        guard (current?.parameters.manualMasks.count ?? 0) < 32 else { status = "最多保存 32 个选区"; return }
+        var selection = removalOperation(box)
+        selection.classes = nil; selection.keep = nil
+        let key = "selection-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(12)
+        change("创建局部选区") { $0.manualMasks[String(key)] = selection }
+        inspectorTab = "adjust"
+        Task { @MainActor in
+            await Task.yield()
+            self.selectLocalRegion(String(key))
+        }
+    }
+
     func finishRepairTransition(to tab: String) {
         let keepSelection = tab == "chat" && repairDraft == nil
         let savedBox = selectionBox, savedStrokes = repairStrokes, savedPolygon = repairPolygon, savedPoint = repairPoint

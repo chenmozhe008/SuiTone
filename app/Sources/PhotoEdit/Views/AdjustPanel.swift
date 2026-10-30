@@ -11,6 +11,13 @@ struct AdjustPanel: View {
     }
     private var availableRegions: [String] {
         RegionNames.all.filter { store.analysis?.regions[$0]?.available == true }
+            + (store.current?.parameters.manualMasks.keys.sorted() ?? [])
+    }
+
+    private func regionTitle(_ key: String) -> String {
+        guard key.hasPrefix("selection-"), let keys = store.current?.parameters.manualMasks.keys.sorted(),
+              let index = keys.firstIndex(of: key) else { return RegionNames.title(key) }
+        return "选区 \(index + 1)"
     }
 
     var body: some View {
@@ -59,8 +66,8 @@ struct AdjustPanel: View {
                 }
             }
             Picker("风格类型", selection: $store.styleFamily) {
-                Text("自然").tag("natural")
-                Text("出片").tag("creative")
+                Text("轻微调整").tag("natural")
+                Text("风格化").tag("creative")
                 Text("我的风格").tag("mine")
             }.pickerStyle(.segmented).labelsHidden()
                 .onChange(of: store.styleFamily) { _, _ in expandedStyles = false }
@@ -147,40 +154,43 @@ struct AdjustPanel: View {
     private var regionSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("局部").font(.headline)
+                Text("局部调整").font(.headline)
                 Spacer()
-                Text("或在照片上点选").font(.callout).foregroundStyle(.secondary)
             }
-            if store.analysis == nil {
+            if store.analysis == nil && availableRegions.isEmpty {
                 HStack { ProgressView().controlSize(.small); Text("正在识别画面区域…").font(.callout).foregroundStyle(.secondary) }
             } else if availableRegions.isEmpty {
                 Text("这张照片没有识别到可单独调整的区域。").font(.callout).foregroundStyle(.secondary)
             } else {
+                Text("自动识别区域和手动选区，点击后单独调整；也可以在照片上点选。")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 regionChips(selected: nil)
             }
         }
     }
 
     private func regionChips(selected: String?) -> some View {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
             ForEach(availableRegions, id: \.self) { region in
                 Button { store.selectLocalRegion(region) } label: {
                     HStack(spacing: 6) {
                         Circle().fill(Self.regionColor[region] ?? .gray).frame(width: 8, height: 8)
-                        Text(RegionNames.title(region)).font(.callout)
+                        Text(regionTitle(region)).font(.callout)
                         if store.current?.parameters.local[region].map({ !$0.isNeutral }) == true {
                             Image(systemName: "circle.fill").font(.system(size: 4)).foregroundStyle(.secondary)
                         }
-                    }.padding(.horizontal, 11).padding(.vertical, 6)
-                        .background(selected == region ? Color(red: 0.24, green: 0.31, blue: 0.48) : Color(white: 0.22), in: Capsule())
-                        .overlay(Capsule().stroke(selected == region ? Color(red: 0.36, green: 0.55, blue: 1) : .clear, lineWidth: 1.5))
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                    }.padding(.horizontal, 11).padding(.vertical, 9).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(selected == region ? Color(red: 0.24, green: 0.31, blue: 0.48) : Color(white: 0.22), in: RoundedRectangle(cornerRadius: 7))
+                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(selected == region ? Color(red: 0.36, green: 0.55, blue: 1) : .clear, lineWidth: 1.5))
                 }.buttonStyle(.plain)
             }
         }
     }
 
     private func localSection(_ region: String) -> some View {
-        let name = RegionNames.title(region)
+        let name = regionTitle(region)
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("局部").font(.headline)
@@ -205,7 +215,13 @@ struct AdjustPanel: View {
             HStack {
                 Button("重置\(name)") { store.change("重置" + name) { $0.local[region] = nil } }
                     .disabled(store.current?.parameters.local[region] == nil)
-                Toggle("显示选区", isOn: Binding(get: { store.overlay == region }, set: { store.overlay = $0 ? region : "" }))
+                if region.hasPrefix("selection-") {
+                    Button("删除选区") {
+                        store.change("删除" + name) { $0.local[region] = nil; $0.manualMasks[region] = nil }
+                        store.selectLocalRegion(nil)
+                    }
+                }
+                Toggle("显示选区", isOn: Binding(get: { store.overlay == region }, set: { store.showLocalOverlay($0 ? region : nil) }))
                     .toggleStyle(.button)
             }
         }
@@ -213,7 +229,7 @@ struct AdjustPanel: View {
 
     private func localSlider(_ region: String, _ title: String, _ key: WritableKeyPath<LocalAdjustment, Double>,
                              _ range: ClosedRange<Double>, reset: Double = 0, display: ((Double) -> String)? = nil) -> some View {
-        let label = RegionNames.title(region) + title
+        let label = regionTitle(region) + title
         return ValueSlider(title: title, value: Binding(get: {
             store.current?.parameters.local[region]?[keyPath: key] ?? (key == \LocalAdjustment.feather ? 0.5 : 0)
         }, set: { value in

@@ -23,7 +23,13 @@ SCHEMA = dict(type='object', additionalProperties=False, required=['cards'], pro
 
 
 def candidates(analysis):
-    return local_suggestions(analysis) + deepcopy(EXTRA_CARDS)
+    local = local_suggestions(analysis)
+    existing = {card['id'] for card in local}
+    tone = [
+        dict(id='shadows', title='提亮暗部', preset='keep', adjustments=[dict(parameter='shadows', mode='add', value=.12)]),
+        dict(id='highlights', title='收住高光', preset='keep', adjustments=[dict(parameter='highlights', mode='add', value=-.16)]),
+    ]
+    return local + [deepcopy(card) for card in tone + EXTRA_CARDS if card['id'] not in existing]
 
 
 def select(plan, cards):

@@ -4,6 +4,7 @@ from copy import deepcopy
 _MISSING=object()
 
 def review_allowed(original,first,revised):
+    if first.get('manual_masks',{}) != revised.get('manual_masks',{}):return False
     baseline=deepcopy(original)
     regions=baseline.setdefault('regions',{})
     for name,region in first.get('regions',{}).items():

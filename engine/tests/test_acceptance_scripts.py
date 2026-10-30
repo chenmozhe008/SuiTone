@@ -50,6 +50,9 @@ class AcceptanceScriptTests(unittest.TestCase):
         self.assertFalse(review_allowed(base,first,different_channel))
         new_exposure=deepcopy(first);new_exposure['exposure']=.3
         self.assertFalse(review_allowed(base,first,new_exposure))
+        selected=deepcopy(first);selected['manual_masks']={'selection-123456789abc':{'box':[.1,.1,.4,.4]}}
+        changed_selection=deepcopy(selected);changed_selection['manual_masks']['selection-123456789abc']['box']=[.5,.5,.9,.9]
+        self.assertFalse(review_allowed(base,selected,changed_selection))
 
     def test_retry_only_requests_review_once_and_retains_failure(self):
         with TemporaryDirectory() as folder:

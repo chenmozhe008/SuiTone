@@ -137,7 +137,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(safe_advice('请涂抹或框选后再修复。'),'请涂抹或框选后再修复。')
         self.assertIn('画笔、套索、点选物体和方框',SYSTEM)
         self.assertNotIn('只支持框选',SYSTEM)
-        self.assertIn('不能作为任意局部调色蒙版',SYSTEM)
+        self.assertIn('local_selected_exposure',SYSTEM)
         self.assertIn('不支持裁切',safe_advice('可以在导出时设置裁剪比例。'))
 
     def test_visual_review_cannot_apply_preset_or_tool_operation(self):
@@ -253,7 +253,7 @@ class EngineTests(unittest.TestCase):
     def test_local_suggestions_only_offer_detected_regions(self):
         from suggestions import local_suggestions
         class Context:
-            def __init__(self,sky,person): self.sky=sky;self.person=person
+            def __init__(self,sky,person): self.sky=sky;self.person=person;self.lab=np.full((10,10,3),50.)
             def summary(self):
                 return {'sky':{'available':self.sky},'person':{'available':self.person}}
         for sky in [False,True]:
@@ -266,8 +266,21 @@ class EngineTests(unittest.TestCase):
                 self.assertLessEqual(len(cards),5)
                 self.assertEqual(len(cards),len(ids))
 
+    def test_local_suggestions_use_tonal_content(self):
+        from suggestions import local_suggestions
+        class Context:
+            def __init__(self, light): self.lab=np.full((10,10,3),light)
+            def summary(self): return {}
+        dark={c['id'] for c in local_suggestions(Context(10))}
+        bright={c['id'] for c in local_suggestions(Context(95))}
+        mid={c['id'] for c in local_suggestions(Context(50))}
+        self.assertIn('shadows',dark);self.assertNotIn('highlights',dark)
+        self.assertIn('highlights',bright);self.assertNotIn('shadows',bright)
+        self.assertNotIn('shadows',mid);self.assertNotIn('highlights',mid)
+
     def test_local_suggestions_cache_does_not_share_mutable_results(self):
         class Context:
+            lab=np.full((10,10,3),50.)
             def summary(self):return {'sky':{'available':True},'person':{'available':False}}
         with TemporaryDirectory() as folder:
             engine=Engine(folder);engine.asset=lambda key:None
@@ -683,6 +696,50 @@ class EngineTests(unittest.TestCase):
         with self.assertRaises(ValueError):parameters({'local':{'sky':{'exposure':3}}})
         with self.assertRaises(ValueError):parameters({'local':{'sky':{'glow':1}}})
         self.assertEqual(parameters({'local':{'sky':{'exposure':.2}}})['local']['sky']['exposure'],.2)
+
+    def test_manual_box_and_brush_change_only_selected_pixels(self):
+        from grade import apply_local
+        image=Image.new('RGB',(100,100),(100,100,100))
+        lab=np.full((100,100,3),50.)
+        box='selection-123456789abc'; brush='selection-abcdef123456'
+        masks={box:dict(box=[.1,.1,.3,.3]),brush:dict(box=[.6,.6,.8,.8],strokes=[[[.65,.65],[.75,.75]]],radius=.03)}
+        context=SimpleNamespace(image=image)
+        local={box:dict(exposure=.5,feather=0),brush:dict(exposure=-.5,feather=0)}
+        out=apply_local(lab,context,local,100,masks)
+        self.assertGreater(out[20,20,0],lab[20,20,0]);self.assertLess(out[70,70,0],lab[70,70,0])
+        np.testing.assert_allclose(out[40:55,40:55],lab[40:55,40:55])
+        self.assertEqual(parameters(dict(local=local,manual_masks=masks))['manual_masks'],masks)
+        with self.assertRaises(ValueError):parameters(dict(local=local,manual_masks={box:masks[box]}))
+
+    def test_ai_selected_adjustment_requires_and_persists_exact_selection(self):
+        from assistant import validate_plan
+        from smart import neutral
+        image=Image.new('RGB',(64,64),(100,100,100));context=self.context(image)
+        engine=SimpleNamespace(analysis=lambda key:(context,True))
+        target=[dict(id='a',params=neutral())]
+        plan=dict(reply='提亮选区',selection='none',actions=[dict(id='a',preset='keep',operations=[],
+            adjustments=[dict(parameter='local_selected_exposure',mode='add',value=.4)])])
+        with self.assertRaises(ValueError):validate_plan(plan,target,engine)
+        shape=dict(id='a',box=[.1,.1,.4,.4],strokes=[[[.2,.2],[.3,.3]]],radius=.02)
+        result=validate_plan(plan,target,engine,dict(repair_selection=shape))
+        p=result['changes'][0]['params'];key=next(iter(p['manual_masks']))
+        self.assertEqual(p['manual_masks'][key],{k:v for k,v in shape.items() if k!='id'})
+        self.assertEqual(p['local'][key]['exposure'],.4)
+        self.assertEqual(p['exposure'],0)
+
+    def test_manual_mask_full_render_has_no_stripe_seams(self):
+        from render import render_full
+        image=Image.new('RGB',(120,240),(110,120,130));preview=image.resize((60,120));z=np.zeros((120,60))
+        def context():
+            c=SimpleNamespace(image=preview,rgb=np.asarray(preview,dtype=float)/255,
+                              water=z,sky=z,land=z,person=z,skin=z,dehazed=None)
+            c.region=lambda name:getattr(c,name)
+            return c
+        name='selection-123456789abc'
+        p=dict(enabled={key:False for key in ['levels','dehaze','contrast','water','sky','land','match','portrait']},
+               manual_masks={name:dict(box=[.1,.2,.6,.8])},local={name:dict(exposure=.5,feather=.4)})
+        a=np.asarray(render_full(image,p,context(),band=43),int);b=np.asarray(render_full(image,p,context(),band=97),int)
+        self.assertLessEqual(np.abs(a-b).max(),1)
 
     def test_reference_without_water_preserves_existing_parameters(self):
         from match import match

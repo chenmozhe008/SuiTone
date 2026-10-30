@@ -88,7 +88,9 @@ struct PhotoCanvas: View {
                 .overlay(alignment:.bottomLeading) {
                     if store.showOriginal {canvasLabel("原图").padding(10)}
                     else if store.repairDraft != nil {canvasLabel(store.repairShowingBefore ? "修复前" : "修复预览").padding(10)}
-                    else if !store.overlay.isEmpty && !splitActive {canvasLabel(RegionNames.title(store.overlay)+"选区").padding(10)}
+                    else if !store.overlay.isEmpty && !splitActive {
+                        canvasLabel(store.overlay.hasPrefix("selection-") ? "选区" : RegionNames.title(store.overlay)+"选区").padding(10)
+                    }
                 }
             } else {
                 VStack(spacing:16) {
@@ -143,6 +145,7 @@ struct PhotoCanvas: View {
             return store.repairShowingBefore ? draft.beforePath : draft.previewPath
         }
         if store.repairEnabled,let path=store.repairMaskOverlay {return path}
+        if store.overlay.hasPrefix("selection-"), let path=store.manualOverlay {return path}
         if let overlay=store.analysis?.overlays[store.overlay] {return overlay}
         return photo.previewPath ?? photo.imported.original
     }

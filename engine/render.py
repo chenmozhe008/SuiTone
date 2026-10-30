@@ -20,6 +20,7 @@ def render_full(image,params,preview,pixels=None,band=384):
         params['dehaze_amt']=preview.recommended_dehaze()
         params['auto_dehaze']=False
     # 全图统计取自同一份预览分析，保证拖滑块和导出使用相同的参数锚点。
+    preview.local_masks={}
     grade_array(preview.image,analysis=preview,**params)
     width,height=image.size
     output=Image.new('RGB',image.size)

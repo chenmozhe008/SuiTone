@@ -3,6 +3,18 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct RecipeCompatibilityTests {
+    @Test func testManualSelectionAndSlidersRoundTripInRecipe() throws {
+        let key = "selection-123456789abc"
+        var params = AdjustmentParameters()
+        params.manualMasks[key] = RemovalOperation(box: [0.1, 0.2, 0.4, 0.6], strokes: [[[0.2, 0.3], [0.3, 0.5]]], radius: 0.02)
+        var adjustment = LocalAdjustment(); adjustment.exposure = 0.4
+        params.local[key] = adjustment
+        let encoder = JSONEncoder(); encoder.keyEncodingStrategy = .convertToSnakeCase
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let restored = try decoder.decode(AdjustmentParameters.self, from: encoder.encode(params))
+        #expect(restored.manualMasks[key]?.strokes == params.manualMasks[key]?.strokes)
+        #expect(restored.local[key]?.exposure == 0.4)
+    }
     @Test func testSavedReferenceMatchRemainsIdentifiableWithoutReferenceFile() throws {
         let region = RegionAdjustment(mean: [60, 1, 2], sourceMean: [50, 1, 2], chromaScale: [1, 1],
             lumaX: [0, 100], lumaY: [0, 100], referenceLumaMean: 50, strength: 1, referenceCount: 1)

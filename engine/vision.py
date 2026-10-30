@@ -8,15 +8,27 @@ MAX_ATTACHMENTS = 20
 LONG_EDGE = 1024
 
 
-def _jpeg(path, box=None):
+def _jpeg(path, selection=None):
     with Image.open(path) as source:
         image = source.convert('RGB')
         image.thumbnail((LONG_EDGE, LONG_EDGE), Image.Resampling.LANCZOS)
-    if box is not None:
+    if selection is not None:
         width, height = image.size
-        coords = (round(box[0]*width), round(box[1]*height),
-                  round(box[2]*width), round(box[3]*height))
-        ImageDraw.Draw(image).rectangle(coords, outline=(255, 80, 30), width=max(2, width//250))
+        draw=ImageDraw.Draw(image);color=(255,80,30);line_width=max(2,width//250)
+        point=lambda p:(round(p[0]*width),round(p[1]*height))
+        if selection.get('strokes'):
+            stroke_width=max(2,round(2*selection.get('radius',.02)*width))
+            for stroke in selection['strokes']:
+                points=[point(p) for p in stroke]
+                if len(points)>1:draw.line(points,fill=color,width=stroke_width,joint='curve')
+                for x,y in points:
+                    r=stroke_width/2;draw.ellipse((x-r,y-r,x+r,y+r),fill=color)
+        elif selection.get('polygon'):
+            points=[point(p) for p in selection['polygon']];draw.line(points+[points[0]],fill=color,width=line_width)
+        elif selection.get('point'):
+            x,y=point(selection['point']);r=max(5,width//100);draw.ellipse((x-r,y-r,x+r,y+r),outline=color,width=line_width)
+        else:
+            box=selection['box'];draw.rectangle((*point(box[:2]),*point(box[2:])),outline=color,width=line_width)
     result = BytesIO()
     image.save(result, format='JPEG', quality=90, optimize=True)
     return result.getvalue()
@@ -59,7 +71,7 @@ def prepare_images(engine, data, cancel=None):
             result.append(dict(label='照片对照 '+item['id']+'：左侧调整前，右侧调整后',data=_comparison(original,preview)))
         else:result.append(dict(label='当前照片 '+item['id'], data=_jpeg(preview)))
         if selection and selection['id'] == item['id']:
-            result.append(dict(label='红框是用户指定的选区 '+item['id'], data=_jpeg(preview, selection['box'])))
+            result.append(dict(label='红色标记是用户指定的选区 '+item['id'], data=_jpeg(preview, selection)))
     for reference in references:
         if cancel is not None and cancel.is_set():raise InterruptedError()
         asset = engine.asset(reference)
