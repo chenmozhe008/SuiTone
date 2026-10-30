@@ -691,8 +691,10 @@ def serve(root, token, watch_stdin=True):
                 job=parse_qs(urlsplit(self.path).query).get('id',[''])[0]
                 return self.response(200,engine.image_edit.status(job))
             if self.path=='/image-services':
-                from image_edit import IMAGE_SERVICES
-                return self.response(200,dict(services=[dict(id=k,**v) for k,v in IMAGE_SERVICES.items()]))
+                from image_edit import IMAGE_SERVICES, reference_limits
+                # referenceLimits 是每个型号能加几张参考图，数字照官方文档，界面按它来限制和提示。
+                return self.response(200,dict(services=[dict(id=k,**v,referenceLimits=reference_limits(k))
+                                                      for k,v in IMAGE_SERVICES.items()]))
             if self.path.startswith('/recommendation-status?'):
                 from urllib.parse import parse_qs,urlsplit
                 job=parse_qs(urlsplit(self.path).query).get('id',[''])[0]

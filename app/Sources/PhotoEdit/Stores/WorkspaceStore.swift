@@ -64,6 +64,20 @@ final class WorkspaceStore {
         guard let service = imageServices.first(where: { $0.id == imageService }) else { return false }
         return service.id == "mock" || UserDefaults.standard.bool(forKey: "imageKeySaved." + service.id)
     }
+
+    /// 当前服务当前型号还能加几张参考图。数字来自引擎（照服务商官方文档），界面不自己定；
+    /// 拿不到就当 0 张，宁可不加也不发出去被拒。
+    var imageReferenceLimit: Int {
+        guard let service = imageServices.first(where: { $0.id == imageService }) else { return 0 }
+        let model = imageModels[service.id] ?? service.defaultModel
+        return service.referenceLimits[model] ?? 0
+    }
+
+    /// 当前用的出图模型名（提示用）
+    var imageModelName: String {
+        guard let service = imageServices.first(where: { $0.id == imageService }) else { return "" }
+        return imageModels[service.id] ?? service.defaultModel
+    }
     var styleTiles: [String:String] = [:]
     var styleTileTask: Task<Void,Never>?
     var status = "正在检查本地引擎…"

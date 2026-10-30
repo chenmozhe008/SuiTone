@@ -19,6 +19,8 @@ def gemini_edit(key, model, image, prompt, *, references=(), opener=_open):
     if not key:raise ValueError('请先配置 Gemini API 密钥')
     if not isinstance(model,str) or not re.fullmatch(r'[A-Za-z0-9._-]{1,128}',model):raise ValueError('图片模型名称无效')
     if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>8000:raise ValueError('请描述需要的图片编辑')
+    references=list(references)
+    if 1+len(references)>image_limit('gemini',model):raise ValueError(f'{model} 一次最多带 {image_limit("gemini",model)} 张图（含原图），现在是 {1+len(references)} 张')
     parts=[{'text':prompt}]
     for label,data in [('输入图片',image)]+[('参考图',ref) for ref in references]:
         if not isinstance(data,bytes) or not 0<len(data)<=15*1024*1024:raise ValueError(label+'大小无效')
@@ -69,6 +71,54 @@ IMAGE_SERVICES = {
                    models=['gemini-nano-banana-2.1']),
     'mock': dict(title='模拟出图（测试用）', default_model='mock', paid=False, models=['mock']),
 }
+
+
+# 一次请求能带几张图（含"要改的那张原图"），数字全部照服务商官方文档，不自行放宽：
+#  · 火山方舟 图片生成 API（docs.volcengine.com/docs/82379/1541523）：Seedream 5.0 pro / 5.0 flash 最多 10 张参考图；
+#    Seedream 5.0 lite / 4.5 / 4.0 最多 14 张参考图。
+#  · Gemini 官方模型规格：gemini-2.5-flash-image 每个提示最多 3 张图（官方限制页："在输入中最多包含三张图片"）；
+#    Gemini Nano Banana 2.1 / Gemini 3 Pro Image 每个提示最多 14 张图。
+OFFICIAL_IMAGE_LIMITS = {
+    'doubao-seedream-5-0-pro-260628': 10,
+    'doubao-seedream-5-0-flash-260915': 10,
+    'doubao-seedream-5-0-260128': 14,
+    'doubao-seedream-4-5-251128': 14,
+    'doubao-seedream-4-0-250828': 14,
+    'gemini-2.5-flash-image': 3,
+    'gemini-3-pro-image': 14,
+    'gemini-3-pro-image-preview': 14,
+    'gemini-nano-banana-2.1': 14,
+    'mock': 1,
+}
+
+
+def image_limit(service, model=None):
+    """这个模型一次请求最多能带几张图（原图 + 参考图）。"""
+    if service == 'mock': return 1
+    model = model or IMAGE_SERVICES.get(service, {}).get('default_model', '')
+    if model in OFFICIAL_IMAGE_LIMITS: return OFFICIAL_IMAGE_LIMITS[model]
+    # 名单外的型号按官方文档的同系列规则推：拿不准就按最保守的那个系列算。
+    if 'seedream-5-0-pro' in model or 'seedream-5-0-flash' in model: return 10
+    if 'seedream' in model: return 14
+    if '2.5-flash' in model or '2-5-flash' in model: return 3
+    if 'gemini' in model: return 14
+    return 1
+
+
+def reference_limit(service, model=None):
+    """除原图之外还能加几张参考图。"""
+    return max(0, image_limit(service, model) - 1)
+
+
+def reference_limits(service):
+    """给界面用：这个服务每个型号能加几张参考图。
+
+    名单里既有设置页可选推荐的型号，也包含官方文档里同系列的其他型号——手动填型号时也能查得到上限。
+    """
+    prefix = {'jimeng': 'doubao-', 'gemini': 'gemini-'}.get(service, service)
+    models = set(IMAGE_SERVICES.get(service, {}).get('models', []))
+    models.update(m for m in OFFICIAL_IMAGE_LIMITS if m.startswith(prefix))
+    return {model: reference_limit(service, model) for model in sorted(models)}
 
 
 def mock_edit(image_bytes, prompt):
@@ -131,9 +181,12 @@ class ImageEditBridge:
             shape_input(selection.get('strokes'), selection.get('radius'), selection.get('polygon'), selection.get('point'))
             parts_input(selection.get('parts'))
         reference_paths = data.get('reference_paths') or []
-        if not isinstance(reference_paths, list) or len(reference_paths) > 4 or \
+        limit = reference_limit(service, data.get('model'))
+        if not isinstance(reference_paths, list) or \
            any(not isinstance(p, str) or not p or len(p) > 4096 for p in reference_paths):
-            raise ValueError('参考图最多 4 张，且必须是本地文件路径')
+            raise ValueError('参考图必须是本地文件路径')
+        if len(reference_paths) > limit:
+            raise ValueError(f'当前模型按官方文档最多带 {limit} 张参考图（原图另计），现在是 {len(reference_paths)} 张')
         with self.lock:
             if any(j['state'] == 'running' for j in self.jobs.values()): raise ValueError('上一张还在生成，请稍候或先取消')
             key = uuid4().hex; self.jobs[key] = dict(state='running'); self.events[key] = Event()

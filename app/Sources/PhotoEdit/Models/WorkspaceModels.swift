@@ -112,7 +112,7 @@ struct GenerationCard {
     var jobID: String? = nil
     /// 只改选区时的选区（原尺寸上只替换这一块）；nil 为整张
     var selection: RemovalOperation? = nil
-    /// 附加参考图的本地路径（姿势、风格、物品等；最多 4 张，随请求一起发出）
+    /// 附加参考图的本地路径（姿势、风格、物品等；张数按所选模型的官方上限）
     var references: [String] = []
 }
 
@@ -126,15 +126,19 @@ struct ImageService: Decodable, Identifiable {
     let paid: Bool
     /// 推荐模型，第一个最新（引擎按官方文档维护）
     var models: [String] = []
-    enum CodingKeys: String, CodingKey { case id, title, defaultModel, paid, models }
-    init(id: String, title: String, defaultModel: String, paid: Bool, models: [String] = []) {
-        self.id = id; self.title = title; self.defaultModel = defaultModel; self.paid = paid; self.models = models
+    /// 每个型号能加几张参考图（原图另计）；数字由引擎按服务商官方文档给出，界面不自己定
+    var referenceLimits: [String: Int] = [:]
+    enum CodingKeys: String, CodingKey { case id, title, defaultModel, paid, models, referenceLimits }
+    init(id: String, title: String, defaultModel: String, paid: Bool, models: [String] = [], referenceLimits: [String: Int] = [:]) {
+        self.id = id; self.title = title; self.defaultModel = defaultModel; self.paid = paid
+        self.models = models; self.referenceLimits = referenceLimits
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id); title = try c.decode(String.self, forKey: .title)
         defaultModel = try c.decode(String.self, forKey: .defaultModel); paid = try c.decode(Bool.self, forKey: .paid)
         models = try c.decodeIfPresent([String].self, forKey: .models) ?? []
+        referenceLimits = try c.decodeIfPresent([String: Int].self, forKey: .referenceLimits) ?? [:]
     }
 }
 

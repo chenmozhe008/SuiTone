@@ -61,7 +61,11 @@ def jimeng_edit(key, model, image, prompt, *, references=(), opener=_open):
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
     if not isinstance(image, bytes): raise ValueError('输入图片大小无效')
     references = list(references)
-    if len(references) > 9: raise ValueError('参考图最多 9 张')
+    # 张数照火山方舟官方文档：5.0 pro / flash 最多 10 张图，5.0 lite / 4.5 / 4.0 最多 14 张（原图算在里面）。
+    from image_edit import image_limit
+    limit = image_limit('jimeng', model)
+    if 1 + len(references) > limit:
+        raise ValueError('%s 一次最多带 %d 张图（含原图），现在是 %d 张' % (model, limit, 1 + len(references)))
     if len(image) > 30*1024*1024: raise ValueError('输入图片大小无效')
     try:
         with Image.open(BytesIO(image)) as source: size = source.size

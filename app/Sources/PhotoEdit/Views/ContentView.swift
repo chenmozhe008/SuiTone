@@ -96,7 +96,7 @@ private struct CanvasHeader: View {
             Divider().frame(height: 18)
             toggle("选区", "lasso", tool("selection"), labels, help: "画选区，可以多笔加减").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "selection")
             toggle("移除", "bandage", tool("repair"), labels, help: "移除杂物").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
-            toggle("AI 改图", "sparkles", tool("aiedit"), labels, help: "用 AI 生成新图：换背景、加东西、去掉大物体").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "aiedit")
+            aiButton
             toggle("裁切", "crop.rotate", tool("crop"), labels, help: "裁切、旋转、翻转和拉直照片").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "crop")
             toggle("抠图", "scissors", tool("cutout"), labels, help: "抠出照片中的主体，另存透明 PNG").disabled(store.current == nil || store.controlsBlocked)
             toggle("画质", "wand.and.stars", tool("quality"), labels, help: "降噪与放大").disabled(store.current == nil || store.controlsBlocked)
@@ -111,6 +111,44 @@ private struct CanvasHeader: View {
 
     private func tool(_ name: String) -> Binding<Bool> {
         Binding(get: { store.inspectorTab == name }, set: { store.inspectorTab = $0 ? name : store.lastMainTab })
+    }
+
+    private var aiOff: Bool {
+        store.current == nil || (store.controlsBlocked && store.inspectorTab != "aiedit")
+    }
+
+    /// AI 改图不是普通工具：它要调外部服务、会生成新画面，所以单独做成一个带颜色的小胶囊，
+    /// 跟左边那些灰按钮区分开，一眼就能找到。
+    private var aiButton: some View {
+        let on = store.inspectorTab == "aiedit"
+        return Button {
+            store.inspectorTab = on ? store.lastMainTab : "aiedit"
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "sparkles").font(.system(size: 11, weight: .bold))
+                Text("AI 改图").font(.callout.weight(on ? .semibold : .medium))
+            }
+            .foregroundStyle(on ? AnyShapeStyle(.white)
+                                : AnyShapeStyle(Color(red: 0.80, green: 0.70, blue: 1.0)))
+            .padding(.horizontal, 11)
+            .frame(height: 26)
+            .background {
+                if on {
+                    LinearGradient(colors: [Color(red: 0.56, green: 0.29, blue: 0.96),
+                                            Color(red: 0.31, green: 0.55, blue: 1.0)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                } else {
+                    Color(red: 0.45, green: 0.30, blue: 0.95).opacity(0.22)
+                }
+            }
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Color(red: 0.72, green: 0.58, blue: 1.0).opacity(on ? 0 : 0.55),
+                                      lineWidth: 0.8))
+        }
+        .buttonStyle(.plain)
+        .opacity(aiOff ? 0.4 : 1)
+        .disabled(aiOff)
+        .help("AI 改图：换背景、加东西、去掉大物体，会生成新画面")
     }
     var body: some View {
         // 工具按钮始终带文字；窗口窄时先藏照片名，再把按钮间距收紧，不退化成看不懂的纯图标。

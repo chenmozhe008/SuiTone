@@ -10,6 +10,8 @@ struct AIEditPanel: View {
     @State private var referencePaths: [String] = []
     private let examples = ["换成雪山背景", "去掉人物并补出背景", "加一群海鸥", "天空换成晚霞"]
     private var service: ImageService? { store.imageServices.first { $0.id == store.imageService } }
+    /// 这个模型能加几张参考图（含原图在内的官方上限；0 表示不给加）
+    private var limit: Int { store.imageReferenceLimit }
     private var hasSelection: Bool { !store.selectionParts.isEmpty }
     private var card: GenerationCard? {
         store.aiEditMessageID.flatMap { id in store.chatMessages.first { $0.id == id }?.generation }
@@ -43,10 +45,15 @@ struct AIEditPanel: View {
                         }
                     }
                 }
-                section("参考图（可选）") {
-                    if referencePaths.isEmpty {
+                section("参考图（可选）", trailing: limit > 0 ? AnyView(
+                    Text("最多 \(limit) 张").font(.caption).foregroundStyle(.secondary)
+                ) : nil) {
+                    if limit == 0 {
+                        Text("当前的 \(store.imageModelName) 按官方文档不能附加参考图。需要参考别的图时，可以在设置里换个模型。")
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    } else if referencePaths.isEmpty {
                         HStack {
-                            Text("想参考别的图（姿势、风格、物品）就加上，最多 4 张。").font(.callout).foregroundStyle(.secondary)
+                            Text("想参考别的图（姿势、风格、物品）就加上，最多 \(limit) 张。").font(.callout).foregroundStyle(.secondary)
                             Button("添加参考图…") { addReferences() }.buttonStyle(.link)
                         }
                     } else {
@@ -64,7 +71,7 @@ struct AIEditPanel: View {
                                         }
                                 }.buttonStyle(.plain).help("点一下移除这张参考图")
                             }
-                            if referencePaths.count < 4 {
+                            if referencePaths.count < limit {
                                 Button { addReferences() } label: {
                                     VStack {
                                         Image(systemName: "plus").font(.system(size: 17))
@@ -75,7 +82,8 @@ struct AIEditPanel: View {
                             }
                             Spacer()
                         }
-                        Text("点缩略图移除；参考图会跟照片一起发给 AI。").font(.callout).foregroundStyle(.secondary)
+                        Text("点缩略图移除；参考图会跟照片一起发给 AI，\(referencePaths.count)／\(limit) 张。")
+                            .font(.callout).foregroundStyle(.secondary)
                     }
                 }
                 section("想改成什么") {
@@ -152,19 +160,24 @@ struct AIEditPanel: View {
         }
     }
 
-    /// 选参考图：跟照片一起发给 AI（姿势、风格、物品），最多 4 张，重复的自动跳过。
+    /// 选参考图：跟照片一起发给 AI（姿势、风格、物品）。张数上限按服务商官方文档，超出的不再添加。
     private func addReferences() {
+        let room = limit - referencePaths.count
+        guard room > 0 else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false; panel.canChooseFiles = true
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.image]
-        panel.message = "选择参考图（姿势、风格、物品），最多 4 张"
+        panel.message = "选择参考图（姿势、风格、物品），还可加 \(room) 张"
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
             let path = url.path
             if !referencePaths.contains(path) { referencePaths.append(path) }
         }
-        if referencePaths.count > 4 { referencePaths = Array(referencePaths.suffix(4)); store.status = "参考图最多 4 张，只保留最后选的" }
+        if referencePaths.count > limit {
+            referencePaths = Array(referencePaths.prefix(limit))
+            store.status = "\(store.imageModelName) 最多 \(limit) 张参考图，多选的部分没有加上"
+        }
     }
 
     private func info(_ label: String, _ value: String) -> some View {
