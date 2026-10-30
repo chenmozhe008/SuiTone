@@ -105,13 +105,17 @@ extension WorkspaceStore {
                     }
                     if result.state == "done" {
                         assistantApplying = true; assistantPhase = "正在应用调整"
+                        var reviewReply: String?
                         let review: (([PhotoRecord]) async throws -> [AssistantChange])? = sendImages ? { prepared in
-                            try await self.reviewAssistantChanges(prepared, originals: items, provider: provider,
+                            let result = try await self.reviewAssistantChanges(prepared, originals: items, provider: provider,
                                 originalRequest: message, referenceIDs: referenceIDs, credentials: credentials)
+                            reviewReply = result.reply
+                            return result.changes ?? []
                         } : nil
                         await applyAssistantResult(result, items: items,
                             referenceIDs: referenceIDs, scopes: scopes, only: only, repair: repair,
                             undoCandidate: undoAvailable ? undoCandidate?.id : nil, review: review,
+                            reviewFeedback: { reviewReply },
                             preserveExactValues: message.rangeOfCharacter(from: .decimalDigits) != nil)
                         return
                     }
@@ -132,6 +136,7 @@ extension WorkspaceStore {
                               referenceIDs: [String] = [], scopes: [String: String] = [:], only: String = "all",
                               repair: (id: String, operation: RemovalOperation)? = nil, undoCandidate: UUID? = nil,
                               review: (([PhotoRecord]) async throws -> [AssistantChange])? = nil,
+                              reviewFeedback: (() -> String?)? = nil,
                               preserveExactValues: Bool = false) async {
         guard !assistantCancellationRequested else { return }
         // 先结束正在拖动的滑块，让撤销目标与当前状态包含用户的最新手动编辑。
@@ -149,6 +154,7 @@ extension WorkspaceStore {
         }
         var preparedResults: [(PhotoRecord, EditSnapshot, [String])] = []
         var appliedBefore: [String: EditSnapshot] = [:], details: [String] = [], affectedPhotos: [String] = []
+        var reviewAccepted = false
         for change in result.changes ?? [] {
             guard let item = items.first(where: { $0.assetID == change.id }) else {
                 details.append("未找到对应照片，已跳过"); continue
@@ -230,6 +236,7 @@ extension WorkspaceStore {
                         preparedResults[index] = (updated, origin, notes + change.notes)
                     }
                 }
+                reviewAccepted = true
             } catch {
                 if assistantCancellationRequested || Task.isCancelled {
                     chatMessages.append(ChatMessage(role: "assistant", text: "已取消，本次没有应用调整。")); return
@@ -259,7 +266,11 @@ extension WorkspaceStore {
                 ? "本次没有执行调整。请确认操作条件或补充需要的修改。" : advice
         }
         else if affectedPhotos.isEmpty { reply = "本次没有应用调整，请查看原因。" }
-        else { reply = "已完成调整。" + (skipped > 0 ? " \(skipped) 张未调整，请查看原因。" : "") }
+        else {
+            let feedback = reviewAccepted ? (reviewFeedback?()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") : ""
+            reply = "已完成调整。" + (skipped > 0 ? " \(skipped) 张未调整，请查看原因。" : "")
+                + (feedback.isEmpty ? "" : "\n复看时：" + feedback)
+        }
         chatMessages.append(ChatMessage(role: "assistant", text: reply, notes: details, affectedPhotos: affectedPhotos, changeID: changeID))
         if let selection = result.selection, selection != "none" { overlay = selection; loadAnalysis() }
         else { overlay = ""; showOriginal = false }
@@ -306,7 +317,7 @@ extension WorkspaceStore {
     }
 
     private func reviewAssistantChanges(_ photos: [PhotoRecord], originals: [PhotoRecord], provider: String,
-                                        originalRequest: String, referenceIDs: [String], credentials: APICredentials?) async throws -> [AssistantChange] {
+                                        originalRequest: String, referenceIDs: [String], credentials: APICredentials?) async throws -> AssistantJob {
         assistantPhase = "正在复看调整结果"
         // 开始请求时允许取消标记先落下；拿到任务 ID 后再通知引擎取消。
         assistantApplying = false
@@ -329,7 +340,7 @@ extension WorkspaceStore {
         while !Task.isCancelled {
             let result: AssistantJob = try await engine.get("assistant-status", query: [URLQueryItem(name: "id", value: started.id)])
             if assistantCancellationRequested { throw CancellationError() }
-            if result.state == "done" { return result.changes ?? [] }
+            if result.state == "done" { return result }
             if result.state == "error" { throw EngineError(message: result.error ?? "复看未完成") }
             if result.state == "cancelled" { throw CancellationError() }
             try await Task.sleep(for: .milliseconds(600))

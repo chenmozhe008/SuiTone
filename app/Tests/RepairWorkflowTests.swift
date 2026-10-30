@@ -65,4 +65,31 @@ import Testing
         store.selectionBox = [0.1, 0.2, 0.4, 0.6]
         #expect(store.validRepairSelection)
     }
+
+    @Test @MainActor func testChatBoxDoesNotReuseOldBrushOrObjectSelection() {
+        let store = fixture()
+        store.repairTool = "brush"; store.repairMode = "keepSky"
+        store.repairStrokes = [[[0.2, 0.3], [0.4, 0.5]]]
+        store.repairPoint = [0.4, 0.4]
+        store.beginChatSelection()
+        store.updateChatSelection(from: [0.8, 0.7], to: [0.3, 0.2])
+        #expect(store.selectionBox == [0.3, 0.2, 0.8, 0.7])
+        let operation = store.removalOperation(store.selectionBox!)
+        #expect(operation.strokes == nil && operation.point == nil && operation.keep == nil)
+        store.clearRepairSelection()
+        #expect(store.selectionBox == nil && store.repairStrokes.isEmpty && store.repairPoint == nil)
+    }
+
+    @Test @MainActor func testMovingRepairSelectionToChatPreservesItsShape() {
+        let store = fixture()
+        store.repairDraft = nil
+        store.repairTool = "brush"
+        store.repairStrokes = [[[0.2, 0.3], [0.4, 0.5]]]
+        store.finishRepairTransition(to: "chat")
+        let operation = store.removalOperation(store.selectionBox!)
+        #expect(operation.strokes == [[[0.2, 0.3], [0.4, 0.5]]])
+        #expect(operation.radius == store.brushSize)
+        store.finishRepairTransition(to: "adjust")
+        #expect(store.selectionBox == nil && store.repairStrokes.isEmpty)
+    }
 }

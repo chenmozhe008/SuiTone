@@ -3,6 +3,15 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct RecipeCompatibilityTests {
+    @Test func testSavedReferenceMatchRemainsIdentifiableWithoutReferenceFile() throws {
+        let region = RegionAdjustment(mean: [60, 1, 2], sourceMean: [50, 1, 2], chromaScale: [1, 1],
+            lumaX: [0, 100], lumaY: [0, 100], referenceLumaMean: 50, strength: 1, referenceCount: 1)
+        var params = AdjustmentParameters(); params.regions["sky"] = region
+        let restored = try JSONDecoder().decode(AdjustmentParameters.self, from: JSONEncoder().encode(params))
+        #expect(restored.hasReferenceMatch)
+        params.regions["sky"]?.referenceCount = 0
+        #expect(!params.hasReferenceMatch)
+    }
     @Test func testRecipeWithoutExportFormatStillLoadsItsExistingOptions() throws {
         let source = #"{"version":1,"photos":[],"options":{"info_bar":true,"place":"测试地点","lut":false,"denoise":true,"scale":2}}"#
         let decoder = JSONDecoder()

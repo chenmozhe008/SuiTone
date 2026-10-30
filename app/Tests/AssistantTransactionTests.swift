@@ -3,6 +3,18 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct AssistantTransactionTests {
+    @Test @MainActor func testReviewFeedbackRemainsVisibleAfterSuccessfulAdjustment() async {
+        let store = fixture(), items = store.photos
+        var params = items[0].parameters; params.exposure = 0.2
+        let job = AssistantJob(state: "done", reply: "建议提亮", selection: "none", changes: [
+            AssistantChange(id: "original", params: params, notes: [])], error: nil)
+        await store.applyAssistantResult(job, items: items, review: { _ in [] },
+            reviewFeedback: { "人物仍偏暗，变化不够明显。" })
+        store.previewTask?.cancel()
+        #expect(store.chatMessages.last!.text.contains("人物仍偏暗，变化不够明显"))
+        #expect(store.photos[0].parameters.exposure == 0.2)
+    }
+
     @Test @MainActor func testVisualReviewCannotAddDifferentRegion() async {
         let store = fixture(), items = store.photos
         let region = RegionAdjustment(mean: [60, 1, 2], sourceMean: [50, 1, 2], chromaScale: [1, 1],

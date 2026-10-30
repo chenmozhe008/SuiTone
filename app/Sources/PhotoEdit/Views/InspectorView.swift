@@ -29,9 +29,7 @@ struct InspectorView: View {
             }
         }.background(Color(white: 0.15))
             .onChange(of: store.inspectorTab) { _, tab in
-                let selectionForChat = tab == "chat" && store.repairDraft == nil ? store.selectionBox : nil
-                store.cancelRepairPreview()
-                if let selectionForChat { store.selectionBox = selectionForChat }
+                store.finishRepairTransition(to: tab)
                 store.repairEnabled = tab == "repair"
                 store.overlay = ""; store.showOriginal = false; store.localRegion = nil
                 if tab == "chat" || tab == "adjust" { store.lastMainTab = tab }

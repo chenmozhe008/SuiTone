@@ -267,15 +267,15 @@ struct ReferencePanel: View {
                     }.labelsHidden()
                     Button("匹配\(store.scopeLabel)") { store.match() }.disabled(store.targets.isEmpty)
                 }
-                if let photo = store.current, !photo.parameters.regions.isEmpty {
-                    ValueSlider(title: "强度", value: Binding(get: { store.current?.parameters.matchStrength ?? 1 }, set: { value in
-                        store.beginEditing("参考强度"); store.update { $0.matchStrength = value }
-                    }), range: 0...1, reset: 0.7, display: { String(format: "%.0f", $0 * 100) }, onEnd: store.finishEditing)
-                    if photo.lookName == "参考匹配", let advice = photo.notes.first(where: { $0.contains("强度") }) {
-                        Text(advice).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    }
-                }
                 Text("只学颜色与影调，光线方向不变。").font(.callout).foregroundStyle(.secondary)
+            }
+            if let photo = store.current, photo.parameters.hasReferenceMatch {
+                ValueSlider(title: "强度", value: Binding(get: { store.current?.parameters.matchStrength ?? 1 }, set: { value in
+                    store.beginEditing("参考强度"); store.update { $0.matchStrength = value }
+                }), range: 0...1, reset: 0.7, display: { String(format: "%.0f", $0 * 100) }, onEnd: store.finishEditing)
+                if photo.lookName == "参考匹配", let advice = photo.notes.first(where: { $0.contains("强度") }) {
+                    Text(advice).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
             }
         }.dropDestination(for: URL.self) { urls, _ in store.importURLs(urls, reference: true); return true }
     }

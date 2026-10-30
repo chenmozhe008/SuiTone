@@ -124,7 +124,7 @@ struct AssistantPanel: View {
                     HStack {
                         Text("已选择当前照片中的修复区域").font(.callout).foregroundStyle(.secondary)
                         Spacer()
-                        Button("取消选区") { store.selectionBox = nil }
+                        Button("取消选区") { store.clearRepairSelection() }
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {

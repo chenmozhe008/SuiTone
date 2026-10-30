@@ -69,6 +69,7 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
     var enabled: [String: Bool] = ["water":false,"sky":false,"land":false]
     var regions: [String: RegionAdjustment] = [:]
     var local: [String: LocalAdjustment] = [:]
+    var hasReferenceMatch: Bool { regions.values.contains { $0.referenceCount > 0 } }
 
     init() {}
     enum CodingKeys:String,CodingKey {

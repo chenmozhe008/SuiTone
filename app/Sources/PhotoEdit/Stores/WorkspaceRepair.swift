@@ -45,6 +45,29 @@ extension WorkspaceStore {
         repairStrokes = []; repairPolygon = []; repairPoint = nil
     }
 
+    /// 对话页画框时，从一份全新的方框选区开始，不沿用修复页的旧选法。
+    func beginChatSelection() {
+        clearRepairSelection()
+        repairTool = "box"; repairMode = "box"
+    }
+
+    func updateChatSelection(from start: [Double], to end: [Double]) {
+        guard start.count == 2, end.count == 2,
+              (start + end).allSatisfy({ $0.isFinite && (0...1).contains($0) }) else { return }
+        selectionBox = [min(start[0], end[0]), min(start[1], end[1]),
+                        max(start[0], end[0]), max(start[1], end[1])]
+    }
+
+    func finishRepairTransition(to tab: String) {
+        let keepSelection = tab == "chat" && repairDraft == nil
+        let savedBox = selectionBox, savedStrokes = repairStrokes, savedPolygon = repairPolygon, savedPoint = repairPoint
+        cancelRepairPreview()
+        if keepSelection {
+            selectionBox = savedBox; repairStrokes = savedStrokes
+            repairPolygon = savedPolygon; repairPoint = savedPoint
+        }
+    }
+
     func remove() {
         guard let photo = current, let box = selectionBox, !controlsBlocked, validRepairSelection else { return }
         finishEditing()

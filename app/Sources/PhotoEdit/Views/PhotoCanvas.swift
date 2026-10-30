@@ -3,6 +3,7 @@ import SwiftUI
 struct PhotoCanvas: View {
     @Bindable var store: WorkspaceStore
     @State private var drawing = false
+    @State private var drawingChatSelection = false
     var body: some View {
         GeometryReader {geometry in
             if let photo=store.current {
@@ -37,6 +38,7 @@ struct PhotoCanvas: View {
                 .frame(width:w,height:h)
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance:0).onEnded {value in
+                    if drawingChatSelection { drawingChatSelection = false; return }
                     let tap=hypot(value.translation.width,value.translation.height)<4
                     let point=[Double(min(1,max(0,value.location.x/w))),Double(min(1,max(0,value.location.y/h)))]
                     if store.repairEnabled {
@@ -53,6 +55,14 @@ struct PhotoCanvas: View {
                     store.pickRegion(x:point[0],y:point[1])
                 }.onChanged {value in
                     if splitActive {store.splitPosition=min(1,max(0,value.location.x/w));return}
+                    if store.inspectorTab == "chat", !store.repairEnabled, !store.controlsBlocked, !store.chatting {
+                        guard hypot(value.translation.width,value.translation.height)>=4 || drawingChatSelection else { return }
+                        if !drawingChatSelection { drawingChatSelection=true;store.beginChatSelection() }
+                        let clamp:(CGFloat)->Double={Double(min(1,max(0,$0)))}
+                        store.updateChatSelection(from:[clamp(value.startLocation.x/w),clamp(value.startLocation.y/h)],
+                                                  to:[clamp(value.location.x/w),clamp(value.location.y/h)])
+                        return
+                    }
                     guard store.repairEnabled, !store.busy, store.repairDraft == nil else {return}
                     let clamp:(CGFloat)->Double={Double(min(1,max(0,$0)))}
                     let point=[clamp(value.location.x/w),clamp(value.location.y/h)]
