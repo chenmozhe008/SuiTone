@@ -12,6 +12,9 @@ final class WorkspaceStore {
     var selectedIDs: Set<String> = []
     var currentID: String?
     var analysis: AnalysisResponse?
+    var analysisError: String?
+    var analysisAssetID: String?
+    var analysisRequestID = UUID()
     var overlay = ""
     var manualOverlay: String?
     /// 局部区域的轮廓图（透明底，只画边缘），选中区域时常驻显示
@@ -300,30 +303,31 @@ final class WorkspaceStore {
         repairRevision += 1; repairDraft = nil; repairShowingBefore = false
         let firstSelected = selected.count > 1 && id.map { selectedIDs.contains($0) } == true ? selected.first?.id : id
         currentID = firstSelected; analysis = nil; overlay = ""; clearRepairSelection(); localRegion = nil
-        analysisTask?.cancel()
+        analysisTask?.cancel(); analysisTask = nil; analysisAssetID = nil; analysisError = nil
         guard current != nil else { return }
         styleTiles=[:]
         if current?.ready == true { schedulePreview(); loadStyleTiles(); loadAnalysis() }
     }
 
     func loadAnalysis() {
-        guard let photo = current else { return }
+        guard let photo = current, photo.ready else { return }
+        if analysisTask != nil && analysisAssetID == photo.assetID { return }
         analysisTask?.cancel()
+        let requestID = UUID()
+        analysisRequestID = requestID
+        analysisAssetID = photo.assetID
+        analysisError = nil
         analysisTask = Task {
-            // 引擎冷启动（发行包会把模型和运行时解压到临时目录）需要几秒，
-            // 界面可能先于引擎就绪发出请求。失败后重试，而不是让面板一直停在识别中。
-            for attempt in 0..<20 {
-                if attempt > 0 { try? await Task.sleep(for: .milliseconds(600)) }
-                if Task.isCancelled || current?.assetID != photo.assetID { return }
-                do {
-                    let response: AnalysisResponse = try await engine.request("analyze", body: ["id": photo.assetID])
-                    guard !Task.isCancelled, current?.assetID == photo.assetID else { return }
-                    analysis = response
-                    return
-                } catch {
-                    if Task.isCancelled { return }
-                    if attempt == 19 { self.error = error.localizedDescription }
-                }
+            defer {
+                if analysisRequestID == requestID { analysisTask = nil; analysisAssetID = nil }
+            }
+            do {
+                let response: AnalysisResponse = try await engine.request("analyze", body: ["id": photo.assetID])
+                guard !Task.isCancelled, current?.assetID == photo.assetID, analysisRequestID == requestID else { return }
+                analysis = response
+            } catch {
+                guard !Task.isCancelled, current?.assetID == photo.assetID, analysisRequestID == requestID else { return }
+                analysisError = error.localizedDescription
             }
         }
     }

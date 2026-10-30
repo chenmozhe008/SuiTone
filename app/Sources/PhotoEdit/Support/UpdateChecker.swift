@@ -134,7 +134,7 @@ final class UpdateChecker: ObservableObject {
                 offer(release)
             } else {
                 let alert = NSAlert()
-                alert.messageText = release == nil ? "无法检查更新" : "随心修图已是最新版本"
+                alert.messageText = release == nil ? "无法检查更新" : "随心 AI 修图已是最新版本"
                 alert.informativeText = release == nil ? "未能连接 GitHub，请检查网络后重试。" : "当前版本 \(AppIdentity.version)。"
                 alert.runModal()
             }
@@ -150,7 +150,7 @@ final class UpdateChecker: ObservableObject {
     private func offer(_ release: Release) {
         let alert = NSAlert()
         alert.messageText = "新版本 \(release.version) 可用"
-        var text = "当前版本 \(AppIdentity.version)。更新会关闭并重新打开随心修图。请先保存调整记录，未保存的修改可能丢失。"
+        var text = "当前版本 \(AppIdentity.version)。更新会关闭并重新打开随心 AI 修图。请先保存调整记录，未保存的修改可能丢失。"
         if !release.notes.isEmpty {
             text += "\n\n" + release.notes.prefix(6).map { "• " + $0 }.joined(separator: "\n")
         }
@@ -181,7 +181,7 @@ final class UpdateChecker: ObservableObject {
                 phase = .idle
                 let alert = NSAlert()
                 alert.messageText = "未能完成更新"
-                alert.informativeText = "\(error.localizedDescription)\n\n可以前往 GitHub 下载与本机芯片对应的安装包，手动替换「应用程序」中的随心修图。"
+                alert.informativeText = "\(error.localizedDescription)\n\n可以前往 GitHub 下载与本机芯片对应的安装包，手动替换「应用程序」中的随心 AI 修图。"
                 alert.addButton(withTitle: "前往下载")
                 alert.addButton(withTitle: "取消")
                 if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(release.page) }
@@ -219,7 +219,7 @@ final class UpdateChecker: ObservableObject {
         guard let app = apps.first(where: { $0.pathExtension == "app" }), let bundle = Bundle(url: app),
               bundle.bundleIdentifier == Bundle.main.bundleIdentifier,
               bundle.infoDictionary?["CFBundleShortVersionString"] as? String == release.version else {
-            throw UpdateError("下载的文件不是随心修图 \(release.version)。")
+            throw UpdateError("下载的文件不是随心 AI 修图 \(release.version)。")
         }
         guard run("/usr/bin/codesign", ["--verify", "--deep", "--strict", "-R=anchor apple generic", app.path]),
               let currentTeam = teamID(Bundle.main.bundleURL), let newTeam = teamID(app), currentTeam == newTeam else {
@@ -233,7 +233,7 @@ final class UpdateChecker: ObservableObject {
     private static func swapAndRelaunch(with app: URL) throws {
         let target = Bundle.main.bundleURL
         guard FileManager.default.isWritableFile(atPath: target.deletingLastPathComponent().path) else {
-            throw UpdateError("没有权限替换「\(target.deletingLastPathComponent().path)」中的随心修图。")
+            throw UpdateError("没有权限替换「\(target.deletingLastPathComponent().path)」中的随心 AI 修图。")
         }
         var trashed: NSURL?
         try FileManager.default.trashItem(at: target, resultingItemURL: &trashed)
@@ -241,7 +241,7 @@ final class UpdateChecker: ObservableObject {
             try FileManager.default.moveItem(at: app, to: target)
         } catch {
             if let trashed = trashed as URL? { try? FileManager.default.moveItem(at: trashed, to: target) }
-            throw UpdateError("无法替换随心修图：\(error.localizedDescription)")
+            throw UpdateError("无法替换随心 AI 修图：\(error.localizedDescription)")
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")

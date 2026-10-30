@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 随心修图 SuiTone · 一键安装脚本
+# 随心 AI 修图 SuiTone · 一键安装脚本
 #
 #   curl -fsSL https://raw.githubusercontent.com/chenmozhe008/SuiTone/master/script/install.sh | bash
 #
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 REPO_URL="${SUITONE_REPO:-https://github.com/chenmozhe008/SuiTone.git}"
-APP_NAME="随心修图"
+APP_NAME="随心 AI 修图"
 ASSET_ROOT="${HOME}/.cache/photo-edit"
 VENV="${ASSET_ROOT}/venv"
 SRC="${HOME}/SuiTone"
@@ -39,7 +39,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-bold "随心修图 · 安装"
+bold "随心 AI 修图 · 安装"
 
 # ── 1. 系统检查 ──────────────────────────────────────────────
 [[ "$(uname -s)" == "Darwin" ]] || die "只能在 macOS 上安装。"

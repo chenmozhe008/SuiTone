@@ -66,7 +66,7 @@ struct PhotoEditApp: App {
                     .keyboardShortcut("l", modifiers: [.command, .option])
             }
         }
-        Window("关于随心修图", id: "about") {
+        Window("关于随心 AI 修图", id: "about") {
             AboutView().environmentObject(updates).preferredColorScheme(.dark)
         }
         .windowResizability(.contentSize)
@@ -77,7 +77,7 @@ private struct AboutMenu: View {
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var updates: UpdateChecker
     var body: some View {
-        Button("关于随心修图") { AboutState.shared.tab = .intro; openWindow(id: "about") }
+        Button("关于随心 AI 修图") { AboutState.shared.tab = .intro; openWindow(id: "about") }
         Button("检查更新…") { updates.checkFromMenu() }
         Button("反馈") { AboutState.shared.tab = .feedback; openWindow(id: "about") }
     }

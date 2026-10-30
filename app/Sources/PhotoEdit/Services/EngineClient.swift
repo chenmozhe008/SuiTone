@@ -148,7 +148,7 @@ actor EngineClient {
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = path == "export" ? 3600 : 300
+        request.timeoutInterval = path == "export" ? 3600 : (path == "analyze" ? 45 : 300)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let error = (try? JSONSerialization.jsonObject(with: data)) as? [String: String]

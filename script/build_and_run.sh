@@ -35,8 +35,8 @@ import os,plistlib
 from pathlib import Path
 root=Path(os.environ['PHOTO_EDIT_BUILD_ROOT'])
 version=(root/'VERSION').read_text().strip()
-info=dict(CFBundleExecutable='SuiTone',CFBundleIdentifier='local.photo-edit.app',CFBundleName='随心修图',
-          CFBundleDisplayName='随心修图',CFBundlePackageType='APPL',CFBundleVersion=version,CFBundleShortVersionString=version,
+info=dict(CFBundleExecutable='SuiTone',CFBundleIdentifier='local.photo-edit.app',CFBundleName='随心 AI 修图',
+          CFBundleDisplayName='随心 AI 修图',CFBundlePackageType='APPL',CFBundleVersion=version,CFBundleShortVersionString=version,
           LSMinimumSystemVersion='14.0',NSPrincipalClass='NSApplication',NSHighResolutionCapable=True,
           PhotoEditProjectRoot=str(root))
 if (root/'app/Resources/AppIcon.icns').is_file():info['CFBundleIconFile']='AppIcon'

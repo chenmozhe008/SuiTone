@@ -172,7 +172,10 @@ struct AdjustPanel: View {
                 // 导入后 current 可能还没 ready，activate 时拿不到分析；面板出现时补一次。
                 if store.analysis == nil { store.loadAnalysis() }
             }
-            if store.analysis == nil && availableRegions.isEmpty {
+            if let error = store.analysisError, store.analysis == nil {
+                Text("区域识别未完成：\(error)").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("重新识别") { store.loadAnalysis() }
+            } else if store.analysis == nil && availableRegions.isEmpty {
                 HStack { ProgressView().controlSize(.small); Text("正在识别画面区域…").font(.callout).foregroundStyle(.secondary) }
             } else if availableRegions.isEmpty {
                 Text("这张照片没有识别到可单独调整的区域。").font(.callout).foregroundStyle(.secondary)

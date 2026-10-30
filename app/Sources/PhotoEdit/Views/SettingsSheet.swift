@@ -108,7 +108,7 @@ struct SettingsSheet: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 Text(provider.available ? "使用本机已登录的 \(provider.title)，用你自己的订阅额度，不需要密钥。"
-                                        : "这台电脑上没有找到 \(provider.title)。安装并登录后重新打开随心修图即可使用。")
+                                        : "这台电脑上没有找到 \(provider.title)。安装并登录后重新打开随心 AI 修图即可使用。")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
                 if provider.id == "codebuddy" {
                     Text("使用已验证可看图的 GLM-5V-Turbo；调用会消耗同账号的积分。")

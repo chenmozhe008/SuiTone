@@ -15,7 +15,7 @@ VENV="${HOME}/.cache/photo-edit/venv"
 ASSETS="${HOME}/.cache/photo-edit"
 STAGE="${ROOT}/tmp/release-stage"
 OUT="${ROOT}/tmp/release"
-APP_NAME="随心修图"
+APP_NAME="随心 AI 修图"
 UPLOAD=0
 [[ "${1:-}" == "--upload" ]] && UPLOAD=1
 
@@ -23,7 +23,7 @@ bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
 die() { printf '\033[31m错误：%s\033[0m\n' "$*" >&2; exit 1; }
 
-bold "打包 随心修图 ${VERSION}（${ARCH}）"
+bold "打包 随心 AI 修图 ${VERSION}（${ARCH}）"
 
 [[ -x "${VENV}/bin/pyinstaller" ]] || die "缺少 pyinstaller：${VENV}/bin/pip install pyinstaller"
 for d in segformer lama sr; do
@@ -99,7 +99,7 @@ info "产物：${ZIP}（$(du -h "${ZIP}" | cut -f1)）"
 if [[ "${UPLOAD}" == "1" ]]; then
   bold "创建 GitHub Release"
   gh release create "v${VERSION}" "${ZIP}" \
-    --title "随心修图 ${VERSION}" \
+    --title "随心 AI 修图 ${VERSION}" \
     --notes-file "${ROOT}/tmp/release-notes.md" 2>&1 | tail -3
 fi
 

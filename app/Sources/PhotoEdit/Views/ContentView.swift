@@ -211,7 +211,7 @@ private struct WorkspaceStatus: View {
                 Label("关于", systemImage: "info.circle")
                     .font(.callout.weight(.medium)).padding(.horizontal, 10).padding(.vertical, 5)
                     .background(Color(white: 0.23), in: RoundedRectangle(cornerRadius: 7))
-            }.buttonStyle(.plain).help("关于随心修图")
+            }.buttonStyle(.plain).help("关于随心 AI 修图")
             switch updates.phase {
             case .downloading(let fraction):
                 ProgressView(value: fraction).frame(width: 55).controlSize(.mini)

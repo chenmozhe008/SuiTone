@@ -49,7 +49,7 @@ struct AboutView: View {
     }
     private var diagnostics: String {
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
-        return "随心修图 \(AppIdentity.version)（\(build)），\(ProcessInfo.processInfo.operatingSystemVersionString)"
+        return "随心 AI 修图 \(AppIdentity.version)（\(build)），\(ProcessInfo.processInfo.operatingSystemVersionString)"
     }
     private var localChangelog: [(String, [String])] {
         guard let url = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md"),
@@ -77,7 +77,7 @@ struct AboutView: View {
             HStack(spacing: 18) {
                 Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 78, height: 78)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("随心修图").font(.system(size: 27, weight: .bold))
+                    Text("随心 AI 修图").font(.system(size: 27, weight: .bold))
                     Text("跟 AI 对话，随心修出想要的照片")
                         .font(.callout)
                     HStack(spacing: 10) {
@@ -113,7 +113,7 @@ struct AboutView: View {
     private var intro: some View {
         VStack(alignment: .leading, spacing: 22) {
             sectionTitle("它是什么")
-            Text("随心修图是一款以 AI 对话为核心的 Mac 照片编辑工具。用自己的话告诉 AI 想怎么修，它会看照片、理解要求并调整光影与色彩；调整后还可以自己继续拉滑块，让照片更符合你的想法。")
+            Text("随心 AI 修图是一款以 AI 对话为核心的 Mac 照片编辑工具。用自己的话告诉 AI 想怎么修，它会看照片、理解要求并调整光影与色彩；调整后还可以自己继续拉滑块，让照片更符合你的想法。")
                 .font(.body).lineSpacing(6).fixedSize(horizontal: false, vertical: true)
             card {
                 HStack(spacing: 14) {
@@ -262,7 +262,7 @@ struct AboutView: View {
     }
     private func sendFeedback() {
         var url = URLComponents(); url.scheme = "mailto"; url.path = email
-        url.queryItems = [URLQueryItem(name: "subject", value: "随心修图反馈 v\(AppIdentity.version)"),
+        url.queryItems = [URLQueryItem(name: "subject", value: "随心 AI 修图反馈 v\(AppIdentity.version)"),
                           URLQueryItem(name: "body", value: "\n\n请描述问题和操作步骤：\n\n\(diagnostics)")]
         if let url = url.url { NSWorkspace.shared.open(url) }
     }

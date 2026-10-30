@@ -48,6 +48,7 @@ extension WorkspaceStore {
                                             source: urls.first.map { $0.hasDirectoryPath ? $0.path : $0.deletingLastPathComponent().path } ?? "")
                     }
                     refreshGrid(); loadStyleTiles()
+                    if analysis == nil { loadAnalysis() }
                 }
             } catch { self.error = error.localizedDescription }
         }
