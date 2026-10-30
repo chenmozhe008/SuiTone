@@ -137,6 +137,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(safe_advice('请涂抹或框选后再修复。'),'请涂抹或框选后再修复。')
         self.assertIn('画笔、套索、点选物体和方框',SYSTEM)
         self.assertNotIn('只支持框选',SYSTEM)
+        self.assertIn('不能作为任意局部调色蒙版',SYSTEM)
         self.assertIn('不支持裁切',safe_advice('可以在导出时设置裁剪比例。'))
 
     def test_visual_review_cannot_apply_preset_or_tool_operation(self):

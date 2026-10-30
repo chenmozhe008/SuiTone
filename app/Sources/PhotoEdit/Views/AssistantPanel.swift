@@ -145,7 +145,7 @@ struct AssistantPanel: View {
                             }
                         }.scrollIndicators(.hidden)
                     }
-                    ChatInputField(text: $store.chatDraft, placeholder: "说一句要求，或先在照片上框一块再说…",
+                    ChatInputField(text: $store.chatDraft, placeholder: "说一句调整要求，或框选杂物后说移除…",
                                    onSubmit: { if canSend { store.sendChat() } })
                         .frame(minHeight: 44, maxHeight: 120).accessibilityLabel("修图对话输入")
                     HStack(spacing: 12) {
