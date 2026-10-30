@@ -31,10 +31,10 @@ struct LibrarySidebar: View {
     private var albumsSection: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                Text("图集").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                Text("图集").font(.headline).foregroundStyle(.secondary)
                 Spacer()
-                Button { store.startFreshWorkspace() } label: { Image(systemName: "plus") }
-                    .buttonStyle(.plain).font(.system(size: 11)).help("新建图集")
+                Button { store.startFreshWorkspace() } label: { Image(systemName: "plus").font(.body.weight(.semibold)).frame(width: 32, height: 32).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).help("新建图集").accessibilityLabel("新建图集")
                     .disabled(store.controlsBlocked)
             }.padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 4)
 
@@ -57,7 +57,7 @@ struct LibrarySidebar: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(album.title).font(.system(size: 12, weight: album.id == store.currentAlbumID ? .semibold : .regular)).lineLimit(1)
                 Text("\(album.photos.count) 张 · \(album.updatedAt.formatted(.relative(presentation: .named)))")
-                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }

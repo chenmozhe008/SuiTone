@@ -46,10 +46,10 @@ struct SelectionPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("在照片上涂抹或圈选。选「添加」补上漏掉的，选「减去」擦掉多余的；按住 ⌥ 可临时减去。")
+                Text("使用画笔、套索、点选或方框建立选区。按住 ⌥ 可临时切换为减去。")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if store.selectionParts.isEmpty {
-                    Text("还没有选区。点选物体可以一下选中整片天空、海面或一个人，再用画笔修边。")
+                    Text("在照片上选择需要编辑的区域。")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 } else {
                     VStack(alignment: .leading, spacing: 8) {

@@ -100,7 +100,7 @@ struct SettingsSheet: View {
             if provider.id == store.assistantProvider && store.assistantReady {
                 Label("当前使用", systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.green)
             } else if provider.available && (!provider.isAPI || store.apiKeySaved(provider.id)) {
-                Button("使用这个") { use(provider) }.buttonStyle(.borderedProminent)
+                Button("使用此服务") { use(provider) }.buttonStyle(.borderedProminent)
             }
         }.padding(.horizontal, 24)
         if provider.isAPI {

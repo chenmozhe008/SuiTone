@@ -21,7 +21,7 @@ struct AIEditPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                section("改哪里") {
+                section("编辑范围") {
                     Picker("范围", selection: $onlySelection) {
                         Text("整张照片").tag(false)
                         Text("只改选区").tag(true)
@@ -53,9 +53,10 @@ struct AIEditPanel: View {
                         Text(store.imageModelName.isEmpty ? "先在设置里选择 AI 改图服务和模型，再添加参考图。" : "当前的 \(store.imageModelName) 按官方文档不能附加参考图。需要参考别的图时，可以在设置里换个模型。")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     } else if referencePaths.isEmpty {
-                        HStack {
-                            Text("想参考别的图（姿势、风格、物品）就加上，最多 \(limit) 张。").font(.callout).foregroundStyle(.secondary)
-                            Button("添加参考图…") { addReferences() }.buttonStyle(.link)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("可添加图片，参考其姿势、风格或物品。")
+                                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Button("添加参考图…", systemImage: "plus") { addReferences() }
                         }
                     } else {
                         ScrollView(.horizontal) {
@@ -86,7 +87,7 @@ struct AIEditPanel: View {
                             }
                         }
                         }.scrollIndicators(.visible)
-                        Text("角标就是它在提示词里的叫法；点缩略图可以移除。参考图会跟照片一起发给 AI，\(referencePaths.count)／\(limit) 张。")
+                        Text("参考图将与照片一起发送给 AI。已添加 \(referencePaths.count)／\(limit) 张。")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         if editor.hasReferenceMentions {
                             Text("移除参考图前，请先删除提示词中的参考图引用。")
@@ -94,21 +95,24 @@ struct AIEditPanel: View {
                         }
                     }
                 }
-                section("想改成什么") {
+                section("编辑要求") {
                     composer
                     if !referencePaths.isEmpty {
-                        Text("在框里打 @ 可以引用图片：原图是图1，参考图按缩略图顺序排。引用之后文字里显示的是图片，发给 AI 时对应「图N」。")
+                        Text("输入 @ 可引用原图或参考图。")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     FlowLayout(spacing: 8) {
                         ForEach(examples, id: \.self) { example in
-                            Button(example) { editor.setText(example) }.buttonStyle(.plain).font(.callout)
+                            Button(example) {
+                                if editor.isEmpty { editor.setText(example) }
+                                else { editor.view?.appendText("\n" + example) }
+                            }.buttonStyle(.plain).font(.callout)
                                 .padding(.horizontal, 10).padding(.vertical, 5)
                                 .background(Color(white: 0.23), in: RoundedRectangle(cornerRadius: 7))
                         }
                     }
                 }
-                section("发给谁", trailing: AnyView(Button("设置…") { store.settingsTab = "image" }.buttonStyle(.link))) {
+                section("生成服务", trailing: AnyView(Button("设置…") { store.settingsTab = "image" }.buttonStyle(.link))) {
                     if let service, store.imageServiceReady {
                         info("服务", service.title)
                         info("发送内容", "不带调色的原片，长边 2048 像素" + (referencePaths.isEmpty ? "" : "＋\(referencePaths.count) 张参考图（按缩略图顺序跟在后面）"))
@@ -130,9 +134,12 @@ struct AIEditPanel: View {
                 }.buttonStyle(.borderedProminent).controlSize(.large)
                     .disabled(!store.imageServiceReady || store.generationTask != nil || store.controlsBlocked
                               || editor.isEmpty || (onlySelection && !hasSelection))
+                if store.imageServiceReady && onlySelection && !hasSelection { Text("请先选择编辑区域。") .font(.callout).foregroundStyle(.secondary) }
+                else if store.imageServiceReady && editor.isEmpty { Text("请输入编辑要求。") .font(.callout).foregroundStyle(.secondary) }
                 if let card, let id = store.aiEditMessageID { GenerationCardView(store: store, messageID: id, card: card) }
                 if store.photoVersions.count > 1 {
                     section("这张照片的版本") {
+                        ScrollView(.horizontal) {
                         HStack(spacing: 8) {
                             ForEach(Array(store.photoVersions.enumerated()), id: \.offset) { index, version in
                                 Button {
@@ -147,6 +154,7 @@ struct AIEditPanel: View {
                                     }
                                 }.buttonStyle(.plain)
                             }
+                        }
                         }
                         Text("点一下在照片上临时查看，不会改动；要换回之前的版本用撤销。").font(.callout).foregroundStyle(.secondary)
                     }
@@ -242,7 +250,7 @@ struct AIEditPanel: View {
     private var mentionList: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("可能@的内容").font(.caption).foregroundStyle(.secondary)
+                Text("选择要引用的图片").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("收起") { showMention = false }.buttonStyle(.link).font(.caption)
             }.padding(.horizontal, 2).padding(.bottom, 4)

@@ -137,7 +137,7 @@ final class WorkspaceStore {
     /// 只在单元测试里设置：把图集写到指定目录，几个测试并行时不互相踩。
     var libraryDirectory: URL?
     /// 拖动自由旋转时的临时角度（度）：画面先在本地实时跟着转，松手才让引擎精确渲染
-    var angleDraft: Double = 0
+    var angleDraft: Double?
     /// 裁切页正在框的范围（0–1 比例）和拖拽起点；裁切比例选的是哪一档
     var cropDraft: [Double]?
     var cropAnchor: [Double]?
@@ -346,9 +346,11 @@ final class WorkspaceStore {
                     let start = Date()
                     var previewParams = photo.parameters
                     // 裁切页要看到完整画面（含将被裁掉的部分），框才不会错位。
-                    if inspectorTab == "crop" { previewParams.crop = nil }
+                    let cropMode = inspectorTab == "crop"
+                    if cropMode { previewParams.crop = nil }
                     let response: PreviewResponse = try await engine.request("preview", body: ["id": photo.assetID, "params": try EngineClient.object(previewParams), "quality": try EngineClient.object(photo.quality)])
-                    if version == previewVersion, currentID == photo.id, let i = currentIndex, photos[i].quality == photo.quality {
+                    if currentID == photo.id, current?.assetID == photo.assetID, (inspectorTab == "crop") == cropMode,
+                       let i = currentIndex, photos[i].quality == photo.quality {
                         photos[i].previewPath = response.preview
                         if photos[i].parameters.autoDehaze == true { photos[i].parameters.dehazeAmt = response.dehazeAmt }
                         previewMilliseconds = Date().timeIntervalSince(start) * 1000

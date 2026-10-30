@@ -28,7 +28,7 @@ struct RepairPanel: View {
                         Button("保留修复") { store.applyRepairPreview() }.buttonStyle(.borderedProminent)
                     }
                 } else {
-                    Text("用照片上方的工具条选出要去掉的东西，可以多笔加减。涂得比杂物略大一圈效果更好。")
+                    Text("使用画面上方的工具选择要移除的内容。选区略大于对象时效果通常更好。")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Button {
                         store.remove()

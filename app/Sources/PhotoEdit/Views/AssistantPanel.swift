@@ -34,7 +34,7 @@ struct AssistantPanel: View {
                     VStack(alignment: .leading, spacing: 18) {
                         if !store.suggestions.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("这张照片可以试试").font(.callout.weight(.semibold))
+                                Text("推荐调整").font(.callout.weight(.semibold))
                                 Text(store.suggestionSource == "ai" ? "根据照片由 AI 推荐" : "根据原图亮度和识别区域推荐")
                                     .font(.caption).foregroundStyle(.secondary)
                                 FlowLayout(spacing: 8) {
@@ -202,7 +202,7 @@ struct AssistantPanel: View {
         let model = store.apiCredentials?.model ?? ""
         let vision: String = {
             switch store.visionChecks[provider.id + "|" + model] {
-            case true?: return "，能看图"
+            case true?: return "，支持图片识别"
             case false?: return "，看不了图"
             default: return "，看图未验证"
             }

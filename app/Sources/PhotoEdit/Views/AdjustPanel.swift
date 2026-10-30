@@ -148,7 +148,7 @@ struct AdjustPanel: View {
             }
             slider("整体", master, key == "texture" ? 0...1 : -1...1, reset: 0) {
                 key == "texture" ? String(format: "%.0f", $0 * 100) : String(format: "%+.0f", $0 * 100)
-            }
+            }.accessibilityLabel(title + "整体")
             if open { VStack(spacing: 10) { content() }.padding(.leading, 14) }
         }.padding(12).background(Color(white: 0.18), in: RoundedRectangle(cornerRadius: 10))
     }

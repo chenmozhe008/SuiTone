@@ -123,7 +123,7 @@ struct PhotoCanvas: View {
                         if store.usesSelectionParts { store.selectionDraftBox=frame } else { store.selectionBox=frame }
                     default: break
                     }
-                })
+                }, including: store.inspectorTab == "crop" ? .subviews : .all)
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
                 .overlay(alignment:.top) {
                     if store.repairEnabled && store.usesSelectionParts && store.repairDraft == nil { SelectionToolbar(store:store).padding(.top,6) }
@@ -155,8 +155,8 @@ struct PhotoCanvas: View {
     /// 画面显示比例：按裁切和旋转后实际要出的形状算，裁切页里仍显示完整画面以便重新框。
     /// 拖动自由旋转时相对已提交角度的增量
     private var liveAngle: Double {
-        guard store.inspectorTab == "crop", store.angleDraft != 0 else { return 0 }
-        return store.angleDraft - (store.current?.parameters.angle ?? 0)
+        guard store.inspectorTab == "crop", let angle = store.angleDraft else { return 0 }
+        return angle - (store.current?.parameters.angle ?? 0)
     }
 
     /// 转过之后要放大一点，画面才不会露出空白角。

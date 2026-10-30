@@ -16,6 +16,7 @@ struct HistoryPanel: View {
                 }
             }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 4)
 
+            Text("当前图集的操作记录").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.bottom, 4)
             if store.albumSteps.isEmpty {
                 Text(store.currentAlbumID == nil ? "打开图集后，调整记录显示在这里。" : "暂无调整记录。")
                     .font(.callout).foregroundStyle(.secondary)
