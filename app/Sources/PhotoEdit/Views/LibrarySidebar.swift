@@ -1,21 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// 左栏：上面是图集（导入过的每一批照片，关掉应用再打开还在），下面是这一批的操作历史。
-/// 跟 Lightroom 的目录树 + 历史面板是一个用法：点哪条就回到哪一条。
+/// 左栏：导入过的图集。
 struct LibrarySidebar: View {
     @Bindable var store: WorkspaceStore
     @State private var renamingID: String?
     @State private var draftTitle = ""
     @State private var pendingDelete: LibraryAlbum?
-    @State private var hoveredStep: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 albumsSection
-                Divider().padding(.vertical, 6)
-                historySection
             }.padding(.bottom, 10)
         }
         .background(Color(white: 0.125))
@@ -81,45 +77,4 @@ struct LibrarySidebar: View {
         .accessibilityLabel("图集 \(album.title)，\(album.photos.count) 张")
     }
 
-    private var historySection: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Text("历史记录").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-                Spacer()
-                if !store.albumSteps.isEmpty {
-                    Button("清空") { store.clearSteps() }.buttonStyle(.plain)
-                        .font(.system(size: 10)).foregroundStyle(.secondary).help("清空记录，画面不变")
-                }
-            }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 4)
-
-            if store.albumSteps.isEmpty {
-                Text(store.currentAlbumID == nil ? "打开图集后，调整记录显示在这里。" : "暂无调整记录。")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                    .padding(.horizontal, 12).padding(.vertical, 4)
-            } else {
-                ForEach(Array(store.albumSteps.reversed())) { step in stepRow(step) }
-            }
-        }
-    }
-
-    private func stepRow(_ step: LibraryStep) -> some View {
-        HStack(spacing: 6) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(step.label).font(.system(size: 11)).lineLimit(1)
-                Text("\(step.states.count) 张 · \(step.date.formatted(date: .omitted, time: .shortened))")
-                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            if hoveredStep == step.id {
-                Button { store.deleteStep(step) } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
-                    .help("删除这条记录，画面不变")
-            }
-        }
-        .padding(.horizontal, 12).padding(.vertical, 3)
-        .contentShape(Rectangle())
-        .onTapGesture { store.revertToStep(step) }
-        .onHover { inside in hoveredStep = inside ? step.id : (hoveredStep == step.id ? nil : hoveredStep) }
-        .help("回到这一步的调整")
-    }
 }

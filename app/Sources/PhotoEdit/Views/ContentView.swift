@@ -47,6 +47,7 @@ private struct WorkspaceHeader: View {
     @Bindable var store: WorkspaceStore
     @Environment(\.openWindow) private var openWindow
     @State private var showingReset = false
+    @State private var showingHistory = false
     private var resetTitle: String {
         store.targets.count > 1 ? "把所选的 \(store.targets.count) 张照片复原成原图？" : "把这张照片复原成原图？"
     }
@@ -73,6 +74,11 @@ private struct WorkspaceHeader: View {
                         .help("撤销上一步（⌘Z）").disabled(!store.canUndo || store.controlsBlocked)
                     Button { store.redo() } label: { Label("重做", systemImage: "arrow.uturn.forward") }
                         .help("重做（⇧⌘Z）").disabled(!store.canRedo || store.controlsBlocked)
+                    Button { showingHistory.toggle() } label: { Label("历史记录", systemImage: "clock.arrow.circlepath") }
+                        .help("查看调整历史")
+                        .popover(isPresented: $showingHistory, arrowEdge: .bottom) {
+                            HistoryPanel(store: store).frame(width: 260, height: 350)
+                        }
                     Button { showingReset = true } label: { Label("复原", systemImage: "arrow.counterclockwise") }
                         .help("把照片恢复成导入时的原图").disabled(store.targets.isEmpty || store.controlsBlocked)
                 }.labelStyle(.titleAndIcon)
