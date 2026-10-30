@@ -60,6 +60,14 @@ class GeometryTests(unittest.TestCase):
             for corner in corners:
                 self.assertTrue((corner > 200).all(), f'{angle}° 时角落被填黑了')
 
+    def test_straighten_keeps_original_aspect(self):
+        """拉直后宽高比要和拖动时看到的一致，界面才不会在松手后突然变形。"""
+        image = Image.new('RGB', (300, 200))
+        for angle in (-8, -3, 2.5, 7):
+            result = geometry.apply(image, dict(angle=angle))
+            self.assertAlmostEqual(result.width / result.height, 1.5, places=1)
+        self.assertEqual(geometry.apply(image, dict(angle=0)).size, (300, 200))
+
     def test_neutral_when_nothing_set(self):
         self.assertTrue(geometry.is_neutral(dict(rotation=0, angle=0, flip='', crop=None)))
         self.assertFalse(geometry.is_neutral(dict(rotation=90)))

@@ -12,52 +12,61 @@ extension WorkspaceStore {
 
     var cropPreviewing: Bool { inspectorTab == "crop" }
 
-    /// 选比例：在当前画面里取一个居中的最大框。
+    /// 选比例：在当前框里取一个居中的、这个比例的最大框。原来框得小，换了比例不会突然跳回整张。
     func applyCropAspect(_ ratio: Double?) {
         guard let photo = current else { return }
+        if cropAspect == "free" { return }
         var width = Double(photo.imported.width), height = Double(photo.imported.height)
         if Int(photo.parameters.rotation) % 180 == 90 { swap(&width, &height) }
         guard width > 0, height > 0 else { return }
-        if cropAspect == "free" { return }
         let ratio = ratio ?? width / height
         // 归一化框的横向/纵向比是 k 时，画出来的实际比例是 k × 原画面比例。
         let k = ratio / (width / height)
-        var cw = 1.0, ch = 1.0
-        if k >= 1 { ch = 1 / k } else { cw = k }
-        cropDraft = [(1 - cw) / 2, (1 - ch) / 2, cw, ch]
+        let box = cropDraft ?? [0, 0, 1, 1]
+        let cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2
+        var cw = box[2], ch = box[3]
+        if k >= 1 { ch = cw / k } else { cw = ch * k }
+        if ch > box[3] { ch = box[3]; cw = ch * k }
+        if cw > box[2] { cw = box[2]; ch = cw / k }
+        cropDraft = CropGeometry.centered([cw, ch], around: [cx, cy])
     }
 
+    /// 转 90°：画面转了，已经框好的范围跟着转，不会白丢。
     func rotateQuarter(_ direction: Int) {
         guard current != nil else { return }
-        // 画面转了，原来的框就不作数了，清掉重新框。
-        cropDraft = [0, 0, 1, 1]; cropAspect = "free"
+        let clockwise = direction > 0
+        cropDraft = CropGeometry.rotated(cropDraft ?? [0, 0, 1, 1], quarter: clockwise ? 1 : -1)
+        cropAspect = "free"
         change(direction > 0 ? "顺时针旋转 90°" : "逆时针旋转 90°") { parameters in
             var value = (parameters.rotation + Double(direction * 90)).truncatingRemainder(dividingBy: 360)
             if value < 0 { value += 360 }
             parameters.rotation = value
-            parameters.crop = nil
+            if let crop = parameters.crop { parameters.crop = CropGeometry.rotated(crop, quarter: clockwise ? 1 : -1) }
         }
     }
 
+    /// 翻转：已经框好的范围跟着镜像，构图不丢。
     func toggleFlip(_ axis: String) {
         guard current != nil else { return }
+        cropDraft = CropGeometry.flipped(cropDraft ?? [0, 0, 1, 1], axis: axis)
+        cropAspect = "free"
         let title = axis == "h" ? "水平翻转" : "垂直翻转"
-        cropDraft = [0, 0, 1, 1]; cropAspect = "free"
         change(title) { parameters in
             parameters.flip = parameters.flip == axis ? "" : axis
-            parameters.crop = nil
+            if let crop = parameters.crop { parameters.crop = CropGeometry.flipped(crop, axis: axis) }
         }
     }
 
     /// 松手才应用：整段拖动只记一条历史、只重算一次画面。
     func applyAngle(_ angle: Double) {
-        change(abs(angle) < 0.01 ? "取消旋转" : String(format: "旋转 %.1f°", angle)) { $0.angle = angle }
+        let value = CropGeometry.snappedAngle(angle)
+        change(abs(value) < 0.01 ? "取消旋转" : String(format: "拉直 %.1f°", value)) { $0.angle = value }
     }
 
     func straightenPreview(_ angle: Double) {
         // 拖动拉直滑杆时只改角度，不每一步都记历史。
         beginEditing("拉直画面")
-        update { $0.angle = angle }
+        update { $0.angle = CropGeometry.snappedAngle(angle) }
     }
 
     func finishStraighten() {
@@ -82,6 +91,7 @@ extension WorkspaceStore {
     func resetGeometry() {
         guard current != nil else { return }
         cropDraft = [0, 0, 1, 1]
+        cropAspect = "free"
         change("恢复原始构图") { parameters in
             parameters.rotation = 0; parameters.angle = 0; parameters.flip = ""; parameters.crop = nil
         }
@@ -120,7 +130,7 @@ extension WorkspaceStore {
     }
 }
 
-/// 右栏的裁切页：比例、旋转、翻转、拉直，加上一个「应用」把几何固定下来。
+/// 右栏的裁切页：比例、旋转、翻转、拉直，加上一个「确定」把几何定下来。
 struct CropPanel: View {
     @Bindable var store: WorkspaceStore
     /// 拖动滑杆时的临时角度：这时不重算画面，松手才应用
@@ -130,6 +140,8 @@ struct CropPanel: View {
         ("5:4", "5:4", 5.0 / 4), ("3:2", "3:2", 3.0 / 2), ("16:9", "16:9", 16.0 / 9),
         ("9:16", "9:16", 9.0 / 16), ("4:5", "4:5", 4.0 / 5)
     ]
+
+    private var angle: Double { angleDraft ?? store.current?.parameters.angle ?? 0 }
 
     var body: some View {
         ScrollView {
@@ -141,44 +153,61 @@ struct CropPanel: View {
                                 store.cropAspect = item.0
                                 store.applyCropAspect(item.2)
                             } label: {
-                                Text(item.1).font(.callout)
-                                    .frame(maxWidth: .infinity).frame(height: 30)
-                                    .background(store.cropAspect == item.0 ? Color(red: 0.18, green: 0.42, blue: 0.57) : Color(white: 0.24),
-                                                in: RoundedRectangle(cornerRadius: 7))
+                                Text(item.1).font(.callout.weight(store.cropAspect == item.0 ? .semibold : .regular))
+                                    .foregroundStyle(store.cropAspect == item.0 ? Color.white : Color.white.opacity(0.8))
+                                    .frame(maxWidth: .infinity).frame(height: 32)
+                                    .background(store.cropAspect == item.0 ? AnyShapeStyle(ToolAccent.blue.fill) : AnyShapeStyle(Color(white: 0.24)),
+                                                in: RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8)
+                                        .stroke(store.cropAspect == item.0 ? ToolAccent.blue.border : Color.white.opacity(0.08)))
                             }.buttonStyle(.plain)
                         }
                     }
-                    Text("在照片上拖出裁切范围，也可拖动边缘或角调整。")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text("在照片上直接拖出保留范围；框内拖动是移动，四角和四边可以拉动大小。")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
                 section("旋转") {
                     HStack(spacing: 8) {
-                        textButton("向左转", icon: "rotate.left") { store.rotateQuarter(-1) }
-                        textButton("向右转", icon: "rotate.right") { store.rotateQuarter(1) }
+                        textButton("向左转 90°", icon: "rotate.left") { store.rotateQuarter(-1) }
+                        textButton("向右转 90°", icon: "rotate.right") { store.rotateQuarter(1) }
                     }
                     HStack(spacing: 8) {
                         textButton("水平翻转", icon: "arrow.left.and.right.righttriangle.left.righttriangle.right") { store.toggleFlip("h") }
                         textButton("垂直翻转", icon: "arrow.up.and.down.righttriangle.up.righttriangle.down") { store.toggleFlip("v") }
                     }
+                    Text("已经框好的范围会跟着一起转，不用重新框。")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
-                section("自由旋转") {
+                section("拉直") {
                     HStack(spacing: 10) {
-                        AngleSlider(value: Binding(get: { angleDraft ?? store.current?.parameters.angle ?? 0 },
-                                                   set: { value in
-                                                       angleDraft = value
-                                                       store.angleDraft = value
-                                                   }),
-                                    range: -180...180) {
-                            if let value = angleDraft { store.applyAngle(value) }
+                        stepButton("−", help: "逆时针 0.5°") { nudge(-0.5) }
+                        StraightenSlider(value: angle, range: -45...45) { value in
+                            // 拖动时只在本地转，不每一步都让引擎重算，手感才跟手。
+                            angleDraft = value
+                            store.angleDraft = value
+                        } onEnd: { value in
+                            store.applyAngle(value)
+                            angleDraft = nil
+                            store.angleDraft = nil
+                        } onReset: {
+                            store.applyAngle(0)
                             angleDraft = nil
                             store.angleDraft = nil
                         }
-                        Text(String(format: "%.1f°", angleDraft ?? store.current?.parameters.angle ?? 0))
-                            .font(.caption).monospacedDigit().frame(width: 46, alignment: .trailing)
+                        stepButton("+", help: "顺时针 0.5°") { nudge(0.5) }
                     }
-                    Text("旋转后将自动裁去空白边缘。")
+                    HStack {
+                        Text("−45°").font(.caption2).foregroundStyle(.tertiary)
+                        Spacer()
+                        Text(String(format: "%+.1f°", angle))
+                            .font(.callout.weight(.semibold)).monospacedDigit()
+                            .foregroundStyle(abs(angle) < 0.05 ? Color.secondary : ToolAccent.blue.text)
+                        Spacer()
+                        Text("+45°").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    Text("拖动时画面实时跟着转，松手才精确裁掉空白边；双击滑杆归零。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -195,12 +224,28 @@ struct CropPanel: View {
         .onAppear { store.beginCrop() }
     }
 
+    private func nudge(_ delta: Double) {
+        let value = min(45, max(-45, angle + delta))
+        angleDraft = nil
+        store.applyAngle(value)
+    }
+
     private func textButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon).font(.callout)
                 .frame(maxWidth: .infinity).frame(height: 34)
-                .background(Color(white: 0.24), in: RoundedRectangle(cornerRadius: 7))
+                .background(Color(white: 0.24), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08)))
         }.buttonStyle(.plain).disabled(store.controlsBlocked)
+    }
+
+    private func stepButton(_ title: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.system(size: 13, weight: .semibold))
+                .frame(width: 26, height: 26)
+                .background(Color(white: 0.24), in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.white.opacity(0.08)))
+        }.buttonStyle(.plain).disabled(store.controlsBlocked).help(help)
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -211,44 +256,56 @@ struct CropPanel: View {
     }
 }
 
-/// 自绘的角度滑杆：轨道 + 圆钮，纯净没有系统控件那条多余的横线。
-private struct AngleSlider: View {
-    @Binding var value: Double
+/// 拉直滑杆：中间一条零刻度，从中心向两侧填充；拖到哪算到哪，双击归零。
+private struct StraightenSlider: View {
+    let value: Double
     let range: ClosedRange<Double>
-    var onCommit: () -> Void
+    var onChange: (Double) -> Void
+    var onEnd: (Double) -> Void
+    var onReset: () -> Void
 
     var body: some View {
         GeometryReader { geometry in
             let width = max(1, geometry.size.width)
-            let ratio = min(1, max(0, (value - range.lowerBound) / (range.upperBound - range.lowerBound)))
+            let span = range.upperBound - range.lowerBound
+            let ratio = min(1, max(0, (value - range.lowerBound) / span))
+            let center = width / 2
+            let knobX = width * ratio
             ZStack(alignment: .leading) {
-                Capsule().fill(Color(white: 0.30)).frame(height: 4)
-                Capsule().fill(Color.white.opacity(0.9)).frame(width: width * ratio, height: 4)
-                Circle().fill(.white).frame(width: 14, height: 14)
-                    .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-                    .offset(x: min(width - 14, max(0, width * ratio - 7)))
+                Capsule().fill(Color.white.opacity(0.14)).frame(height: 5)
+                Rectangle().fill(Color.white.opacity(0.35)).frame(width: 1, height: 13).position(x: center, y: 11)
+                Capsule().fill(ToolAccent.blue.fill)
+                    .frame(width: abs(knobX - center), height: 5)
+                    .position(x: (knobX + center) / 2, y: 11)
+                Circle().fill(.white).frame(width: 17, height: 17)
+                    .shadow(color: .black.opacity(0.4), radius: 2.5, y: 1)
+                    .offset(x: min(width - 17, max(0, knobX - 8.5)))
             }
-            .frame(height: 18)
+            .frame(height: 22)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
-                        let ratio = min(1, max(0, drag.location.x / width))
-                        value = range.lowerBound + ratio * (range.upperBound - range.lowerBound)
+                        let next = range.lowerBound + min(1, max(0, drag.location.x / width)) * span
+                        onChange(next)
                     }
-                    .onEnded { _ in onCommit() }
+                    .onEnded { drag in
+                        let next = range.lowerBound + min(1, max(0, drag.location.x / width)) * span
+                        onEnd(next)
+                    }
             )
-        }.frame(height: 18)
+            .onTapGesture(count: 2) { onReset() }
+        }.frame(height: 22)
     }
 }
 
-/// 画布上的裁切框：外面压暗，里面画三分线，四角和四条边都能拖。
+/// 画布上的裁切框：外面压暗，里面画三分线，四角和四边都有手柄。
+/// 这里只管画，拖拽统一由画布处理（见 PhotoCanvas），避免手势互相抢。
 struct CropOverlay: View {
-    @Bindable var store: WorkspaceStore
     let size: CGSize
-
-    private var box: [Double] { store.cropDraft ?? [0, 0, 1, 1] }
-    @State private var activeHandle: Handle?
+    let box: [Double]
+    /// 当前画面（旋转、拉直之后）的像素尺寸，用来显示框出来有多少像素
+    var pixels: CGSize?
 
     var body: some View {
         let w = size.width, h = size.height
@@ -259,7 +316,7 @@ struct CropOverlay: View {
                 path.addRect(CGRect(origin: .zero, size: size))
                 path.addRect(rect)
             }
-            .fill(Color.black.opacity(0.6), style: FillStyle(eoFill: true))
+            .fill(Color.black.opacity(0.62), style: FillStyle(eoFill: true))
 
             Rectangle().path(in: rect).stroke(Color.white.opacity(0.9), lineWidth: 1)
 
@@ -271,12 +328,11 @@ struct CropOverlay: View {
                     path.move(to: CGPoint(x: x, y: rect.minY)); path.addLine(to: CGPoint(x: x, y: rect.maxY))
                     path.move(to: CGPoint(x: rect.minX, y: y)); path.addLine(to: CGPoint(x: rect.maxX, y: y))
                 }
-            }.stroke(Color.white.opacity(0.28), lineWidth: 0.7)
+            }.stroke(Color.white.opacity(0.24), lineWidth: 0.7)
 
-            // 四个角画 L 形托角（Lightroom 那种），其余位置不画东西——
-            // 中间那条短白条以前容易被看成一条虚横线，去掉。
+            // 四角 L 形托角（Lightroom 那种）
             Path { path in
-                let arm = min(22, min(rect.width, rect.height) / 3)
+                let arm = min(26, min(rect.width, rect.height) / 2.6)
                 let corners: [(CGPoint, CGFloat, CGFloat)] = [
                     (CGPoint(x: rect.minX, y: rect.minY), 1, 1),
                     (CGPoint(x: rect.maxX, y: rect.minY), -1, 1),
@@ -289,122 +345,37 @@ struct CropOverlay: View {
                     path.addLine(to: CGPoint(x: point.x, y: point.y + dy * arm))
                 }
             }.stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .square))
+
+            // 四条边的中间手柄
             Path { path in
-                let arm: CGFloat = 9
+                let arm: CGFloat = 10
                 path.move(to: CGPoint(x: rect.midX - arm, y: rect.minY)); path.addLine(to: CGPoint(x: rect.midX + arm, y: rect.minY))
                 path.move(to: CGPoint(x: rect.midX - arm, y: rect.maxY)); path.addLine(to: CGPoint(x: rect.midX + arm, y: rect.maxY))
                 path.move(to: CGPoint(x: rect.minX, y: rect.midY - arm)); path.addLine(to: CGPoint(x: rect.minX, y: rect.midY + arm))
                 path.move(to: CGPoint(x: rect.maxX, y: rect.midY - arm)); path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY + arm))
             }.stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .square))
+
+            if let pixels, box[2] > 0.02, box[3] > 0.02 {
+                Text("\(Int((pixels.width * box[2]).rounded())) × \(Int((pixels.height * box[3]).rounded()))")
+                    .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(.black.opacity(0.62), in: Capsule())
+                    .fixedSize()
+                    .position(x: rect.midX, y: max(12, rect.minY - 14))
+            }
         }
         .frame(width: w, height: h)
-        .contentShape(Rectangle())
-        .gesture(drag())
-    }
-
-    private enum Handle {
-        case draw, inside, topLeft, topRight, bottomLeft, bottomRight, top, bottom, left, right
-
-        var corner: Bool {
-            switch self { case .topLeft, .topRight, .bottomLeft, .bottomRight: return true; default: return false }
-        }
-
-        func point(in rect: CGRect) -> CGPoint {
-            switch self {
-            case .topLeft: return CGPoint(x: rect.minX, y: rect.minY)
-            case .topRight: return CGPoint(x: rect.maxX, y: rect.minY)
-            case .bottomLeft: return CGPoint(x: rect.minX, y: rect.maxY)
-            case .bottomRight: return CGPoint(x: rect.maxX, y: rect.maxY)
-            case .top: return CGPoint(x: rect.midX, y: rect.minY)
-            case .bottom: return CGPoint(x: rect.midX, y: rect.maxY)
-            case .left: return CGPoint(x: rect.minX, y: rect.midY)
-            case .right: return CGPoint(x: rect.maxX, y: rect.midY)
-            case .inside, .draw: return CGPoint(x: rect.midX, y: rect.midY)
-            }
-        }
-    }
-
-    private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
-
-    private var handles: [Handle] { [.topLeft, .topRight, .bottomLeft, .bottomRight, .top, .bottom, .left, .right] }
-
-    private func drag() -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                guard size.width > 1, size.height > 1 else { return }
-                var current = store.cropDraft ?? [0, 0, 1, 1]
-                let dx = Double(value.translation.width / size.width)
-                let dy = Double(value.translation.height / size.height)
-                let start = store.cropAnchor ?? current
-                if store.cropAnchor == nil {
-                    store.cropAnchor = current
-                    let rect = CGRect(x: start[0] * size.width, y: start[1] * size.height,
-                                      width: start[2] * size.width, height: start[3] * size.height)
-                    activeHandle = handles.min(by: { distance($0.point(in: rect), value.startLocation) < distance($1.point(in: rect), value.startLocation) })
-                    if let candidate = activeHandle, distance(candidate.point(in: rect), value.startLocation) > 22 {
-                        let point = value.startLocation
-                        if abs(point.x - rect.minX) < 16 && (rect.minY...rect.maxY).contains(point.y) { activeHandle = .left }
-                        else if abs(point.x - rect.maxX) < 16 && (rect.minY...rect.maxY).contains(point.y) { activeHandle = .right }
-                        else if abs(point.y - rect.minY) < 16 && (rect.minX...rect.maxX).contains(point.x) { activeHandle = .top }
-                        else if abs(point.y - rect.maxY) < 16 && (rect.minX...rect.maxX).contains(point.x) { activeHandle = .bottom }
-                        else {
-                            let full = start[0] < 0.001 && start[1] < 0.001 && start[2] > 0.999 && start[3] > 0.999
-                            activeHandle = store.cropAspect == "free" && (full || !rect.contains(point)) ? .draw : .inside
-                        }
-                    }
-                }
-                let handle = activeHandle ?? .inside
-                let minSize = 0.005
-                switch handle {
-                case .draw:
-                    if let drawn = CropGeometry.drawn(from: value.startLocation, to: value.location, size: size) {
-                        store.cropDraft = drawn
-                    }
-                    return
-                case .inside:
-                    let nx = min(max(0, start[0] + dx), 1 - start[2])
-                    let ny = min(max(0, start[1] + dy), 1 - start[3])
-                    current[0] = nx; current[1] = ny
-                case .topLeft:
-                    let nx = min(max(0, start[0] + dx), start[0] + start[2] - minSize)
-                    let ny = min(max(0, start[1] + dy), start[1] + start[3] - minSize)
-                    current[2] = start[2] + (start[0] - nx); current[3] = start[3] + (start[1] - ny)
-                    current[0] = nx; current[1] = ny
-                case .topRight:
-                    let nr = max(start[0] + minSize, start[0] + start[2] + dx)
-                    let ny = min(max(0, start[1] + dy), start[1] + start[3] - minSize)
-                    current[2] = min(1, nr) - start[0]; current[3] = start[3] + (start[1] - ny); current[1] = ny
-                case .bottomLeft:
-                    let nx = min(max(0, start[0] + dx), start[0] + start[2] - minSize)
-                    let nb = min(1, start[1] + start[3] + dy)
-                    current[2] = start[2] + (start[0] - nx); current[3] = nb - start[1]; current[0] = nx
-                case .bottomRight:
-                    current[2] = min(1, start[0] + start[2] + dx) - start[0]
-                    current[3] = min(1, start[1] + start[3] + dy) - start[1]
-                case .top:
-                    let ny = min(max(0, start[1] + dy), start[1] + start[3] - minSize)
-                    current[3] = start[3] + (start[1] - ny); current[1] = ny
-                case .bottom:
-                    current[3] = min(1, start[1] + start[3] + dy) - start[1]
-                case .left:
-                    let nx = min(max(0, start[0] + dx), start[0] + start[2] - minSize)
-                    current[2] = start[2] + (start[0] - nx); current[0] = nx
-                case .right:
-                    current[2] = min(1, start[0] + start[2] + dx) - start[0]
-                }
-                current[2] = max(minSize, min(current[2], 1 - current[0]))
-                current[3] = max(minSize, min(current[3], 1 - current[1]))
-                if store.cropAspect != "free", handle != .inside {
-                    current = CropGeometry.locked(current: current, start: start, handle: String(describing: handle))
-                }
-                store.cropDraft = current
-            }
-            .onEnded { _ in store.cropAnchor = nil; activeHandle = nil }
+        .allowsHitTesting(false)
     }
 }
 
-/// Keep the selected crop ratio while resizing; coordinates are normalized to the image.
+/// 裁切拖拽的几何计算：命中哪个手柄、拖到什么位置。都是纯函数，方便测。
 enum CropGeometry {
+    enum Handle: String {
+        case draw, inside, topLeft, topRight, bottomLeft, bottomRight, top, bottom, left, right
+    }
+
     static func drawn(from start: CGPoint, to end: CGPoint, size: CGSize) -> [Double]? {
         guard size.width > 0, size.height > 0 else { return nil }
         let x0 = min(1, max(0, Double(start.x / size.width)))
@@ -414,6 +385,88 @@ enum CropGeometry {
         let width = abs(x1 - x0), height = abs(y1 - y0)
         guard width >= 0.005, height >= 0.005 else { return nil }
         return [min(x0, x1), min(y0, y1), width, height]
+    }
+
+    /// 按下时落在哪个手柄上：四角 26 pt 以内算角，边 18 pt 以内算边，框内是移动，框外是重新画。
+    /// 框正好是整张画面时，框内拖动也当成重新画——否则一进去怎么拖都没反应。
+    static func handle(at point: CGPoint, box: [Double], size: CGSize, freeform: Bool) -> Handle {
+        let rect = CGRect(x: box[0] * size.width, y: box[1] * size.height,
+                          width: box[2] * size.width, height: box[3] * size.height)
+        let full = box[0] < 0.002 && box[1] < 0.002 && box[2] > 0.998 && box[3] > 0.998
+        let corners: [(Handle, CGPoint)] = [
+            (.topLeft, CGPoint(x: rect.minX, y: rect.minY)),
+            (.topRight, CGPoint(x: rect.maxX, y: rect.minY)),
+            (.bottomLeft, CGPoint(x: rect.minX, y: rect.maxY)),
+            (.bottomRight, CGPoint(x: rect.maxX, y: rect.maxY)),
+        ]
+        if !full, let corner = corners.min(by: {
+            hypot($0.1.x - point.x, $0.1.y - point.y) < hypot($1.1.x - point.x, $1.1.y - point.y)
+        }), hypot(corner.1.x - point.x, corner.1.y - point.y) <= 26 {
+            return corner.0
+        }
+        if rect.contains(point) {
+            guard !full else { return .draw }
+            if abs(point.x - rect.minX) <= 18 { return .left }
+            if abs(point.x - rect.maxX) <= 18 { return .right }
+            if abs(point.y - rect.minY) <= 18 { return .top }
+            if abs(point.y - rect.maxY) <= 18 { return .bottom }
+            return .inside
+        }
+        // 框外拖动一律重新画；锁了比例时按原来的比例画，不会把比例弄丢。
+        return .draw
+    }
+
+    /// 一次拖动的结果：起手框 + 起止点 → 新框。
+    static func dragged(start: [Double], handle: Handle, from: CGPoint, to: CGPoint,
+                        size: CGSize, freeform: Bool) -> [Double] {
+        guard size.width > 1, size.height > 1 else { return start }
+        if handle == .draw {
+            guard let drawn = drawn(from: from, to: to, size: size) else { return start }
+            return freeform ? drawn : conform(drawn, ratio: start[2] / start[3])
+        }
+        let dx = Double((to.x - from.x) / size.width)
+        let dy = Double((to.y - from.y) / size.height)
+        let minSize = 0.01
+        var current = start
+        switch handle {
+        case .inside:
+            current[0] = min(max(0, start[0] + dx), 1 - start[2])
+            current[1] = min(max(0, start[1] + dy), 1 - start[3])
+        case .topLeft:
+            let nx = min(max(0, start[0] + dx), start[0] + start[2] - minSize)
+            let ny = min(max(0, start[1] + dy), start[1] + start[3] - minSize)
+            current[2] = start[2] + (start[0] - nx); current[3] = start[3] + (start[1] - ny)
+            current[0] = nx; current[1] = ny
+        case .topRight:
+            let nr = max(start[0] + minSize, start[0] + start[2] + dx)
+            let ny = min(max(0, start[1] + dy), start[1] + start[3] - minSize)
+            current[2] = min(1, nr) - start[0]; current[3] = start[3] + (start[1] - ny); current[1] = ny
+        case .bottomLeft:
+            let nx = min(max(0, start[0] + dx), start[0] + start[2] - minSize)
+            let nb = min(1, start[1] + start[3] + dy)
+            current[2] = start[2] + (start[0] - nx); current[3] = nb - start[1]; current[0] = nx
+        case .bottomRight:
+            current[2] = min(1, start[0] + start[2] + dx) - start[0]
+            current[3] = min(1, start[1] + start[3] + dy) - start[1]
+        case .top:
+            let ny = min(max(0, start[1] + dy), start[1] + start[3] - minSize)
+            current[3] = start[3] + (start[1] - ny); current[1] = ny
+        case .bottom:
+            current[3] = min(1, start[1] + start[3] + dy) - start[1]
+        case .left:
+            let nx = min(max(0, start[0] + dx), start[0] + start[2] - minSize)
+            current[2] = start[2] + (start[0] - nx); current[0] = nx
+        case .right:
+            current[2] = min(1, start[0] + start[2] + dx) - start[0]
+        case .draw:
+            return start
+        }
+        current[2] = max(minSize, min(current[2], 1 - current[0]))
+        current[3] = max(minSize, min(current[3], 1 - current[1]))
+        if !freeform, handle != .inside, handle != .draw {
+            current = locked(current: current, start: start, handle: handle.rawValue)
+        }
+        return current
     }
 
     static func locked(current: [Double], start: [Double], handle: String) -> [Double] {
@@ -433,5 +486,44 @@ enum CropGeometry {
         let x = vertical ? start[0] + (start[2] - width) / 2 : (leftSide ? right - width : start[0])
         let y = horizontal ? start[1] + (start[3] - height) / 2 : (topSide ? bottom - height : start[1])
         return [x, y, width, height]
+    }
+
+    /// 换比例时在现有框里居中放一个新框，尽量不缩回整张。
+    static func centered(_ size: [Double], around center: [Double]) -> [Double] {
+        let w = min(1, max(0.01, size[0])), h = min(1, max(0.01, size[1]))
+        let x = min(1 - w, max(0, center[0] - w / 2))
+        let y = min(1 - h, max(0, center[1] - h / 2))
+        return [x, y, w, h]
+    }
+
+    /// 按固定比例改一个框的形状（锁比例时重新画框用），保持原来的中心。
+    static func conform(_ box: [Double], ratio: Double) -> [Double] {
+        guard ratio > 0.0001 else { return box }
+        let cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2
+        var w = box[2], h = w / ratio
+        if h > 1 { h = 1; w = h * ratio }
+        if w > 1 { w = 1; h = w / ratio }
+        return [min(1 - w, max(0, cx - w / 2)), min(1 - h, max(0, cy - h / 2)), w, h]
+    }
+
+    /// 转 90°：框跟着画面一起转，转回来的区域一样。
+    static func rotated(_ box: [Double], quarter: Int) -> [Double] {
+        var value = box
+        let steps = ((quarter % 4) + 4) % 4
+        for _ in 0..<steps {
+            value = [1 - (value[1] + value[3]), value[0], value[3], value[2]]
+        }
+        return value
+    }
+
+    /// 镜像：框跟着一起翻。
+    static func flipped(_ box: [Double], axis: String) -> [Double] {
+        if axis == "h" { return [1 - (box[0] + box[2]), box[1], box[2], box[3]] }
+        return [box[0], 1 - (box[1] + box[3]), box[2], box[3]]
+    }
+
+    /// 0.5° 以内吸附到 0，避免「看起来正了其实还差 0.2°」。
+    static func snappedAngle(_ angle: Double) -> Double {
+        abs(angle) < 0.3 ? 0 : (angle * 10).rounded() / 10
     }
 }

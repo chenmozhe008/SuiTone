@@ -10,20 +10,18 @@ from PIL import Image, ImageOps
 def _largest_inside(width, height, angle):
     """旋转后能放进去的最大矩形，避免四个角露出空白。
 
+    保持原画面的宽高比：界面上拖动角度时就是按「放大到刚好盖住、保持比例」显示的，
+    这里用同一个缩放系数，松手之后的成片才和拖动时看到的一样，不会突然变形。
     任意角度都适用：先把角度折到 0–90°，公式本身对大于 90° 的旋转同样成立。
     """
     angle = math.radians(abs(angle) % 180)
     sin_a, cos_a = abs(math.sin(angle)), abs(math.cos(angle))
-    wider = width >= height
-    long_side, short_side = (width, height) if wider else (height, width)
-    if short_side <= 2 * sin_a * cos_a * long_side or abs(sin_a - cos_a) < 1e-10:
-        half = 0.5 * short_side
-        w, h = (half / sin_a, half / cos_a) if wider else (half / cos_a, half / sin_a)
-    else:
-        cos_2a = cos_a * cos_a - sin_a * sin_a
-        w = (width * cos_a - height * sin_a) / cos_2a
-        h = (height * cos_a - width * sin_a) / cos_2a
-    return max(1, int(w)), max(1, int(h))
+    ratio = width / height
+    scale = cos_a + sin_a * max(ratio, 1 / ratio)
+    if scale <= 1e-6:
+        return width, height
+    # 向下取整再留 1 像素余量：旋转后的画布中心可能差半个像素，取整偏大就会切出黑角。
+    return max(1, int(width / scale) - 1), max(1, int(height / scale) - 1)
 
 
 def straighten(image, angle):

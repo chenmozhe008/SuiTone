@@ -23,6 +23,16 @@ enum PhotoSize {
         guard let image = ImageCache.load(path), image.size.height > 0, image.size.width > 0 else { return nil }
         return image.size.width / image.size.height
     }
+
+    /// 像素尺寸：裁切框上标「框出来有多少像素」用。
+    static func pixels(_ path: String) -> CGSize? {
+        guard let image = ImageCache.load(path) else { return nil }
+        if let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first {
+            return CGSize(width: bitmap.pixelsWide, height: bitmap.pixelsHigh)
+        }
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
+        return image.size
+    }
 }
 
 struct LocalPhoto: View {

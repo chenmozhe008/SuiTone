@@ -138,9 +138,8 @@ final class WorkspaceStore {
     var libraryDirectory: URL?
     /// 拖动自由旋转时的临时角度（度）：画面先在本地实时跟着转，松手才让引擎精确渲染
     var angleDraft: Double?
-    /// 裁切页正在框的范围（0–1 比例）和拖拽起点；裁切比例选的是哪一档
+    /// 裁切页正在框的范围（0–1 比例）；裁切比例选的是哪一档
     var cropDraft: [Double]?
-    var cropAnchor: [Double]?
     var cropAspect = "original"
     var providers: [AssistantProvider] = []
     var assistantProvider = UserDefaults.standard.string(forKey: "assistantProvider") ?? "codex" {
@@ -291,6 +290,12 @@ final class WorkspaceStore {
             if let point = (options["selectionPoint"] as? String)?.split(separator: ",").compactMap({ Double($0) }), point.count == 2 {
                 try? await Task.sleep(for: .milliseconds(500))
                 repairTool = "object"; repairPoint = point; commitSelectionPart()
+            }
+            // 验收截图用：直接给裁切页一个框。`-cropBox "0.15,0.1,0.6,0.7"`
+            if let box = (options["cropBox"] as? String)?.split(separator: ",").compactMap({ Double($0) }), box.count == 4 {
+                try? await Task.sleep(for: .milliseconds(800))
+                inspectorTab = "crop"
+                cropDraft = box
             }
             if let region = options["localRegion"] as? String {
                 loadAnalysis(); try? await Task.sleep(for: .seconds(2)); selectLocalRegion(region)

@@ -1,9 +1,14 @@
+import AppKit
 import SwiftUI
 
 struct PhotoCanvas: View {
     @Bindable var store: WorkspaceStore
     @State private var drawing = false
     @State private var drawingChatSelection = false
+    /// 裁切拖动：按下时抓到的框和手柄，整段拖动沿用，不跟着重算
+    @State private var cropStart: [Double]?
+    @State private var cropHandle: CropGeometry.Handle?
+    @State private var cropCursor: CropCursor = .arrow
     var body: some View {
         GeometryReader {geometry in
             if let photo=store.current {
@@ -62,13 +67,24 @@ struct PhotoCanvas: View {
                             .position(x:w*(box[0]+box[2])/2,y:h*(box[1]+box[3])/2)
                     }
                     // 裁切页：框出要留下的范围，外面压暗。
-                    if store.inspectorTab == "crop", store.cropDraft != nil {
-                        CropOverlay(store: store, size: CGSize(width: w, height: h))
+                    if store.inspectorTab == "crop" {
+                        CropOverlay(size: CGSize(width: w, height: h),
+                                    box: store.cropDraft ?? [0, 0, 1, 1],
+                                    pixels: PhotoSize.pixels(displayPath(photo)))
                     }
                 }
                 .frame(width:w,height:h)
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance:0).onEnded {value in
+                    if store.inspectorTab == "crop" {
+                        store.cropDraft = cropStart.flatMap { start in
+                            cropHandle.map { CropGeometry.dragged(start: start, handle: $0, from: value.startLocation,
+                                                                  to: value.location, size: CGSize(width: w, height: h),
+                                                                  freeform: store.cropAspect == "free") }
+                        } ?? store.cropDraft
+                        cropStart = nil; cropHandle = nil
+                        return
+                    }
                     if drawingChatSelection { drawingChatSelection = false; return }
                     let tap=hypot(value.translation.width,value.translation.height)<4
                     let point=[Double(min(1,max(0,value.location.x/w))),Double(min(1,max(0,value.location.y/h)))]
@@ -93,6 +109,22 @@ struct PhotoCanvas: View {
                     guard store.inspectorTab == "adjust", !splitActive, tap else {return}
                     store.pickRegion(x:point[0],y:point[1])
                 }.onChanged {value in
+                    // 裁切页：所有拖动都归裁切框，画框 / 移动 / 拉手柄都在这里算。
+                    if store.inspectorTab == "crop" {
+                        let size = CGSize(width: w, height: h)
+                        guard size.width > 1, size.height > 1 else { return }
+                        let box = store.cropDraft ?? [0, 0, 1, 1]
+                        if cropStart == nil {
+                            cropStart = box
+                            cropHandle = CropGeometry.handle(at: value.startLocation, box: box, size: size,
+                                                             freeform: store.cropAspect == "free")
+                        }
+                        guard let start = cropStart, let handle = cropHandle else { return }
+                        store.cropDraft = CropGeometry.dragged(start: start, handle: handle, from: value.startLocation,
+                                                               to: value.location, size: size,
+                                                               freeform: store.cropAspect == "free")
+                        return
+                    }
                     if splitActive {store.splitPosition=min(1,max(0,value.location.x/w));return}
                     if store.inspectorTab == "chat", !store.repairEnabled, !store.controlsBlocked, !store.chatting {
                         guard hypot(value.translation.width,value.translation.height)>=4 || drawingChatSelection else { return }
@@ -123,12 +155,41 @@ struct PhotoCanvas: View {
                         if store.usesSelectionParts { store.selectionDraftBox=frame } else { store.selectionBox=frame }
                     default: break
                     }
-                }, including: store.inspectorTab == "crop" ? .subviews : .all)
+                })
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
-                .overlay(alignment:.top) {
-                    if store.repairEnabled && store.usesSelectionParts && store.repairDraft == nil { SelectionToolbar(store:store).padding(.top,6) }
+                .onContinuousHover { phase in
+                    // 裁切页告诉人「这里能拖什么」：框内是移动，角上是拉大小，框外是重新画。
+                    guard store.inspectorTab == "crop" else {
+                        if cropCursor != .arrow { cropCursor = .arrow; NSCursor.arrow.set() }
+                        return
+                    }
+                    guard case .active(let point) = phase else {
+                        if cropCursor != .arrow { cropCursor = .arrow; NSCursor.arrow.set() }
+                        return
+                    }
+                    let box = store.cropDraft ?? [0, 0, 1, 1]
+                    let next: CropCursor
+                    switch CropGeometry.handle(at: point, box: box, size: CGSize(width: w, height: h),
+                                               freeform: store.cropAspect == "free") {
+                    case .inside: next = .openHand
+                    case .left, .right: next = .resizeHorizontal
+                    case .top, .bottom: next = .resizeVertical
+                    default: next = .crosshair
+                    }
+                    if next != cropCursor { cropCursor = next; next.cursor.set() }
                 }
 
+                .overlay(alignment:.bottom) {
+                    // 拖拉直滑杆时在画面上直接给角度，眼睛不用在画面和右栏之间来回找。
+                    if store.inspectorTab == "crop", let angle = store.angleDraft {
+                        Text(String(format: "%+.1f°", angle))
+                            .font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(.black.opacity(0.55), in: Capsule())
+                            .padding(.bottom, 12)
+                    }
+                }
                 .overlay(alignment:.bottomLeading) {
                     if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}
                     else if store.showOriginal {canvasLabel("原图").padding(10)}
@@ -138,6 +199,9 @@ struct PhotoCanvas: View {
                     }
                     else if !store.overlay.isEmpty && !splitActive {
                         canvasLabel(store.overlay.hasPrefix("selection-") ? "选区" : RegionNames.title(store.overlay)+"选区").padding(10)
+                    }
+                    else if store.repairEnabled && store.usesSelectionParts && store.repairDraft == nil {
+                        canvasLabel(selectionHint).padding(10)
                     }
                 }
             } else {
@@ -208,14 +272,29 @@ struct PhotoCanvas: View {
     }
 
     /// 修复、看选区或整张看原图时不叠加滑动对比，避免两种对比同时出现。
+    /// 裁切页也不叠加：对比线会挡在裁切框上。
     private var splitActive: Bool {
-        store.splitCompare && !store.showOriginal && !store.repairEnabled && store.repairDraft == nil && store.overlay.isEmpty
+        store.inspectorTab != "crop"
+            && store.splitCompare && !store.showOriginal && !store.repairEnabled && store.repairDraft == nil && store.overlay.isEmpty
             && !(store.inspectorTab == "aiedit" && !store.selectionParts.isEmpty)
     }
 
     private func canvasLabel(_ text:String, color: Color = .white)->some View {
         Text(text).font(.caption.weight(.medium)).foregroundStyle(color).padding(.horizontal,9).padding(.vertical,5)
             .background(.black.opacity(0.45),in:Capsule()).padding(10)
+    }
+
+    /// 画选区时左下角的一行提示，代替以前压在照片上方的工具条。
+    private var selectionHint: String {
+        let tool: String
+        switch store.repairTool {
+        case "brush": tool = "画笔"
+        case "lasso": tool = "套索"
+        case "object": tool = "点选"
+        default: tool = "方框"
+        }
+        let state = store.selectionParts.isEmpty ? "在照片上圈出要处理的部分" : "已画 \(store.selectionParts.count) 笔"
+        return tool + "：" + state + (store.selectionSubtract ? "，现在是减去" : "")
     }
 
     private func displayPath(_ photo:PhotoRecord)->String {
@@ -229,5 +308,20 @@ struct PhotoCanvas: View {
         if store.overlay.hasPrefix("selection-"), let path=store.manualOverlay {return path}
         if let overlay=store.analysis?.overlays[store.overlay] {return overlay}
         return photo.previewPath ?? photo.imported.original
+    }
+}
+
+/// 裁切页的鼠标形状，让人一眼看出这里是移动、拉边还是重新框。
+enum CropCursor {
+    case arrow, crosshair, openHand, resizeHorizontal, resizeVertical
+
+    var cursor: NSCursor {
+        switch self {
+        case .arrow: return .arrow
+        case .crosshair: return .crosshair
+        case .openHand: return .openHand
+        case .resizeHorizontal: return .resizeLeftRight
+        case .resizeVertical: return .resizeUpDown
+        }
     }
 }

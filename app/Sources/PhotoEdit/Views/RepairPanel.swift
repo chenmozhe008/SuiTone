@@ -14,7 +14,7 @@ struct RepairPanel: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 18) {
                 Text("移除杂物，只改当前照片。").font(.callout).foregroundStyle(.secondary)
                 if store.repairDraft != nil {
                     Text("查看修补后的细节，满意后保留。").font(.callout).foregroundStyle(.secondary)
@@ -28,8 +28,7 @@ struct RepairPanel: View {
                         Button("保留修复") { store.applyRepairPreview() }.buttonStyle(.borderedProminent)
                     }
                 } else {
-                    Text("使用画面上方的工具选择要移除的内容。选区略大于对象时效果通常更好。")
-                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    SelectionToolsCard(store: store)
                     Button {
                         store.remove()
                     } label: {
