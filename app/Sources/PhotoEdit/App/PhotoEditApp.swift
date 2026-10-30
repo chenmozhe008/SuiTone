@@ -32,6 +32,9 @@ struct PhotoEditApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unifiedCompact)
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("设置…") { store.settingsTab = "chat" }.keyboardShortcut(",")
+            }
             CommandGroup(replacing: .newItem) {
                 Button("导入照片…") { store.chooseImport() }.keyboardShortcut("o")
                 Button("添加参考图…") { store.chooseImport(reference: true) }.keyboardShortcut("r", modifiers: [.command,.shift])

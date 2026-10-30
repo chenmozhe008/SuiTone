@@ -473,10 +473,10 @@ extension WorkspaceStore {
               let message = chatMessages.first(where: { $0.id == messageID }), let card = message.generation,
               let photo = photos.first(where: { $0.id == card.photoID }) else { return }
         guard let service = imageServices.first(where: { $0.id == imageService }), imageServiceReady else {
-            showingImageSettings = true; return
+            settingsTab = "image"; return
         }
         let key = service.id == "mock" ? "" : (Keychain.read("image." + service.id) ?? "")
-        guard service.id == "mock" || !key.isEmpty else { showingImageSettings = true; return }
+        guard service.id == "mock" || !key.isEmpty else { settingsTab = "image"; return }
         let model = imageModels[service.id] ?? service.defaultModel
         updateGeneration(messageID) { $0.state = "running"; $0.error = nil }
         status = "正在用\(service.title)生成…"

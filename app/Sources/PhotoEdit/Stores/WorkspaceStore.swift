@@ -48,7 +48,8 @@ final class WorkspaceStore {
     var imageModels: [String: String] = (UserDefaults.standard.dictionary(forKey: "imageModels") as? [String: String]) ?? [:] {
         didSet { UserDefaults.standard.set(imageModels, forKey: "imageModels") }
     }
-    var showingImageSettings = false
+    /// 设置窗口：nil 关闭，"chat" 对话和看图，"image" AI 改图（所有入口都打开这一个窗口）
+    var settingsTab: String?
     /// 看图测试结果，键为「服务商|模型」；没测过的不在里面（界面写「看图未验证」）
     var visionChecks: [String: Bool] = (UserDefaults.standard.dictionary(forKey: "visionChecks") as? [String: Bool]) ?? [:] {
         didSet { UserDefaults.standard.set(visionChecks, forKey: "visionChecks") }
@@ -223,6 +224,7 @@ final class WorkspaceStore {
                 selectedIDs = Set(photos.prefix(count).map(\.id)); activate(photos.first?.id)
             }
             if let tab = options["openTab"] as? String { inspectorTab = tab }
+            if let settings = options["openSettings"] as? String { settingsTab = settings }
             if let point = (options["selectionPoint"] as? String)?.split(separator: ",").compactMap({ Double($0) }), point.count == 2 {
                 try? await Task.sleep(for: .milliseconds(500))
                 repairTool = "object"; repairPoint = point; commitSelectionPart()

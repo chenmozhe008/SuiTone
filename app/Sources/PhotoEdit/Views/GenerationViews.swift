@@ -26,11 +26,11 @@ struct GenerationCardView: View {
                         Button("生成") { store.startGeneration(messageID) }.buttonStyle(.borderedProminent)
                             .disabled(store.generationTask != nil || store.controlsBlocked)
                     } else {
-                        Button("设置出图服务…") { store.showingImageSettings = true }.buttonStyle(.borderedProminent)
+                        Button("设置出图服务…") { store.settingsTab = "image" }.buttonStyle(.borderedProminent)
                     }
                     Button("不用了") { store.dismissGeneration(messageID) }
                     Spacer()
-                    if store.imageServiceReady { Button("更换服务…") { store.showingImageSettings = true }.buttonStyle(.link) }
+                    if store.imageServiceReady { Button("更换服务…") { store.settingsTab = "image" }.buttonStyle(.link) }
                 }
             case "running":
                 HStack { ProgressView().controlSize(.small); Text("正在生成，通常需要十几秒到一分钟").font(.callout); Spacer()
@@ -72,6 +72,7 @@ struct GenerationCardView: View {
 /// 出图服务设置：选服务、填密钥（存钥匙串）、模型名。
 struct ImageServiceSheet: View {
     @Bindable var store: WorkspaceStore
+    var done: () -> Void
     @State private var selected = ""
     @State private var key = ""
     @State private var model = ""
@@ -81,11 +82,6 @@ struct ImageServiceSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("出图服务").font(.title2.weight(.semibold))
-                Text("需要生成新图时（换背景、添加或替换东西、去掉大物体），会把照片发给这里选的服务。每次发送前都会在对话里先请你确认。")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }.padding(24)
             Form {
                 Picker("服务", selection: $selected) {
                     ForEach(store.imageServices) { Text($0.title).tag($0.id) }
@@ -94,21 +90,21 @@ struct ImageServiceSheet: View {
                     SecureField("API 密钥", text: $key, prompt: Text(savedKey ? "已保存，留空则不修改" : "粘贴密钥"))
                     TextField("模型", text: $model, prompt: Text(service?.defaultModel ?? ""))
                 }
-            }.formStyle(.grouped).scrollDisabled(true).frame(height: selected == "mock" ? 110 : 190)
+            }.formStyle(.grouped).scrollDisabled(true).frame(height: selected == "mock" ? 80 : 160)
             Text("密钥保存在本机钥匙串。出图按服务商标准计费。保存时不会调用服务，出图能力要等第一次真正生成后才算验证过。")
                 .font(.callout).foregroundStyle(.secondary).padding(.horizontal, 24)
             HStack {
                 Spacer()
-                Button("取消") { store.showingImageSettings = false }.keyboardShortcut(.cancelAction)
+                Button("取消", action: done).keyboardShortcut(.cancelAction)
                 Button("保存") {
                     let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
                     store.saveImageService(selected, key: trimmed.isEmpty ? nil : trimmed,
                                            model: model.trimmingCharacters(in: .whitespaces).isEmpty ? (service?.defaultModel ?? "") : model)
-                    store.showingImageSettings = false
+                    done()
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
                     .disabled(selected.isEmpty || (selected != "mock" && key.isEmpty && !savedKey))
             }.padding(24)
-        }.frame(width: 540)
+        }
         .onAppear {
             selected = store.imageServices.contains { $0.id == store.imageService } ? store.imageService : (store.imageServices.first?.id ?? "")
             model = store.imageModels[selected] ?? ""

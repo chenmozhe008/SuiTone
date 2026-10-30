@@ -29,7 +29,10 @@ struct ContentView: View {
         .alert("操作未完成", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {
             Button("好") { store.error = nil }
         } message: { Text(store.error ?? "") }
-        .sheet(isPresented: $store.showExportOptions) { ExportSheet(store: store) }
+        .sheet(isPresented: $store.showExportOptions) { ExportSheet(store: store).preferredColorScheme(.dark) }
+        .sheet(isPresented: Binding(get: { store.settingsTab != nil }, set: { if !$0 { store.settingsTab = nil } })) {
+            SettingsSheet(store: store)
+        }
         .onChange(of: store.overlay) { _, value in if !value.isEmpty && store.analysis == nil { store.loadAnalysis() } }
     }
 }

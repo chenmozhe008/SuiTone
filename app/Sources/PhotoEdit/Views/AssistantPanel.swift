@@ -3,7 +3,6 @@ import SwiftUI
 struct AssistantPanel: View {
     @Bindable var store: WorkspaceStore
     @State private var showingVisionConsent = false
-    @State private var showingAPISettings = false
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -19,6 +18,8 @@ struct AssistantPanel: View {
                         ForEach(store.providers.filter(\.isAPI)) { provider in Text(provider.title).tag(provider.id) }
                     }
                 }.labelsHidden().frame(width: 150).disabled(store.chatting)
+                Button { store.settingsTab = "chat" } label: { Image(systemName: "gearshape") }
+                    .buttonStyle(.borderless).help("设置 AI 服务（⌘,）")
             }.padding(16)
             if !(store.currentProvider?.available ?? false) {
                 Text("此引擎暂不可用，请换一个").font(.callout).foregroundStyle(.secondary)
@@ -32,7 +33,7 @@ struct AssistantPanel: View {
                         Text("填写密钥并选择模型后才能对话").font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Button("去设置") { showingAPISettings = true }.buttonStyle(.borderedProminent).disabled(store.chatting)
+                    Button("去设置") { store.settingsTab = "chat" }.buttonStyle(.borderedProminent).disabled(store.chatting)
                 }.padding(14)
                     .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.yellow.opacity(0.45), lineWidth: 1))
@@ -48,7 +49,7 @@ struct AssistantPanel: View {
                     }(), systemImage: "key")
                         .font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
-                    Button("设置…") { showingAPISettings = true }.disabled(store.chatting)
+                    Button("设置…") { store.settingsTab = "chat" }.disabled(store.chatting)
                 }.padding(.horizontal, 16).padding(.bottom, 12)
             }
             if (store.currentProvider?.available ?? false) && !store.visionEnabled {
@@ -205,7 +206,7 @@ struct AssistantPanel: View {
         }
         .onChange(of: store.assistantProvider) { _, provider in
             store.loadAPIKey()
-            if store.usesAPI && !store.assistantReady { showingAPISettings = true }
+            if store.usesAPI && !store.assistantReady { store.settingsTab = "chat" }
         }
         .task(id: "\(store.current?.assetID ?? "")|\(store.assistantProvider)|\(store.visionEnabled)|\(store.assistantReady)|\(store.apiCredentials?.model ?? "")") {
             if let assetID = store.current?.assetID { await store.loadSuggestions(for: assetID) }
@@ -217,14 +218,9 @@ struct AssistantPanel: View {
                 showingVisionConsent = false
             } cancel: {
                 showingVisionConsent = false
-            }
+            }.preferredColorScheme(.dark)
         }
-        .sheet(isPresented: $store.showingImageSettings) { ImageServiceSheet(store: store) }
-        .sheet(isPresented: $showingAPISettings) {
-            if let provider = store.currentProvider {
-                APISettingsSheet(store: store, provider: provider) { showingAPISettings = false }
-            }
-        }
+
     }
 
     private var canSend: Bool {
@@ -272,7 +268,7 @@ private struct VisionConsentSheet: View {
     }
 }
 
-private struct APISettingsSheet: View {
+struct APISettingsSheet: View {
     @Bindable var store: WorkspaceStore
     var provider: AssistantProvider
     var done: () -> Void
@@ -317,11 +313,9 @@ private struct APISettingsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("使用 \(provider.title) API").font(.title2.weight(.semibold))
-                Text("连接你自己的 API 账号。密钥保存在本机钥匙串，不写入项目文件或聊天记录。")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.top, 24)
+            Text("用你自己的 \(provider.title) API 账号。密钥保存在本机钥匙串，不写入项目文件或聊天记录。")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.top, 8)
             Form {
                 Section {
                     if provider.needsBaseUrl {
@@ -386,7 +380,7 @@ private struct APISettingsSheet: View {
                     key = ""; done()
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(!canSave)
             }.padding(.horizontal, 24).padding(.bottom, 20)
-        }.frame(width: 580)
+        }
         .onAppear {
             model = store.apiModels[provider.id] ?? provider.models.first ?? ""
             baseURL = store.customBaseURL
