@@ -279,14 +279,16 @@ final class WorkspaceStore {
             if let count = Int(options["selectCount"] as? String ?? ""), count > 1 {
                 selectedIDs = Set(photos.prefix(count).map(\.id)); activate(photos.first?.id)
             }
-            if let tab = options["openTab"] as? String { inspectorTab = tab }
-            if let settings = options["openSettings"] as? String { settingsTab = settings }
             // 验收 AI 改图面板用：直接带上参考图，省得每次手点。`-aiRefs "a.jpg|b.jpg"`
             if let refs = options["aiRefs"] as? String {
                 aiEditReferences = refs.split(separator: "|").map(String.init).filter { !$0.isEmpty }
             }
+            // 这几个开关要赶在切页面前设好：面板是切页那一瞬间 onAppear 的，
+            // 晚一步设就等于没设（以前 -aiMention 一直是这个毛病）。
             if options["aiMention"] != nil { aiMentionDemo = true }
             if options["aiGenerate"] != nil { aiAutoPrompt = true }
+            if let tab = options["openTab"] as? String { inspectorTab = tab }
+            if let settings = options["openSettings"] as? String { settingsTab = settings }
             if let point = (options["selectionPoint"] as? String)?.split(separator: ",").compactMap({ Double($0) }), point.count == 2 {
                 try? await Task.sleep(for: .milliseconds(500))
                 repairTool = "object"; repairPoint = point; commitSelectionPart()
@@ -317,6 +319,11 @@ final class WorkspaceStore {
             }
             if let region = options["localRegion"] as? String {
                 loadAnalysis(); try? await Task.sleep(for: .seconds(2)); selectLocalRegion(region)
+            }
+            // 验收用：让输入框里第一张图片块弹出小预览，截图核对它长什么样。
+            if options["debugMentionPreview"] != nil {
+                try? await Task.sleep(for: .milliseconds(2500))
+                NotificationCenter.default.post(name: .debugMentionPreview, object: nil)
             }
         }
     }

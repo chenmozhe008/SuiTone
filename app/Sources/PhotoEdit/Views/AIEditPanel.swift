@@ -180,9 +180,15 @@ struct AIEditPanel: View {
             }
             if store.aiMentionDemo {
                 Task {
+                    // 面板刚出现时文本视图可能还没建好，等它就位再塞图片块。
+                    for _ in 0..<40 where editor.view == nil {
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
                     try? await Task.sleep(for: .milliseconds(600))
                     editor.setText("")
                     for figure in figures.prefix(3) { editor.insert(name: figure.name, path: figure.path) }
+                    print("debugMention 演示插入 \(min(figures.count, 3)) 个图片块，文字=\(editor.text)")
+                    fflush(stdout)
                 }
             }
         }
