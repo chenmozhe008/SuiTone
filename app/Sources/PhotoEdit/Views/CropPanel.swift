@@ -156,7 +156,7 @@ struct CropPanel: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
-                section("倾斜校正") {
+                section("自由旋转") {
                     HStack {
                         Slider(value: Binding(get: { store.current?.parameters.angle ?? 0 },
                                               set: { store.straightenPreview($0) }),
@@ -165,7 +165,7 @@ struct CropPanel: View {
                         Text(String(format: "%.1f°", store.current?.parameters.angle ?? 0))
                             .font(.caption).monospacedDigit().frame(width: 46, alignment: .trailing)
                     }
-                    Text("照片端不平的时候用：转一点点，把地平线、墙角摆正。转出来的空边会自动裁掉。")
+                    Text("按需要微调角度，转出来的空边会自动裁掉。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
