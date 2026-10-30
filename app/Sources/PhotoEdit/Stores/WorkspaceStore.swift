@@ -324,6 +324,9 @@ final class WorkspaceStore {
     func activate(_ id: String?) {
         finishEditing()
         repairRevision += 1; repairDraft = nil; repairShowingBefore = false
+        // 换照片／换图集时把「正在看的版本」一起清掉：否则画布会一直显示上一张的版本图，
+        // AI 改图页开着的时候最明显——切了图集画面还是旧照片。
+        versionPreview = nil
         let firstSelected = selected.count > 1 && id.map { selectedIDs.contains($0) } == true ? selected.first?.id : id
         currentID = firstSelected; analysis = nil; overlay = ""; clearRepairSelection(); localRegion = nil
         analysisTask?.cancel(); analysisTask = nil; analysisAssetID = nil; analysisError = nil

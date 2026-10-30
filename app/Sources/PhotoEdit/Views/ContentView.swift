@@ -53,20 +53,22 @@ private struct WorkspaceHeader: View {
     }
     var body: some View {
         HStack(spacing: 14) {
-            HStack(spacing: 9) {
+            // 品牌区只放图标和名字，单行居中；照片张数挪到底部缩略图条上方当提示，
+            // 标题下再压一行小字会把 logo 和名字挤得不像一个整体。
+            HStack(spacing: 11) {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable().interpolation(.high)
-                    .frame(width: 34, height: 34)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(AppIdentity.name).font(.system(size: 15, weight: .semibold))
-                    Text(store.photos.isEmpty ? "照片编辑" : "\(store.included.count) 张照片")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                    .frame(width: 40, height: 40)
+                    .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                Text(AppIdentity.name).font(.system(size: 18, weight: .semibold))
+                    .fixedSize()
             }
-            Button { store.showLibrary.toggle() } label: { Label("图集", systemImage: "sidebar.left") }
-                .help("显示或隐藏图集栏")
-            Button { store.chooseImport() } label: { Label("添加照片", systemImage: "plus") }
-                .disabled(store.controlsBlocked)
+            HStack(spacing: 14) {
+                Button { store.showLibrary.toggle() } label: { Label("图集", systemImage: "sidebar.left") }
+                    .help("显示或隐藏图集栏")
+                Button { store.chooseImport() } label: { Label("添加照片", systemImage: "plus") }
+                    .disabled(store.controlsBlocked)
+            }.padding(.leading, 8)
             Spacer(minLength: 16)
             if !store.photos.isEmpty {
                 HStack(spacing: 6) {
@@ -92,7 +94,7 @@ private struct WorkspaceHeader: View {
                 Button("导出 \(store.targets.count) 张…") { store.showExportOptions = true }
                     .buttonStyle(.borderedProminent).disabled(store.targets.isEmpty || store.controlsBlocked)
             }
-        }.padding(.horizontal, 20).frame(height: 64).background(Color(white: 0.13))
+        }.padding(.leading, 14).padding(.trailing, 20).frame(height: 64).background(Color(white: 0.13))
         .buttonStyle(.borderless)
     }
 }

@@ -7,10 +7,11 @@ struct FilmstripView: View {
         HStack(spacing: 12) {
             if store.targets.count > 1 {
                 Text("已选 \(store.targets.count) 张").fontWeight(.semibold)
-                Text("改动作用于所选照片").foregroundStyle(.secondary)
+                Text("共 \(store.included.count) 张 · 改动作用于所选照片").foregroundStyle(.secondary)
                 Button("把当前调整同步到所选") { store.synchronize() }.buttonStyle(.link).disabled(store.controlsBlocked)
             } else {
-                Text("改动作用于当前照片").foregroundStyle(.secondary)
+                // 照片张数当提示放在这里（缩略图上方），标题区不再挂一行小字。
+                Text("共 \(store.included.count) 张 · 改动作用于当前照片").foregroundStyle(.secondary)
             }
             Spacer()
             Text("⌘ 点按可多选").foregroundStyle(.secondary)

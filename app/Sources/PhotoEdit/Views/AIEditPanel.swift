@@ -146,7 +146,7 @@ struct AIEditPanel: View {
                                     store.versionPreview = store.versionPreview == version.path || index == store.photoVersions.count - 1 ? nil : version.path
                                 } label: {
                                     VStack(spacing: 4) {
-                                        LocalPhoto(path: version.path, fill: true).frame(width: 84, height: 56)
+                                        LocalPhoto(path: version.thumb, fill: true).frame(width: 84, height: 56)
                                             .clipShape(RoundedRectangle(cornerRadius: 6))
                                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(
                                                 (store.versionPreview == version.path || (store.versionPreview == nil && index == store.photoVersions.count - 1)) ? Color.white : .clear, lineWidth: 2))

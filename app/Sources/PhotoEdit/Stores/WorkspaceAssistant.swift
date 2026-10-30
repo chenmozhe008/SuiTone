@@ -567,9 +567,13 @@ extension WorkspaceStore {
     }
 
     /// 这张照片的版本：原图和每次采用的生成图（按顺序）。
-    var photoVersions: [(title: String, path: String)] {
+    ///
+    /// `path` 是画布上要显示的那张（必须和生成图同级的分辨率），`thumb` 只给版本条用。
+    /// 以前把原图的缩略图当成 `path` 塞进画布，点「原图」就把一张小图拉满屏，看着就是糊的。
+    var photoVersions: [(title: String, path: String, thumb: String)] {
         guard let photo = current else { return [] }
         let generated = photo.operations.compactMap(\.generated)
-        return [("原图", photo.imported.thumbnail)] + generated.enumerated().map { ("版本 \($0.offset + 1)", $0.element) }
+        return [("原图", photo.imported.original, photo.imported.thumbnail)]
+            + generated.enumerated().map { ("版本 \($0.offset + 1)", $0.element, $0.element) }
     }
 }

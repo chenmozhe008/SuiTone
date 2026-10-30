@@ -314,8 +314,9 @@ struct PhotoCanvas: View {
     }
 
     private func displayPath(_ photo:PhotoRecord)->String {
-        if store.inspectorTab == "aiedit", let version = store.versionPreview {return version}
+        // 「原图」永远压在最前：AI 改图页正在看某个版本时，按原图也得真能看回原图。
         if store.showOriginal {return photo.imported.original}
+        if store.inspectorTab == "aiedit", let version = store.versionPreview {return version}
         if let draft = store.repairDraft, draft.photoID == photo.id {
             return store.repairShowingBefore ? draft.beforePath : draft.previewPath
         }
