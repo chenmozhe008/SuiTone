@@ -149,10 +149,17 @@ def invoke(data, prompt, schema, images=(), *, cancel=None, opener=_open):
     if cancel is not None and cancel.is_set():raise InterruptedError()
     try:
         choice = json.loads(response_bytes)['choices'][0]
-        if choice.get('finish_reason') not in ('stop', None):raise ValueError()
+        reason = choice.get('finish_reason')
+        if reason == 'length':
+            raise ValueError(_name(provider)+' 的回复被截断，请简化要求或减少一次生成的方案')
+        if reason not in ('stop', None):
+            raise ValueError(_name(provider)+' 未完整返回回复（结束原因：'+str(reason)[:40]+'）')
         return _json_text(choice['message']['content'])
-    except (KeyError, IndexError, TypeError, ValueError, AttributeError):
-        raise ValueError(_name(provider)+' 没有返回有效的调整计划') from None
+    except ValueError as exc:
+        if str(exc).startswith(_name(provider)): raise
+        raise ValueError(_name(provider)+' 返回的内容不是有效的结构化回复，请重试或更换模型') from None
+    except (KeyError, IndexError, TypeError, AttributeError):
+        raise ValueError(_name(provider)+' 返回的内容不完整，请重试或更换模型') from None
 
 
 def list_models(data, *, opener=_open):

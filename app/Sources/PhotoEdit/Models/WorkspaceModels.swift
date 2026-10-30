@@ -95,6 +95,25 @@ struct ChatMessage:Identifiable {
     var affectedPhotos:[String]=[]
     var changeID: UUID? = nil
     var wasUndone = false
+    var variants: [VariantPreview] = []
+}
+
+struct VariantPreview: Identifiable {
+    let id = UUID()
+    let group: UUID
+    let photoID: String
+    let baseline: EditSnapshot
+    let title: String
+    let params: AdjustmentParameters
+    let notes: [String]
+    let preview: String
+}
+
+struct AssistantVariant: Decodable {
+    var id: String
+    var title: String
+    var params: AdjustmentParameters
+    var notes: [String]
 }
 
 struct AssistantChange:Decodable {
@@ -115,4 +134,5 @@ struct AssistantJob:Decodable {
     var selection:String?
     var changes:[AssistantChange]?
     var error:String?
+    var variants: [AssistantVariant]? = nil
 }

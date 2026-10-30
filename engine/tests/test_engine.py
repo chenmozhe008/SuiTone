@@ -250,6 +250,41 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result['state'],'done');self.assertEqual(result['changes'],[])
         self.assertNotIn('fixture-secret',repr(result))
 
+    def test_provider_distinguishes_truncated_and_invalid_responses(self):
+        from api_providers import invoke
+        from assistant import SCHEMA
+        import json
+        class Response:
+            def __init__(self,choice):self.choice=choice
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self,limit):return json.dumps({'choices':[self.choice]}).encode()
+        data=dict(provider='deepseek',api_key='test-secret',model='test')
+        with self.assertRaisesRegex(ValueError,'回复被截断'):
+            invoke(data,'test',SCHEMA,opener=lambda request,timeout:Response({'finish_reason':'length','message':{'content':'{'}}))
+        with self.assertRaisesRegex(ValueError,'不是有效的结构化回复'):
+            invoke(data,'test',SCHEMA,opener=lambda request,timeout:Response({'finish_reason':'stop','message':{'content':'invalid'}}))
+
+    def test_multiple_variants_are_independent_and_never_apply_operations(self):
+        from assistant import validate_plan
+        from smart import neutral
+        from analysis import Analysis
+        from grade import rgb2lab
+        image=Image.new('RGB',(32,32),(100,110,120))
+        context=Analysis.__new__(Analysis);context.image=image
+        context.rgb=np.asarray(image,dtype=float)/255;context.lab=rgb2lab(context.rgb);context.dehazed=None
+        for name in ('water','sky','land','person','skin'):setattr(context,name,np.zeros((32,32)))
+        class FixtureEngine:
+            def analysis(self,key):return context,True
+        source=neutral();targets=[dict(id='a',params=source)]
+        variants=[dict(id='a',title=name,preset='keep',operations=[],adjustments=[dict(parameter='temperature',mode='add',value=value)])
+                  for name,value in [('暖',.3),('冷',-.3),('原色',0.)]]
+        result=validate_plan(dict(reply='三种效果',selection='none',actions=[],variants=variants),targets,FixtureEngine())
+        self.assertEqual([v['params']['temperature'] for v in result['variants']],[.3,-.3,0.])
+        self.assertEqual(result['changes'],[]);self.assertEqual(source['temperature'],0.)
+        variants[0]['operations']=[dict(kind='undo',value=0)]
+        with self.assertRaises(ValueError):validate_plan(dict(reply='',selection='none',actions=[],variants=variants),targets,FixtureEngine())
+
     def test_local_suggestions_only_offer_detected_regions(self):
         from suggestions import local_suggestions
         class Context:

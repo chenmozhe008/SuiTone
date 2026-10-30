@@ -120,6 +120,7 @@ final class WorkspaceStore {
     var aiSuggestionCache: [String: [SuggestionCard]] = [:]
     var chatDraft = ""
     var chatMessages: [ChatMessage] = []
+    var variantApplied: [UUID: [EditSnapshot]] = [:]
     var chatting = false
     var assistantJobID: String?
     var assistantCancellationRequested = false

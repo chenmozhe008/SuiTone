@@ -3,6 +3,31 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct AssistantTransactionTests {
+    @Test @MainActor func testVariantSwitchingAndStaleProtection() {
+        let store = fixture(), source = store.photos[0], group = UUID()
+        var warm = source.parameters, cool = source.parameters
+        warm.temperature = 0.3; cool.temperature = -0.3
+        let first = VariantPreview(group: group, photoID: source.id, baseline: source.snapshot,
+                                   title: "暖调", params: warm, notes: [], preview: "/warm.png")
+        let second = VariantPreview(group: group, photoID: source.id, baseline: source.snapshot,
+                                    title: "冷调", params: cool, notes: [], preview: "/cool.png")
+        store.applyVariant(first)
+        #expect(store.current?.parameters.temperature == 0.3)
+        store.applyVariant(second)
+        #expect(store.current?.parameters.temperature == -0.3)
+        store.undo(); store.previewTask?.cancel()
+        #expect(store.current?.parameters.temperature == 0.3)
+        store.applyVariant(second)
+        #expect(store.current?.parameters.temperature == -0.3)
+        store.undo(); store.previewTask?.cancel()
+        store.change("手动调整") { $0.exposure = 0.5 }
+        store.applyVariant(second)
+        #expect(store.current?.parameters.exposure == 0.5)
+        #expect(store.current?.parameters.temperature == 0.3)
+        #expect(store.status.contains("重新生成"))
+        store.previewTask?.cancel()
+    }
+
     @Test @MainActor func testReviewCannotAlterTheUserSelectionGeometry() async {
         let store = fixture(), items = store.photos, key = "selection-123456789abc"
         var first = items[0].parameters

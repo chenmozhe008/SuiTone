@@ -57,6 +57,53 @@ import Testing
         store.previewTask?.cancel()
     }
 
+    @Test @MainActor func testMultipleVariantsRenderThroughEngineAndApplyOnSelection() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let sample = root.appendingPathComponent("output/stage2-20261028/city-public.jpg")
+        guard FileManager.default.fileExists(atPath: sample.path) else { return }
+        let fixture = root.appendingPathComponent("tmp/variants-fixture-\(UUID().uuidString)")
+        let engineDir = fixture.appendingPathComponent("engine")
+        try FileManager.default.createDirectory(at: engineDir, withIntermediateDirectories: true)
+        let encoder = JSONEncoder(); encoder.outputFormatting = .withoutEscapingSlashes
+        let pythonPath = String(data: try encoder.encode(root.appendingPathComponent("engine").path), encoding: .utf8)!
+        let script = """
+        import json, os, sys
+        sys.path.insert(0, \(pythonPath))
+        import assistant, service
+        assistant.executable=lambda provider: '/fake/claude'
+        def fake(self, provider, prompt, cancel, *images):
+            context=json.loads(prompt.rsplit('\\n',1)[1]); key=context['targets'][0]['id']
+            assert images and images[0]
+            variants=[{'id':key,'title':name,'preset':'keep','operations':[],
+                       'adjustments':[{'parameter':'temperature','mode':'add','value':value}]}
+                      for name,value in [('暖调',.3),('冷调',-.3),('自然',0.)]]
+            return {'reply':'三个方向供比较','selection':'none','actions':[],'variants':variants}
+        assistant.AssistantBridge._invoke=fake
+        service.serve(sys.argv[sys.argv.index('--root')+1],os.environ['PHOTO_EDIT_SESSION_TOKEN'])
+        """
+        try script.write(to: engineDir.appendingPathComponent("service.py"), atomically: true, encoding: .utf8)
+        let store = WorkspaceStore(engine: EngineClient(root: fixture))
+        let imported: ImportResponse = try await store.engine.request("import", body: ["paths": [sample.path]])
+        let image = try #require(imported.photos.first)
+        var photo = PhotoRecord(imported: image, assetID: image.id); photo.ready = true
+        store.photos = [photo]; store.currentID = photo.id
+        store.providers = [AssistantProvider(id: "claude", title: "Claude Code", available: true)]
+        store.visionConsents.insert("claude"); store.assistantProvider = "claude"
+        store.chatDraft = "给我三个不同的效果并展示"
+        store.sendChat()
+        let task = try #require(store.assistantTask); await task.value
+        let previews = try #require(store.chatMessages.last?.variants)
+        #expect(previews.count == 3)
+        #expect(store.current?.parameters.temperature == photo.parameters.temperature)
+        #expect(previews.allSatisfy { FileManager.default.fileExists(atPath: $0.preview) })
+        store.applyVariant(previews[0])
+        #expect(store.current?.parameters.temperature == 0.3)
+        store.applyVariant(previews[1])
+        #expect(store.current?.parameters.temperature == -0.3)
+        store.undo(); store.previewTask?.cancel()
+        #expect(store.current?.parameters.temperature == 0.3)
+    }
+
     @Test @MainActor func testClaudeChatRunsThroughLocalServiceAndUpdatesPreview() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let sample = root.appendingPathComponent("output/stage2-20261028/city-public.jpg")

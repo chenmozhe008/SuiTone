@@ -87,6 +87,21 @@ struct AssistantPanel: View {
                                 Text(message.role == "user" ? "你" : "修图助手")
                                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                 Text(message.wasUndone ? "这次调整已撤销。" : message.text).font(.callout).lineSpacing(4).textSelection(.enabled)
+                                if !message.variants.isEmpty {
+                                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                                        ForEach(message.variants) { variant in
+                                            Button { store.applyVariant(variant) } label: {
+                                                VStack(alignment: .leading, spacing: 5) {
+                                                    LocalPhoto(path: variant.preview, fill: true)
+                                                        .frame(height: 100).frame(maxWidth: .infinity)
+                                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                                    Text(variant.title).font(.callout.weight(.medium)).lineLimit(2)
+                                                }.frame(maxWidth: .infinity, alignment: .leading)
+                                            }.buttonStyle(.plain).disabled(store.chatting || store.controlsBlocked)
+                                                .help("点击应用此方案，可撤销")
+                                        }
+                                    }
+                                }
                                 if !message.affectedPhotos.isEmpty {
                                     VStack(alignment: .leading, spacing: 4) {
                                         if !message.wasUndone {

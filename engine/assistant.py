@@ -35,11 +35,19 @@ SCHEMA=dict(type='object',additionalProperties=False,required=['reply','selectio
             required=['parameter','mode','value'],properties=dict(parameter=dict(type='string',enum=PARAMETERS),
             mode=dict(type='string',enum=['set','add','multiply']),value=dict(type='number')))))))))
 
+# 一张照片可以有多套互不覆盖的参数方案；方案只预览，用户选中后才应用。
+_VARIANT_ACTION = deepcopy(SCHEMA['properties']['actions']['items'])
+_VARIANT_ACTION['required'].append('title')
+_VARIANT_ACTION['properties']['title'] = dict(type='string')
+SCHEMA['properties']['variants'] = dict(type='array', items=_VARIANT_ACTION)
+SCHEMA['required'].append('variants')
+
 SYSTEM='''你是随心调色 SuiTone 的修图助手。理解用户任意自然语言，延续对话，给出可执行的本地修图参数或审美建议。
 你拿到的是本地分析摘要和当前参数，没有看到照片本身，不得声称看过细节或把统计推断当成事实。
 只能输出规定的 JSON；不执行工具、命令、不读取文件、不联网。不要编程、修改 App 或其他项目。
 编辑输出可回退的参数方案。当前版本尚不支持裁切或比例导出，也不能覆盖原文件；导出会另存为新文件。
-用户只讨论、询问或要求建议时 actions=[]。
+用户只讨论、询问或要求建议时 actions=[]，variants=[]。
+用户要求展示多种效果、做多个不同版本、或说“都展示出来”指代此前建议时，每个版本放入 variants，不要直接修改照片：每个方案含 id、简短中文 title、preset、adjustments，operations 必须为空，多个方案可以使用同一照片 id；actions=[]。依据对话上下文还原用户指定的每个方向，每个版本独立从当前照片出发，最多 12 个方案。单种直接修图使用 actions，variants=[]。其他情况下 variants=[]。
 仅当用户要求修图时填写 actions，且 id 只能来自当前 targets。整批请求要覆盖 targets 各张，考虑每张自身曝光。
 默认温和调整，保留现场光感和肤色。自然不是固定成某种水色；暖调、电影感、复古等根据诉求用通用风格起步再调整。
 用户明确要求明显的电影感、胶片感或其他创作风格时，应让变化在整张预览中清晰可见，而不是只做难以察觉的微调。
@@ -185,7 +193,19 @@ def validate_plan(plan,targets,engine,available_context=None):
             if kind=='undo' and value==0 and available_context.get('undo_available') is True and len(actions)==1 and len(operations)==1 and preset=='keep' and not action['adjustments']:continue
             raise ValueError('AI 请求的操作不可用或缺少选区、参考图')
         changes.append(dict(id=key,params=p,notes=notes,operations=operations))
-    return dict(reply=safe_advice(plan['reply']) if not changes else plan['reply'],selection=plan['selection'],changes=changes)
+    variants=plan.get('variants',[])
+    if not isinstance(variants,list) or len(variants)>12 or (variants and (changes or available_context.get('review_only'))):
+        raise ValueError('AI 返回的方案数量或操作范围无效，设置未改变')
+    prepared=[]
+    for variant in variants:
+        if not isinstance(variant,dict) or not isinstance(variant.get('title'),str) or not 0<len(variant['title'].strip())<=40:
+            raise ValueError('AI 方案名称无效，设置未改变')
+        if variant.get('operations') != []:
+            raise ValueError('方案预览暂不支持修复、画质或参考匹配，设置未改变')
+        action={k:v for k,v in variant.items() if k!='title'}
+        result=validate_plan(dict(reply='',selection='none',actions=[action],variants=[]),targets,engine,available_context)
+        prepared.append(dict(title=variant['title'].strip(),**result['changes'][0]))
+    return dict(reply=safe_advice(plan['reply']) if not changes and not prepared else plan['reply'],selection=plan['selection'],changes=changes,variants=prepared)
 
 
 class AssistantBridge:
@@ -281,7 +301,7 @@ class AssistantBridge:
                     '你能看到按顺序附带的预览图，图像标签在 images 列表中；只能依据可见内容和本地分析判断。')
             else:system=SYSTEM
             if data.get('review_only'):
-                system+='\n这是唯一一次结果复看：比较调整前后对应区域的色相、亮度和变化幅度，判断实际方向是否符合用户指定；不能仅凭参数或首轮描述认定成功。方向不符、变化不足或有不确定性时要明确说明，不要夸大效果；仅在明显需要修正时微调参数，preset 必须为 keep，operations 必须为空。若确实符合要求，actions=[]。'
+                system+='\n这是唯一一次结果复看：比较调整前后对应区域的色相、亮度和变化幅度，判断实际方向是否符合用户指定；不能仅凭参数或首轮描述认定成功。方向不符、变化不足或有不确定性时要明确说明，不要夸大效果；仅在明显需要修正时微调参数，preset 必须为 keep，operations 必须为空。若确实符合要求，actions=[]。复看时 variants 必须为空。'
                 if images and data.get('review_before'):
                     system+='\n每张对照图左侧为调整前、右侧为调整后。比较用户要求的重点区域和整体变化，不要仅因右图本身好看就判定完成；要求变化可见时若两侧差别难以辨认，应在允许范围内适度加强已有调整，同时保留自然细节。'
             prompt=system+'\n'+json.dumps(context,ensure_ascii=False)

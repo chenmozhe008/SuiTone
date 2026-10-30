@@ -118,6 +118,11 @@ extension WorkspaceStore {
                         return
                     }
                     if result.state == "done" {
+                        if let variants = result.variants, !variants.isEmpty {
+                            assistantApplying = true; assistantPhase = "正在生成方案预览"
+                            await self.presentVariants(variants, reply: result.reply, items: items)
+                            return
+                        }
                         assistantApplying = true; assistantPhase = "正在应用调整"
                         var reviewReply: String?
                         let review: (([PhotoRecord]) async throws -> [AssistantChange])? = sendImages ? { prepared in
@@ -144,6 +149,57 @@ extension WorkspaceStore {
                 chatMessages.append(ChatMessage(role: "assistant", text: text))
             }
         }
+    }
+
+    func presentVariants(_ variants: [AssistantVariant], reply: String?, items: [PhotoRecord]) async {
+        var groups: [String: UUID] = [:]
+        var previews: [VariantPreview] = [], failures: [String] = []
+        for variant in variants {
+            guard !assistantCancellationRequested, !Task.isCancelled else {
+                chatMessages.append(ChatMessage(role: "assistant", text: "已取消，本次没有应用调整。")); return
+            }
+            guard let photo = items.first(where: { $0.assetID == variant.id }) else {
+                failures.append(variant.title + "：未找到照片"); continue
+            }
+            do {
+                let result: PreviewResponse = try await engine.request("preview", body: ["id": photo.assetID,
+                    "params": try EngineClient.object(variant.params), "quality": try EngineClient.object(photo.quality)])
+                let group = groups[photo.id] ?? UUID()
+                groups[photo.id] = group
+                let title = items.count > 1 ? photo.imported.name + " · " + variant.title : variant.title
+                previews.append(VariantPreview(group: group, photoID: photo.id, baseline: photo.snapshot,
+                    title: title, params: variant.params, notes: variant.notes, preview: result.preview))
+            } catch { failures.append(variant.title + "：" + error.localizedDescription) }
+        }
+        guard !assistantCancellationRequested, !Task.isCancelled else {
+            chatMessages.append(ChatMessage(role: "assistant", text: "已取消，本次没有应用调整。")); return
+        }
+        let message = previews.isEmpty ? "没有生成可用的方案预览。" : "已生成 \(previews.count) 个方案，点击预览应用。"
+        let explanation = reply?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        chatMessages.append(ChatMessage(role: "assistant", text: message + (explanation.isEmpty ? "" : "\n" + explanation),
+                                        notes: failures, variants: previews))
+        status = previews.isEmpty ? "方案预览未完成" : "已生成方案，选择后应用"
+    }
+
+    func applyVariant(_ variant: VariantPreview) {
+        guard !controlsBlocked, !chatting else { return }
+        finishEditing()
+        guard currentID == variant.photoID, let source = current else {
+            status = "请先回到生成方案时的照片"; return
+        }
+        let snapshot = source.snapshot
+        guard snapshot == variant.baseline || (variantApplied[variant.group] ?? []).contains(snapshot) else {
+            status = "照片已修改，请重新生成方案，避免覆盖后续调整"; return
+        }
+        var prepared = prepareParameters(variant.params, name: variant.title, notes: variant.notes, on: source)
+        prepared.previewPath = variant.preview; prepared.ready = true
+        guard commitPrepared(prepared, expected: snapshot) else { return }
+        variantApplied[variant.group, default: []].append(prepared.snapshot)
+        let changeID = recordChange("应用方案：" + variant.title, before: [source.id: snapshot])
+        chatMessages.append(ChatMessage(role: "assistant", text: "已应用：" + variant.title, notes: variant.notes,
+                                        affectedPhotos: [source.imported.name], changeID: changeID))
+        status = "已应用方案：" + variant.title
+        refreshGrid()
     }
 
     func applyAssistantResult(_ result: AssistantJob, items: [PhotoRecord],
