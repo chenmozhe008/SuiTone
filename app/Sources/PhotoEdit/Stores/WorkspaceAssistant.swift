@@ -490,6 +490,7 @@ extension WorkspaceStore {
                     "prompt": card.prompt, "image_consent": true]
                 if !key.isEmpty { body["api_key"] = key }
                 if let selection = card.selection { body["selection"] = try EngineClient.object(selection) }
+                if !card.references.isEmpty { body["reference_paths"] = card.references }
                 let started: Started = try await engine.request("image-edit-start", body: body)
                 updateGeneration(messageID) { $0.jobID = started.id }
                 var job = Job(state: "running")
@@ -510,6 +511,9 @@ extension WorkspaceStore {
                     chatMessages[i].changeID = changeID; chatMessages[i].affectedPhotos = [photo.imported.name]
                 }
                 updateGeneration(messageID) { $0.state = "done"; $0.preview = prepared.previewPath }
+                // 生成已采用为照片新版本，画布上的选区标注使命完成，自动清掉；
+                // 卡片里保存了本次用的选区和参考图，重试时仍会用同样的内容。
+                clearRepairSelection()
                 status = "已换成生成版本，可撤销"
             } catch {
                 updateGeneration(messageID) { $0.state = "failed"; $0.error = error.localizedDescription }
@@ -549,14 +553,14 @@ extension WorkspaceStore {
 
 extension WorkspaceStore {
     /// AI 改图面板点「生成」：在对话里记一条（可在对话里看到和撤销），用同一套确认卡流程立即生成。
-    func startAIEdit(prompt: String, onlySelection: Bool) {
+    func startAIEdit(prompt: String, onlySelection: Bool, references: [String] = []) {
         guard let photo = current, !controlsBlocked, generationTask == nil else { return }
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let selection = onlySelection && !selectionParts.isEmpty ? removalOperation(selectionBox ?? [0, 0, 1, 1]) : nil
         chatMessages.append(ChatMessage(role: "user", text: "AI 改图：" + text))
         let message = ChatMessage(role: "assistant", text: selection == nil ? "按你的要求生成整张新图。" : "只改选区里的部分，其余保持原样。",
-                                  generation: GenerationCard(photoID: photo.id, prompt: text, selection: selection))
+                                  generation: GenerationCard(photoID: photo.id, prompt: text, selection: selection, references: references))
         chatMessages.append(message)
         aiEditMessageID = message.id
         startGeneration(message.id)

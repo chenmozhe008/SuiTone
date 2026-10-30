@@ -42,28 +42,44 @@ def _unsupported(message):
     return 'not supported' in text or 'unsupported' in text or '不支持的参数' in message
 
 
-def jimeng_edit(key, model, image, prompt, *, opener=_open):
+def _encode(image_bytes, label='输入图片'):
+    """校验一张输入图并编成 data URI；仅接受有效的 JPEG / PNG。"""
+    if not isinstance(image_bytes, bytes) or not 0 < len(image_bytes) <= 30*1024*1024: raise ValueError(label+'大小无效')
+    try:
+        with Image.open(BytesIO(image_bytes)) as source: mime = {'JPEG': 'jpeg', 'PNG': 'png'}.get(source.format)
+    except Exception: raise ValueError(label+'仅支持有效的 JPEG 或 PNG') from None
+    if not mime: raise ValueError(label+'仅支持有效的 JPEG 或 PNG')
+    return 'data:image/'+mime+';base64,'+base64.b64encode(image_bytes).decode('ascii')
+
+
+def jimeng_edit(key, model, image, prompt, *, references=(), opener=_open):
+    """image 是要改的图；references 是额外参考图（姿势、风格、物品等），
+    Seedream 的 image 参数支持数组（官方文档：最多 10 张），两张及以上时整体传列表。"""
     key = clean_key(key) if isinstance(key, str) else ''
     if not key: raise ValueError('请先填写即梦（火山方舟）的 API 密钥')
     if not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9._-]{1,128}', model): raise ValueError('图片模型名称无效')
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
-    if not isinstance(image, bytes) or not 0 < len(image) <= 30*1024*1024: raise ValueError('输入图片大小无效')
+    if not isinstance(image, bytes): raise ValueError('输入图片大小无效')
+    references = list(references)
+    if len(references) > 9: raise ValueError('参考图最多 9 张')
+    if len(image) > 30*1024*1024: raise ValueError('输入图片大小无效')
     try:
-        with Image.open(BytesIO(image)) as source:
-            mime = {'JPEG': 'jpeg', 'PNG': 'png'}.get(source.format); size = source.size
+        with Image.open(BytesIO(image)) as source: size = source.size
     except Exception: raise ValueError('输入图片仅支持有效的 JPEG 或 PNG') from None
-    if not mime: raise ValueError('输入图片仅支持有效的 JPEG 或 PNG')
-    encoded = 'data:image/'+mime+';base64,'+base64.b64encode(image).decode('ascii')
+    encoded = _encode(image)
+    refs = [_encode(ref, '参考图') for ref in references]
+    images = [encoded] + refs
     # 组图参数 sequential_image_generation 文档里默认就是 disabled，而且只有部分模型认这个字段，
     # 传上去会直接 400（"the parameter is not supported by the current model"），所以不传。
-    body = dict(model=model, prompt=prompt, image=encoded,
+    body = dict(model=model, prompt=prompt, image=images if len(images) > 1 else encoded,
                 size=output_size(*size), response_format='b64_json', watermark=False)
+    minimal = dict(model=model, prompt=prompt, image=images if len(images) > 1 else encoded)
     try:
         payload = _post(key, body, opener)
     except ValueError as exc:
         if not _unsupported(str(exc)): raise
         # 少数模型连 watermark / size 这类可选参数也不认：只带必要字段再试一次。
-        payload = _post(key, dict(model=model, prompt=prompt, image=encoded), opener)
+        payload = _post(key, minimal, opener)
     try:
         result = []
         for item in json.loads(payload).get('data', []):

@@ -100,10 +100,14 @@ extension WorkspaceStore {
         }
         selectionBox = [max(0, box[0]), max(0, box[1]), min(1, box[2]), min(1, box[3])]
         let revision = selectionRevision, parts = selectionParts
+        // AI 改图页的选区是画面重点，用青色标注，跟普通选区的淡红区分开。
+        let color = inspectorTab == "aiedit" ? "cyan" : "red"
+        selectionOverlayColor = color
         Task {
             struct Overlay: Decodable { var overlay: String; var coverage: Double }
             do {
-                let body: [String: Any] = ["id": photo.assetID, "selection": ["parts": try parts.map { try EngineClient.object($0) }]]
+                let body: [String: Any] = ["id": photo.assetID, "color": color,
+                    "selection": ["parts": try parts.map { try EngineClient.object($0) }]]
                 let result: Overlay = try await engine.request("selection-overlay", body: body)
                 guard revision == selectionRevision, current?.id == photo.id else { return }
                 selectionOverlay = result.overlay
@@ -178,6 +182,9 @@ extension WorkspaceStore {
             selectionBox = savedBox; repairStrokes = savedStrokes
             repairPolygon = savedPolygon; repairPoint = savedPoint
             selectionParts = savedParts; selectionOverlay = savedOverlay; editingSelectionKey = savedKey
+            // 标注色跟页签走：进 AI 改图页换青色、离开换回淡红，已有选区时重新合成一次。
+            let targetColor = tab == "aiedit" ? "cyan" : "red"
+            if !selectionParts.isEmpty && selectionOverlayColor != targetColor { refreshSelection() }
         }
     }
 

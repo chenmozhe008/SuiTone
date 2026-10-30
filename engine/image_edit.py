@@ -12,21 +12,24 @@ from api_providers import _open, _send, clean_key
 GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 
 
-def gemini_edit(key, model, image, prompt, *, opener=_open):
-    """返回图片字节；调用方负责用户授权、持久化、费用和数量控制。"""
+def gemini_edit(key, model, image, prompt, *, references=(), opener=_open):
+    """返回图片字节；调用方负责用户授权、持久化、费用和数量控制。
+    references 为额外参考图，Gemini 支持一张消息里多张输入图。"""
     key=clean_key(key) if isinstance(key,str) else ''
     if not key:raise ValueError('请先配置 Gemini API 密钥')
     if not isinstance(model,str) or not re.fullmatch(r'[A-Za-z0-9._-]{1,128}',model):raise ValueError('图片模型名称无效')
     if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>8000:raise ValueError('请描述需要的图片编辑')
-    if not isinstance(image,bytes) or not 0<len(image)<=15*1024*1024:raise ValueError('输入图片大小无效')
-    try:
-        with Image.open(BytesIO(image)) as source:
-            mime={'JPEG':'image/jpeg','PNG':'image/png'}.get(source.format)
-            source.verify()
-        if not mime:raise ValueError()
-    except Exception:raise ValueError('输入图片仅支持有效的 JPEG 或 PNG') from None
-    body={'contents':[{'role':'user','parts':[{'text':prompt},
-           {'inline_data':{'mime_type':mime,'data':base64.b64encode(image).decode('ascii')}}]}],
+    parts=[{'text':prompt}]
+    for label,data in [('输入图片',image)]+[('参考图',ref) for ref in references]:
+        if not isinstance(data,bytes) or not 0<len(data)<=15*1024*1024:raise ValueError(label+'大小无效')
+        try:
+            with Image.open(BytesIO(data)) as source:
+                mime={'JPEG':'image/jpeg','PNG':'image/png'}.get(source.format)
+                source.verify()
+            if not mime:raise ValueError()
+        except Exception:raise ValueError(label+'仅支持有效的 JPEG 或 PNG') from None
+        parts.append({'inline_data':{'mime_type':mime,'data':base64.b64encode(data).decode('ascii')}})
+    body={'contents':[{'role':'user','parts':parts}],
           'generationConfig':{'responseModalities':['TEXT','IMAGE']}}
     request=Request(GEMINI_BASE+'/models/'+model+':generateContent',
         data=json.dumps(body,ensure_ascii=False).encode(),method='POST',
@@ -78,13 +81,13 @@ def mock_edit(image_bytes, prompt):
     return [dict(mime='image/png', data=out.getvalue())]
 
 
-def call_service(service, key, model, image_bytes, prompt, opener=_open):
+def call_service(service, key, model, image_bytes, prompt, *, references=(), opener=_open):
     if service not in IMAGE_SERVICES: raise ValueError('未知的出图服务')
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
     if service == 'mock': return mock_edit(image_bytes, prompt)
-    if service == 'gemini': return gemini_edit(key, model or IMAGE_SERVICES['gemini']['default_model'], image_bytes, prompt, opener=opener)
+    if service == 'gemini': return gemini_edit(key, model or IMAGE_SERVICES['gemini']['default_model'], image_bytes, prompt, references=references, opener=opener)
     from jimeng_edit import jimeng_edit
-    return jimeng_edit(key, model or IMAGE_SERVICES['jimeng']['default_model'], image_bytes, prompt, opener=opener)
+    return jimeng_edit(key, model or IMAGE_SERVICES['jimeng']['default_model'], image_bytes, prompt, references=references, opener=opener)
 
 
 def composite_selection(original, generated, selection):
@@ -127,6 +130,10 @@ class ImageEditBridge:
             if selection.get('box') is not None: repair_input(selection['box'])
             shape_input(selection.get('strokes'), selection.get('radius'), selection.get('polygon'), selection.get('point'))
             parts_input(selection.get('parts'))
+        reference_paths = data.get('reference_paths') or []
+        if not isinstance(reference_paths, list) or len(reference_paths) > 4 or \
+           any(not isinstance(p, str) or not p or len(p) > 4096 for p in reference_paths):
+            raise ValueError('参考图最多 4 张，且必须是本地文件路径')
         with self.lock:
             if any(j['state'] == 'running' for j in self.jobs.values()): raise ValueError('上一张还在生成，请稍候或先取消')
             key = uuid4().hex; self.jobs[key] = dict(state='running'); self.events[key] = Event()
@@ -141,6 +148,22 @@ class ImageEditBridge:
             if key in self.events: self.events[key].set()
         return dict(cancelled=True)
 
+    def _load_references(self, paths):
+        """参考图从本地路径读入：校验能打开，压到长边 2048 的 JPEG 再发给服务，跟主图一个待遇。"""
+        out = []
+        for raw in paths:
+            path = Path(raw)
+            if not path.is_file(): raise ValueError('参考图找不到：' + path.name)
+            try:
+                with Image.open(path) as img:
+                    img = img.convert('RGB')
+            except Exception: raise ValueError('参考图不是有效图片：' + path.name) from None
+            img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+            buffer = BytesIO(); img.save(buffer, 'JPEG', quality=92)
+            if len(buffer.getvalue()) > 15*1024*1024: raise ValueError('参考图太大：' + path.name)
+            out.append(buffer.getvalue())
+        return out
+
     def _run(self, key, data):
         from uuid import uuid4
         from service import replay_operations
@@ -152,8 +175,10 @@ class ImageEditBridge:
             full = full.convert('RGB')
             sent = full.copy(); sent.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
             buffer = BytesIO(); sent.save(buffer, 'JPEG', quality=92)
+            references = self._load_references(data.get('reference_paths') or [])
             if event.is_set(): raise InterruptedError()
-            results = call_service(data['service'], data.get('api_key'), data.get('model'), buffer.getvalue(), data['prompt'])
+            results = call_service(data['service'], data.get('api_key'), data.get('model'), buffer.getvalue(), data['prompt'],
+                                   references=references)
             if event.is_set(): raise InterruptedError()
             paths = []
             for item in results[:4]:

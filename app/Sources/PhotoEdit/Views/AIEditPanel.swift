@@ -1,10 +1,13 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 /// 「AI 改图」工具：改哪里（整张／只改选区）→ 想改成什么 → 发给谁 → 生成；下方是这张照片的版本。
 struct AIEditPanel: View {
     @Bindable var store: WorkspaceStore
     @State private var prompt = ""
     @State private var onlySelection = true
+    @State private var referencePaths: [String] = []
     private let examples = ["换成雪山背景", "去掉人物并补出背景", "加一群海鸥", "天空换成晚霞"]
     private var service: ImageService? { store.imageServices.first { $0.id == store.imageService } }
     private var hasSelection: Bool { !store.selectionParts.isEmpty }
@@ -21,8 +24,11 @@ struct AIEditPanel: View {
                         Text("只改选区").tag(true)
                     }.pickerStyle(.segmented).labelsHidden()
                     if !onlySelection && hasSelection {
-                        Text("当前改整张照片，已有选区不会用于本次生成。")
-                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Text("当前改整张照片，已有选区不会用于本次生成。")
+                                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Button("清除选区") { store.clearRepairSelection() }.buttonStyle(.link)
+                        }
                     }
                     if onlySelection && !hasSelection {
                         HStack {
@@ -33,7 +39,43 @@ struct AIEditPanel: View {
                         HStack {
                             Text("已选 \(store.selectionParts.count) 笔，只替换这块，其余像素不动。").font(.callout).foregroundStyle(.secondary)
                             Button("编辑选区") { store.inspectorTab = "selection" }.buttonStyle(.link)
+                            Button("清除选区") { store.clearRepairSelection() }.buttonStyle(.link)
                         }
+                    }
+                }
+                section("参考图（可选）") {
+                    if referencePaths.isEmpty {
+                        HStack {
+                            Text("想参考别的图（姿势、风格、物品）就加上，最多 4 张。").font(.callout).foregroundStyle(.secondary)
+                            Button("添加参考图…") { addReferences() }.buttonStyle(.link)
+                        }
+                    } else {
+                        HStack(spacing: 10) {
+                            ForEach(referencePaths, id: \.self) { path in
+                                Button {
+                                    referencePaths.removeAll { $0 == path }
+                                } label: {
+                                    LocalPhoto(path: path, fill: true).frame(width: 68, height: 50)
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.25)))
+                                        .overlay(alignment: .topTrailing) {
+                                            Image(systemName: "xmark.circle.fill").font(.system(size: 13))
+                                                .foregroundStyle(.white, .black).padding(3)
+                                        }
+                                }.buttonStyle(.plain).help("点一下移除这张参考图")
+                            }
+                            if referencePaths.count < 4 {
+                                Button { addReferences() } label: {
+                                    VStack {
+                                        Image(systemName: "plus").font(.system(size: 17))
+                                        Text("添加").font(.caption2)
+                                    }.frame(width: 68, height: 50)
+                                    .background(Color(white: 0.2), in: RoundedRectangle(cornerRadius: 6))
+                                }.buttonStyle(.plain)
+                            }
+                            Spacer()
+                        }
+                        Text("点缩略图移除；参考图会跟照片一起发给 AI。").font(.callout).foregroundStyle(.secondary)
                     }
                 }
                 section("想改成什么") {
@@ -55,7 +97,7 @@ struct AIEditPanel: View {
                 section("发给谁", trailing: AnyView(Button("设置…") { store.settingsTab = "image" }.buttonStyle(.link))) {
                     if let service, store.imageServiceReady {
                         info("服务", service.title)
-                        info("发送内容", "不带调色的原片，长边 2048 像素")
+                        info("发送内容", "不带调色的原片，长边 2048 像素" + (referencePaths.isEmpty ? "" : "＋\(referencePaths.count) 张参考图"))
                         info("费用", service.paid ? "按\(service.title)的标准计费" : "不收费")
                         info("结果", onlySelection && hasSelection ? "只替换选区里的部分，作为新版本，可撤销" : "整张新图，作为新版本，调色照常套用，可撤销")
                     } else {
@@ -68,7 +110,7 @@ struct AIEditPanel: View {
                     }
                 }
                 Button {
-                    store.startAIEdit(prompt: prompt, onlySelection: onlySelection)
+                    store.startAIEdit(prompt: prompt, onlySelection: onlySelection, references: referencePaths)
                 } label: {
                     Text(store.generationTask != nil ? "正在生成…" : "生成").font(.body.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 6)
                 }.buttonStyle(.borderedProminent).controlSize(.large)
@@ -108,6 +150,21 @@ struct AIEditPanel: View {
             HStack { Text(title).font(.headline); Spacer(); trailing }
             content()
         }
+    }
+
+    /// 选参考图：跟照片一起发给 AI（姿势、风格、物品），最多 4 张，重复的自动跳过。
+    private func addReferences() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false; panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image]
+        panel.message = "选择参考图（姿势、风格、物品），最多 4 张"
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            let path = url.path
+            if !referencePaths.contains(path) { referencePaths.append(path) }
+        }
+        if referencePaths.count > 4 { referencePaths = Array(referencePaths.suffix(4)); store.status = "参考图最多 4 张，只保留最后选的" }
     }
 
     private func info(_ label: String, _ value: String) -> some View {

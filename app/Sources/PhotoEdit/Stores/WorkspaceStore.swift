@@ -84,8 +84,10 @@ final class WorkspaceStore {
     var selectionSubtract = false
     /// 方框选法拖动中的框（松手才变成一笔）
     var selectionDraftBox: [Double]?
-    /// 引擎合成后的选区样子（透明底，选中部分淡红＋白边）
+    /// 引擎合成后的选区样子（透明底，选中部分半透明填充＋白边）
     var selectionOverlay: String?
+    /// 当前 overlay 的标注色：red 普通选区 / cyan AI 改图页的选区（画面重点，颜色区分）
+    var selectionOverlayColor = "red"
     /// 正在继续编辑的已保存选区（局部调整里的手动选区）
     var editingSelectionKey: String?
     var selectionRevision = 0

@@ -110,6 +110,8 @@ struct GenerationCard {
     var jobID: String? = nil
     /// 只改选区时的选区（原尺寸上只替换这一块）；nil 为整张
     var selection: RemovalOperation? = nil
+    /// 附加参考图的本地路径（姿势、风格、物品等；最多 4 张，随请求一起发出）
+    var references: [String] = []
 }
 
 struct GenerationProposal: Decodable { var prompt: String }

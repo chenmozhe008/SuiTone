@@ -51,7 +51,7 @@ extension WorkspaceStore {
 
     func export() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.canCreateDirectories = true; panel.message = "在所选位置内新建版本文件夹，已有文件保持不变"
+        panel.canCreateDirectories = true; panel.message = "单张直接导出到这里；多张会新建一个 SuiTone-时间 文件夹，已有文件不会被覆盖"
         guard panel.runModal() == .OK, let destination = panel.url else { return }
         let items = targets
         guard !items.isEmpty else { return }
@@ -72,7 +72,8 @@ extension WorkspaceStore {
                 let body: [String: Any] = ["items": try items.map { ["id": $0.assetID, "params": try EngineClient.object($0.parameters), "quality": try EngineClient.object($0.quality)] },
                                            "destination": destination.path, "options": try EngineClient.object(options)]
                 let result: ExportResponse = try await engine.request("export", body: body)
-                lastExport = result.directory; status = "已导出 \(result.files.count) 张到新版本文件夹"
+                lastExport = result.directory
+                status = result.files.count == 1 ? "已导出 1 张到所选位置" : "已导出 \(result.files.count) 张到新文件夹"
             } catch { self.error = error.localizedDescription }
         }
     }

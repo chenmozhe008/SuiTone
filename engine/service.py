@@ -467,18 +467,21 @@ class Engine:
         path=self.folder/(uuid4().hex+'-repair-overlay.png');save_new(overlay,path)
         return dict(overlay=str(path),pixels=int((m>0).sum()))
 
-    def selection_overlay(self,key,selection):
-        """正在画的选区合成后的样子：透明底上选中部分淡红、边缘白线，叠在预览上看加减后的真实结果。"""
+    def selection_overlay(self,key,selection,color=None):
+        """正在画的选区合成后的样子：透明底上选中部分半透明填充、边缘白线，叠在预览上看加减后的真实结果。
+        color='cyan'（AI 改图页用）时填充为青色，跟普通选区的淡红区分开。"""
         import cv2
         from inpaint import shape_mask
         if not isinstance(selection,dict) or set(selection)-{'box','strokes','radius','polygon','point','parts'}:raise ValueError('选区格式无效')
+        fill={'red':(240,80,80,80),'cyan':(0,215,230,80)}.get(color or 'red')
+        if fill is None:raise ValueError('选区颜色无效')
         shape_input(selection.get('strokes'),selection.get('radius'),selection.get('polygon'),selection.get('point'));parts_input(selection.get('parts'))
         context,_=self.analysis(key)
         inside=(shape_mask(context.image,selection.get('strokes'),selection.get('radius'),selection.get('polygon'),
                            selection.get('point'),selection.get('parts'),allow_large=True)>.5).astype(np.uint8)
         width=max(2,context.image.width//500)
         line=cv2.dilate(inside,np.ones((width*2+1,width*2+1),np.uint8))-cv2.erode(inside,np.ones((3,3),np.uint8))
-        rgba=np.zeros((*inside.shape,4),np.uint8);rgba[inside>0]=(240,80,80,80)
+        rgba=np.zeros((*inside.shape,4),np.uint8);rgba[inside>0]=fill
         rgba[cv2.dilate(line,np.ones((3,3),np.uint8))>0]=(0,0,0,110);rgba[line>0]=(255,255,255,235)
         path=self.folder/(uuid4().hex+'-selection.png');save_new(Image.fromarray(rgba,'RGBA'),path)
         return dict(overlay=str(path),coverage=float(inside.mean()))
@@ -559,8 +562,15 @@ class Engine:
         qualities=[quality_settings(i.get('quality',dict(denoise=options.get('denoise',False),scale=options.get('scale',1)))) for i in items]
         folder=Path(destination).expanduser().resolve(strict=True)
         if not folder.is_dir(): raise ValueError('请选择导出文件夹')
-        batch=folder/('photo-edit-'+datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')+'-'+uuid4().hex[:6])
-        batch.mkdir()
+        # 单张直接放进所选文件夹，不套一层；多张才新建一个 SuiTone-时间 的文件夹。
+        single=len(items)==1
+        if single:
+            batch=folder
+        else:
+            base='SuiTone-'+datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')
+            batch=folder/base; n=2
+            while batch.exists(): batch=folder/(base+'-'+str(n)); n+=1
+            batch.mkdir()
         result=[]
         self.progress=dict(done=0,total=len(items),name='准备导出')
         for item,quality in zip(items,qualities):
@@ -578,8 +588,8 @@ class Engine:
                 from info_bar import with_bar,meta
                 rendered=with_bar(rendered,meta(str(asset.path)),options.get('place',''))
             suffix='.png' if output_format=='png' else '.jpg'
-            path=batch/(asset.path.stem+suffix)
-            if path.exists(): path=batch/(asset.path.stem+'-'+asset.id[:6]+suffix)
+            path=batch/(asset.path.stem+suffix); n=2
+            while path.exists(): path=batch/(asset.path.stem+'-'+str(n)+suffix); n+=1
             save_new(rendered,path)
             if options.get('lut'):
                 from lut import base_lut,write_cube
@@ -589,7 +599,10 @@ class Engine:
             result.append(str(path))
             self.progress=dict(done=len(result),total=len(items),name=asset.path.name)
             del rendered,image,pixels
-        recipe=batch/'调整记录.photoedit'
+        # 单张时调整记录跟着照片命名，放在同一层，避免和别的导出互相覆盖。
+        stem='调整记录' if not single else Path(result[0]).stem
+        recipe=batch/(stem+'.photoedit'); n=2
+        while recipe.exists() and single: recipe=batch/(stem+'-'+str(n)+'.photoedit'); n+=1
         with recipe.open('x') as f:
             json.dump(dict(version=1,photos=[dict(path=str(self.asset(i['id']).path),params=parameters(i.get('params',{})),
                            operations=self.asset(i['id']).operations,quality=q) for i,q in zip(items,qualities)],
@@ -669,7 +682,7 @@ def serve(root, token, watch_stdin=True):
                                                                     data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'),data.get('parts'))
                     elif self.path=='/repair-mask': result=engine.repair_mask(data['id'],data['box'],data.get('classes'),data.get('keep'),
                                                                               data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'),data.get('parts'))
-                    elif self.path=='/selection-overlay': result=engine.selection_overlay(data['id'],data['selection'])
+                    elif self.path=='/selection-overlay': result=engine.selection_overlay(data['id'],data['selection'],data.get('color'))
                     elif self.path=='/region-outline': result=engine.region_outline(data['id'],data['params'],data['name'])
                     elif self.path=='/manual-mask-overlay': result=engine.manual_mask_overlay(data['id'],data['params'],data['name'])
                     elif self.path=='/adopt-generated': result=engine.adopt_generated(data['id'],data['path'])

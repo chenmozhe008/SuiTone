@@ -126,7 +126,7 @@ struct PhotoCanvas: View {
                     else if store.showOriginal {canvasLabel("原图").padding(10)}
                     else if store.repairDraft != nil {canvasLabel(store.repairShowingBefore ? "修复前" : "修复预览").padding(10)}
                     else if store.inspectorTab == "aiedit" && store.selectionOverlay != nil && !store.selectionParts.isEmpty {
-                        canvasLabel("选区：只改这块").padding(10)
+                        canvasLabel("选区：只改这块", color: .cyan).padding(10)
                     }
                     else if !store.overlay.isEmpty && !splitActive {
                         canvasLabel(store.overlay.hasPrefix("selection-") ? "选区" : RegionNames.title(store.overlay)+"选区").padding(10)
@@ -176,8 +176,8 @@ struct PhotoCanvas: View {
             && !(store.inspectorTab == "aiedit" && !store.selectionParts.isEmpty)
     }
 
-    private func canvasLabel(_ text:String)->some View {
-        Text(text).font(.caption.weight(.medium)).padding(.horizontal,9).padding(.vertical,5)
+    private func canvasLabel(_ text:String, color: Color = .white)->some View {
+        Text(text).font(.caption.weight(.medium)).foregroundStyle(color).padding(.horizontal,9).padding(.vertical,5)
             .background(.black.opacity(0.45),in:Capsule()).padding(10)
     }
 
