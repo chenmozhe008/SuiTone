@@ -75,6 +75,11 @@ actor EngineClient {
         var environment = ProcessInfo.processInfo.environment
         environment["PHOTO_EDIT_SESSION_TOKEN"] = token
         environment["PYTHONUNBUFFERED"] = "1"
+        // 发行包把模型放在 App 内；源码运行时引擎用 ~/.cache/photo-edit。
+        if let models = Bundle.main.resourceURL?.appendingPathComponent("models"),
+           FileManager.default.fileExists(atPath: models.path) {
+            environment["PHOTO_EDIT_ASSETS"] = models.path
+        }
         task.environment = environment
         let output = Pipe(), input = Pipe()
         task.standardOutput = output

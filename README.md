@@ -23,6 +23,10 @@
 
 调色、分区识别、去杂物、放大全部在本机推理，照片不上传。只有你主动使用「对话」并确认发送预览图时，缩小后的预览才会发给你自己配置的 AI 服务。
 
+<div align="center">
+<img src="docs/images/main.jpg" alt="随心修图：调整面板" width="900">
+</div>
+
 ## 可以做什么
 
 - **对话调整**：用日常的话描述效果，例如「把水面压暗一点，人脸的暖光留住」。AI 返回一条或多条参数方案，点一下就能在照片上看效果，不满意可换一条或直接撤销。
@@ -54,12 +58,24 @@
 
 - macOS 14 Sonoma 或更新版本
 - Apple 芯片（M1 及更新）。Intel 机器可以装，但尚未在 Intel 上做验收，速度和效果都没有实测数据
-- 磁盘约 1.5 GB（Python 环境、AI 模型和依赖）
-- 首次安装需要联网下载依赖和模型；日常修图全程离线
+- 磁盘约 700 MB（安装包版本，引擎和模型都在包内）
+- 下载安装包时需要联网；装好之后调色、识别、导出全程离线，只有用 AI 对话和检查更新时才联网
 
 ## 安装
 
-### 方式一：一行命令（推荐）
+### 方式一：下载安装包（推荐）
+
+1. 在 [Releases](https://github.com/chenmozhe008/SuiTone/releases/latest) 下载 `SuiTone-<版本>-arm64.zip`（约 450 MB），双击解压
+2. 把解压出来的「随心修图」拖进「应用程序」文件夹
+3. 首次打开时，系统可能提示「无法验证开发者」（本应用未做 Apple 公证）。点「完成」，到「系统设置 → 隐私与安全性」，在页面下方点「仍要打开」；也可以在终端运行一次：
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/随心修图.app
+   ```
+
+安装包里已经带了修图引擎和全部模型，不需要装 Python、不需要编译、不需要额外下载。打开就能用。
+
+### 方式二：一行命令（自己跟进代码）
 
 打开「终端」，粘贴下面这行回车：
 
@@ -75,7 +91,7 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/SuiTone/master/script/
 4. 下载 AI 模型（约 420 MB）
 5. 编译应用，安装到「应用程序」文件夹
 
-第一次安装大约 5–15 分钟，取决于网速。再次运行同一个命令就是更新。
+第一次大约 5–15 分钟，取决于网速。再次运行同一个命令就是更新。这条路适合想自己改代码的人；只是想用的话，装方式一的包就可以。
 
 不想下模型（分区、去杂物、放大会不可用，调色和导出照常）：
 
@@ -99,25 +115,24 @@ git clone https://github.com/chenmozhe008/SuiTone.git ~/SuiTone
 bash ~/SuiTone/script/install.sh
 ```
 
-### 方式二：让 AI 助手帮你装
+### 方式三：让 AI 助手帮你装
 
 用 Claude Code、Codex、WorkBuddy 这类助手时，把下面这段发给它：
 
-> 请帮我安装「随心修图」（https://github.com/chenmozhe008/SuiTone）：在终端运行 `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/SuiTone/master/script/install.sh | bash`。如果提示缺少 Xcode 命令行工具就先装命令行工具，提示缺 Python 就用 Homebrew 装 python@3.12，装完再跑一次脚本。装好后告诉我怎么导入第一张照片。
+> 请帮我安装「随心修图」（https://github.com/chenmozhe008/SuiTone）：优先从 https://github.com/chenmozhe008/SuiTone/releases/latest 下载 `SuiTone-<版本>-arm64.zip`，解压后把「随心修图.app」放进 /Applications，再运行 `xattr -dr com.apple.quarantine "/Applications/随心修图.app"`。装好后告诉我怎么导入第一张照片。
 
 <details>
 <summary>给 AI 助手的说明</summary>
 
-- 脚本可重复运行：已有源码会 `git pull`，已有虚拟环境和模型会跳过，已有的同名应用会被替换
-- 环境位置固定：虚拟环境 `~/.cache/photo-edit/venv`，模型 `~/.cache/photo-edit/{segformer,lama,sr}`，应用的会话数据 `~/Library/Application Support/SuiTone`。这些路径写死在代码里，不要改
-- 源码目录是运行依赖：`Info.plist` 的 `PhotoEditProjectRoot` 指向 `~/SuiTone`，应用从这个目录读引擎，删了应用就打不开
-- 模型下载失败的常见原因是网络：设置 `https_proxy` 后重新运行脚本即可续上，已下载的文件会跳过
-- 应用为临时签名（ad-hoc），未做 Apple 公证。本地编译安装不会触发 Gatekeeper 拦截；如果把 `.app` 复制到别的机器，需要 `xattr -dr com.apple.quarantine` 清一次隔离属性
-- 验证是否装好：`codesign --verify --strict "/Applications/随心修图.app"`，以及 `pgrep -x SuiTone` 有输出
+- 安装包是自包含的：`Contents/Resources/engine-bin` 里是引擎，`Contents/Resources/models` 里是模型，运行时通过 `PHOTO_EDIT_ASSETS` 指向包内，不要把模型拷到别处
+- 应用为临时签名（ad-hoc），未做 Apple 公证，所以需要清一次隔离属性，或让用户在「隐私与安全性」里点「仍要打开」
+- 用户数据在 `~/Library/Application Support/SuiTone`（会话与版本），卸载时连它一起删
+- 如果用户想改代码，改用源码方式：`script/install.sh`（虚拟环境 `~/.cache/photo-edit/venv`，模型 `~/.cache/photo-edit/{segformer,lama,sr}`）
+- 验证：`codesign --verify --strict "/Applications/随心修图.app"`，`pgrep -x SuiTone` 有输出
 
 </details>
 
-### 方式三：从源码构建（开发者）
+### 方式四：从源码构建（开发者）
 
 ```bash
 git clone https://github.com/chenmozhe008/SuiTone.git
@@ -127,9 +142,10 @@ cd SuiTone
 ./script/build_and_run.sh --build-only    # 只编译到 dist/SuiTone.app
 ./script/build_and_run.sh --verify        # 编译、启动并确认进程存活
 ./script/test.sh                          # Swift 与 Python 测试
+./script/package_release.sh               # 打自包含发行包（需 pyinstaller 与模型）
 ```
 
-引擎是纯 Python，可以单独调用。命令行入口见 `engine/cli.py`，模块说明和模型下载地址见 [`engine/README.md`](engine/README.md)。
+引擎是纯 Python，可以单独调用。命令行入口见 `engine/cli.py`，模块说明和模型下载地址见 [`engine/README.md`](engine/README.md)。发行包里引擎用 PyInstaller 打包成独立可执行文件，模型随包分发，运行时通过 `PHOTO_EDIT_ASSETS` 指定资源目录。
 
 ## 首次使用
 
@@ -175,8 +191,11 @@ cd SuiTone
 
 ## 常见问题
 
+**第一次打开提示「无法验证开发者」？**
+应用没有做 Apple 公证。在「系统设置 → 隐私与安全性」页面下方点「仍要打开」，或运行 `xattr -dr com.apple.quarantine /Applications/随心修图.app`，之后就可以正常双击打开。
+
 **安装时卡在下载模型？**
-模型来自 HuggingFace，国内网络需要代理。设好 `https_proxy` 后重新运行安装命令，已下载的部分会跳过。
+模型来自 HuggingFace，国内网络需要代理。设好 `https_proxy` 后重新运行安装命令，已下载的部分会跳过。用安装包的话没有这一步，模型已经在包里。
 
 **提示缺少 Xcode 命令行工具？**
 在终端运行 `xcode-select --install`，装完重新执行安装命令。应用是原生 SwiftUI 编译的，必须要有命令行工具。

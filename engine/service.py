@@ -21,6 +21,7 @@ from analysis import Analysis
 from grade import grade, grade_array, quantize, rgb2lab
 from image_io import EXTENSIONS, load_image, load_pixels, save_new
 import segmentation
+from paths import ASSETS
 
 DEFAULTS = dict(water=[54., -17., -7.], water_var=.6, dehaze_amt=1., sky_hue=-100.,
                 autumn=.25, black_white=.5, contrast=1., exposure=0., saturation=1.,
@@ -633,7 +634,7 @@ def serve(root, token, watch_stdin=True):
                 job=parse_qs(urlsplit(self.path).query).get('id',[''])[0]
                 return self.response(200,engine.ai_recommendations.status(job))
             if self.path!='/health': return self.response(404,{'error':'未知操作'})
-            cache=Path.home()/'.cache/photo-edit'
+            cache=ASSETS
             return self.response(200,dict(ok=True,missing=[str(cache/p) for p in ['segformer/model.onnx','segformer/config.json','lama/lama_fp32.onnx'] if not (cache/p).is_file()]))
         def do_POST(self):
             if not self.authorized(): return self.response(403,{'error':'当前会话未授权'})

@@ -256,18 +256,28 @@ final class WorkspaceStore {
         analysisTask?.cancel()
         guard current != nil else { return }
         styleTiles=[:]
-        if current?.ready == true { schedulePreview(); loadStyleTiles() }
+        if current?.ready == true { schedulePreview(); loadStyleTiles(); loadAnalysis() }
     }
 
     func loadAnalysis() {
         guard let photo = current else { return }
         analysisTask?.cancel()
         analysisTask = Task {
-            do {
-                let response: AnalysisResponse = try await engine.request("analyze", body: ["id": photo.assetID])
-                guard !Task.isCancelled, current?.assetID == photo.assetID else { return }
-                analysis = response
-            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+            // 引擎冷启动（发行包会把模型和运行时解压到临时目录）需要几秒，
+            // 界面可能先于引擎就绪发出请求。失败后重试，而不是让面板一直停在识别中。
+            for attempt in 0..<20 {
+                if attempt > 0 { try? await Task.sleep(for: .milliseconds(600)) }
+                if Task.isCancelled || current?.assetID != photo.assetID { return }
+                do {
+                    let response: AnalysisResponse = try await engine.request("analyze", body: ["id": photo.assetID])
+                    guard !Task.isCancelled, current?.assetID == photo.assetID else { return }
+                    analysis = response
+                    return
+                } catch {
+                    if Task.isCancelled { return }
+                    if attempt == 19 { self.error = error.localizedDescription }
+                }
+            }
         }
     }
 

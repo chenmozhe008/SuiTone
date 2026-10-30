@@ -18,8 +18,8 @@ stop_app() {
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
   pkill -x PhotoEdit >/dev/null 2>&1 || true
 }
-swift build --package-path "$ROOT_DIR/app" -c release
-BUILD_BINARY="$(swift build --package-path "$ROOT_DIR/app" -c release --show-bin-path)/$APP_NAME"
+swift build --package-path "$ROOT_DIR/app" -c release --disable-sandbox
+BUILD_BINARY="$(swift build --package-path "$ROOT_DIR/app" -c release --disable-sandbox --show-bin-path)/$APP_NAME"
 mkdir -p "$APP_MACOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$ROOT_DIR/CHANGELOG.md" "$APP_BUNDLE/Contents/Resources/CHANGELOG.md"

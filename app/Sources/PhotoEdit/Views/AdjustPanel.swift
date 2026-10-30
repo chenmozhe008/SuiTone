@@ -168,6 +168,10 @@ struct AdjustPanel: View {
                 Text("局部调整").font(.headline)
                 Spacer()
             }
+            .task(id: store.current?.assetID) {
+                // 导入后 current 可能还没 ready，activate 时拿不到分析；面板出现时补一次。
+                if store.analysis == nil { store.loadAnalysis() }
+            }
             if store.analysis == nil && availableRegions.isEmpty {
                 HStack { ProgressView().controlSize(.small); Text("正在识别画面区域…").font(.callout).foregroundStyle(.secondary) }
             } else if availableRegions.isEmpty {

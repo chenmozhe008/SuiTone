@@ -15,7 +15,8 @@ import os
 import numpy as np
 from PIL import Image, ImageFilter
 from grade import seg_classes
-MP=os.path.expanduser('~/.cache/photo-edit/lama/lama_fp32.onnx')
+from paths import ASSETS
+MP=str(ASSETS/'lama'/'lama_fp32.onnx')
 _s=None
 def _lama(img512, m512):
     global _s

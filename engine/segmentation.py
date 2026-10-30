@@ -9,8 +9,9 @@ from zipfile import BadZipFile
 from uuid import uuid4
 import numpy as np
 from PIL import Image
+from paths import ASSETS
 
-MODEL_DIR = Path.home() / '.cache/photo-edit/segformer'
+MODEL_DIR = ASSETS / 'segformer'
 _session = None
 _cache = OrderedDict()
 _lock = RLock()

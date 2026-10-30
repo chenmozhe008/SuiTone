@@ -16,7 +16,8 @@ import os, json
 import numpy as np
 from PIL import Image, ImageOps, ImageFilter
 
-MD=os.path.expanduser('~/.cache/photo-edit/segformer')
+from paths import ASSETS
+MD=str(ASSETS/'segformer')
 
 # ---------- basics ----------
 _M=np.array([[0.4124,0.3576,0.1805],[0.2126,0.7152,0.0722],[0.0193,0.1192,0.9505]]); _Mi=np.linalg.inv(_M); _WP=np.array([0.95047,1.0,1.08883])

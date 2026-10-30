@@ -7,7 +7,8 @@
 import os
 import numpy as np
 from PIL import Image
-SR=os.path.expanduser('~/.cache/photo-edit/sr')
+from paths import ASSETS
+SR=str(ASSETS/'sr')
 def denoise(img, strength=1.0):
     import cv2
     a=cv2.cvtColor(np.asarray(img.convert('RGB')),cv2.COLOR_RGB2LAB)
