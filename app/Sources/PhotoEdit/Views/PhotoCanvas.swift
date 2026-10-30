@@ -11,6 +11,17 @@ struct PhotoCanvas: View {
                 let w=max(1,min(geometry.size.width-48,(geometry.size.height-48)*ratio))
                 let h=w/ratio
                 ZStack {
+                    if store.inspectorTab == "cutout" && store.cutoutPreview != nil {
+                        Canvas { context, size in
+                            let cell: CGFloat = 12
+                            for row in 0..<Int(ceil(size.height / cell)) {
+                                for column in 0..<Int(ceil(size.width / cell)) {
+                                    let rect = CGRect(x: CGFloat(column) * cell, y: CGFloat(row) * cell, width: cell, height: cell)
+                                    context.fill(Path(rect), with: .color((row + column).isMultiple(of: 2) ? .white.opacity(0.8) : .gray.opacity(0.8)))
+                                }
+                            }
+                        }.frame(width:w,height:h)
+                    }
                     LocalPhoto(path:displayPath(photo)).frame(width:w,height:h)
                     if splitActive {
                         let x=w*store.splitPosition
@@ -26,10 +37,10 @@ struct PhotoCanvas: View {
                             canvasLabel("调整后").opacity(store.splitPosition<0.92 ? 1 : 0)
                         }.frame(width:w,height:h,alignment:.top)
                     }
-                    if store.repairEnabled && store.repairDraft == nil && store.repairMaskOverlay == nil {
+                    if (store.repairEnabled || (store.inspectorTab == "chat" && store.repairTool != "box")) && store.repairDraft == nil && store.repairMaskOverlay == nil {
                         repairShapes(w:w,h:h)
                     }
-                    if let box=store.selectionBox,(store.repairEnabled && store.repairTool == "box" || store.inspectorTab == "chat"),store.repairDraft == nil {
+                    if let box=store.selectionBox,((store.repairEnabled || store.inspectorTab == "chat") && store.repairTool == "box"),store.repairDraft == nil {
                         Rectangle().stroke(.white,lineWidth:1).background(.white.opacity(0.08))
                             .frame(width:w*(box[2]-box[0]),height:h*(box[3]-box[1]))
                             .position(x:w*(box[0]+box[2])/2,y:h*(box[1]+box[3])/2)
@@ -44,7 +55,8 @@ struct PhotoCanvas: View {
                     if store.repairEnabled {
                         guard !store.busy, store.repairDraft == nil else {return}
                         if store.repairTool == "object" && tap {
-                            store.repairPoint=point;store.updateRepairBounds();store.previewRepairMask()
+                            store.repairPoint=point;store.updateRepairBounds()
+                            if store.inspectorTab == "cutout" { store.previewCutout() } else { store.previewRepairMask() }
                         } else if store.repairTool == "brush" || store.repairTool == "lasso" {
                             drawing=false;store.updateRepairBounds()
                         }
@@ -144,6 +156,7 @@ struct PhotoCanvas: View {
         if let draft = store.repairDraft, draft.photoID == photo.id {
             return store.repairShowingBefore ? draft.beforePath : draft.previewPath
         }
+        if store.inspectorTab == "cutout", let path=store.cutoutPreview {return path}
         if store.repairEnabled,let path=store.repairMaskOverlay {return path}
         if store.overlay.hasPrefix("selection-"), let path=store.manualOverlay {return path}
         if let overlay=store.analysis?.overlays[store.overlay] {return overlay}

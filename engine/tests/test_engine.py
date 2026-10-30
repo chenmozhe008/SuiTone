@@ -250,6 +250,18 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result['state'],'done');self.assertEqual(result['changes'],[])
         self.assertNotIn('fixture-secret',repr(result))
 
+    def test_cutout_transparent_mask_keeps_subject_and_rejects_background(self):
+        from cutout import subject_alpha
+        from unittest.mock import patch
+        image=Image.new('RGB',(100,80),(100,120,140))
+        p=np.zeros((2,8,10),np.float32);p[0]=.95;p[1]=.05
+        p[0,2:7,3:7]=.05;p[1,2:7,3:7]=.95
+        with patch('segmentation.probabilities',return_value=(p,{0:'sky',1:'person'})):
+            alpha=np.asarray(subject_alpha(image,[.5,.5]))
+            self.assertGreater(int(alpha[40,50]),240)
+            self.assertEqual(int(alpha[5,5]),0)
+            with self.assertRaises(ValueError):subject_alpha(image,[.05,.05])
+
     def test_provider_distinguishes_truncated_and_invalid_responses(self):
         from api_providers import invoke
         from assistant import SCHEMA

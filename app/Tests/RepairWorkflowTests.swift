@@ -37,6 +37,16 @@ import Testing
         store.selectLocalRegion(nil)
     }
 
+    @Test @MainActor func testChatSelectionTransfersToRepair() {
+        let store = fixture()
+        store.repairDraft = nil; store.beginChatSelection()
+        store.updateChatSelection(from: [0.1, 0.2], to: [0.5, 0.6])
+        let expected = store.selectionBox
+        store.finishRepairTransition(to: "repair")
+        #expect(store.selectionBox == expected)
+        #expect(store.repairTool == "box")
+    }
+
     @Test @MainActor func testCancelLeavesPhotoAndHistoryUntouched() async {
         let store = fixture(), before = store.current!.snapshot
         #expect(store.controlsBlocked)

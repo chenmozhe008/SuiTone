@@ -73,7 +73,7 @@ extension WorkspaceStore {
     }
 
     func finishRepairTransition(to tab: String) {
-        let keepSelection = tab == "chat" && repairDraft == nil
+        let keepSelection = (tab == "chat" || tab == "repair") && repairDraft == nil
         let savedBox = selectionBox, savedStrokes = repairStrokes, savedPolygon = repairPolygon, savedPoint = repairPoint
         cancelRepairPreview()
         if keepSelection {

@@ -57,6 +57,8 @@ final class WorkspaceStore {
     var repairClasses = "railing, fence"
     var repairEnabled = false
     var repairMaskOverlay: String?
+    var cutoutPreview: String?
+    var cutoutSnapshot: EditSnapshot?
     var repairDraft: RepairDraft?
     var repairShowingBefore = false
     var repairRevision = 0

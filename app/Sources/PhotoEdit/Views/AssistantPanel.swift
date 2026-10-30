@@ -121,11 +121,7 @@ struct AssistantPanel: View {
                                         .disabled(store.chatting || store.controlsBlocked || store.undoChanges.last?.id != changeID)
                                         .help(store.undoChanges.last?.id == changeID ? "撤销这次调整" : "请先撤销之后的操作")
                                 }
-                                if !message.notes.isEmpty && message.text.hasPrefix("已应用：") {
-                                    ForEach(Array(message.notes.enumerated()), id: \.offset) { _, line in
-                                        Text(line).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
-                                    }
-                                } else if !message.notes.isEmpty {
+                                if !message.notes.isEmpty {
                                     DisclosureGroup("查看实际调整") {
                                         ForEach(Array(message.notes.enumerated()), id: \.offset) { _, line in
                                             Text(line).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
@@ -147,11 +143,13 @@ struct AssistantPanel: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 if store.validRepairSelection {
-                    HStack {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("已选择当前照片中的区域").font(.callout).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("调整选区") { store.editSelectedRegion() }.disabled(store.chatting || store.controlsBlocked)
-                        Button("取消选区") { store.clearRepairSelection() }
+                        FlowLayout(spacing: 8) {
+                            Button("调整选区") { store.editSelectedRegion() }.disabled(store.chatting || store.controlsBlocked)
+                            Button("移除所选") { store.inspectorTab = "repair" }.disabled(store.chatting || store.controlsBlocked)
+                            Button("取消选区") { store.clearRepairSelection() }
+                        }
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
@@ -313,7 +311,7 @@ private struct APISettingsSheet: View {
                     SecureField("API 密钥", text: $key, prompt: Text(savedKey ? "已保存，留空则不修改" : "粘贴密钥"))
                     Picker("模型", selection: modelChoice) {
                         if !provider.models.isEmpty {
-                            Section("常用看图模型") { ForEach(provider.models, id: \.self) { Text($0).tag($0) } }
+                            Section("常用模型") { ForEach(provider.models, id: \.self) { Text($0).tag($0) } }
                         }
                         let others = fetched.filter { !provider.models.contains($0) }
                         if !others.isEmpty {
@@ -329,7 +327,7 @@ private struct APISettingsSheet: View {
                         TextField("模型名称", text: $model, prompt: Text("按服务商文档填写"))
                     }
                 } footer: {
-                    Text("需选择能看图的模型。测试连接后，下拉里会列出这家的全部模型。")
+                    Text("AI 调整需要支持看图的模型。测试连接只获取模型列表，不代表已验证看图或图片编辑能力。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -362,17 +360,25 @@ private struct APISettingsSheet: View {
             model = store.apiModels[provider.id] ?? provider.models.first ?? ""
             baseURL = store.customBaseURL
         }
+        .onChange(of: key) { _, _ in result = nil; fetched = [] }
+        .onChange(of: baseURL) { _, _ in result = nil; fetched = [] }
     }
 
     private func testConnection() {
         fetching = true; result = nil
         let secret = key.isEmpty ? effectiveKey : cleanedKey
+        let address = provider.needsBaseUrl ? trimmedURL : ""
         Task {
             defer { fetching = false }
             do {
-                fetched = try await store.fetchModels(provider: provider.id, key: secret, baseURL: provider.needsBaseUrl ? trimmedURL : "")
-                result = (true, fetched.isEmpty ? "连接成功" : "连接成功，可选 \(fetched.count) 个模型")
+                let models = try await store.fetchModels(provider: provider.id, key: secret, baseURL: address)
+                guard (key.isEmpty ? effectiveKey : cleanedKey) == secret,
+                      (provider.needsBaseUrl ? trimmedURL : "") == address else { return }
+                fetched = models
+                result = (true, models.isEmpty ? "接口已响应，模型能力未验证" : "已获取 \(models.count) 个模型，能力未验证")
             } catch {
+                guard (key.isEmpty ? effectiveKey : cleanedKey) == secret,
+                      (provider.needsBaseUrl ? trimmedURL : "") == address else { return }
                 result = (false, error.localizedDescription)
             }
         }

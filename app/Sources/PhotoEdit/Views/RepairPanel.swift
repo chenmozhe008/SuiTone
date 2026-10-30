@@ -53,10 +53,11 @@ struct RepairPanel: View {
                         }.frame(maxWidth: .infinity)
                     }.buttonStyle(.borderedProminent).controlSize(.large)
                         .disabled(!store.validRepairSelection || working)
-                    HStack {
+                    FlowLayout(spacing: 8) {
                         Button("重新选择") { store.clearRepairSelection() }
                             .disabled(store.selectionBox == nil || working)
-                        Spacer()
+                        Button("调整选区") { store.editSelectedRegion() }
+                            .disabled(!store.validRepairSelection || working)
                         Button("查看将去除的部分") { store.previewRepairMask() }
                             .disabled(!store.validRepairSelection || working)
                     }
