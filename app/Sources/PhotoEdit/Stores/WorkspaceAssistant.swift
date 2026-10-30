@@ -154,7 +154,7 @@ extension WorkspaceStore {
         }
         var preparedResults: [(PhotoRecord, EditSnapshot, [String])] = []
         var appliedBefore: [String: EditSnapshot] = [:], details: [String] = [], affectedPhotos: [String] = []
-        var reviewAccepted = false
+        var reviewAccepted = false, reviewFailure: String?
         for change in result.changes ?? [] {
             guard let item = items.first(where: { $0.assetID == change.id }) else {
                 details.append("未找到对应照片，已跳过"); continue
@@ -241,7 +241,7 @@ extension WorkspaceStore {
                 if assistantCancellationRequested || Task.isCancelled {
                     chatMessages.append(ChatMessage(role: "assistant", text: "已取消，本次没有应用调整。")); return
                 }
-                details.append("复看未完成，保留首轮调整：" + error.localizedDescription)
+                reviewFailure = "复看未完成，保留首轮调整：" + error.localizedDescription
             }
         }
         guard !assistantCancellationRequested, !Task.isCancelled else {
@@ -270,6 +270,7 @@ extension WorkspaceStore {
             let feedback = reviewAccepted ? (reviewFeedback?()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") : ""
             reply = "已完成调整。" + (skipped > 0 ? " \(skipped) 张未调整，请查看原因。" : "")
                 + (feedback.isEmpty ? "" : "\n复看时：" + feedback)
+                + (reviewFailure.map { "\n" + $0 } ?? "")
         }
         chatMessages.append(ChatMessage(role: "assistant", text: reply, notes: details, affectedPhotos: affectedPhotos, changeID: changeID))
         if let selection = result.selection, selection != "none" { overlay = selection; loadAnalysis() }
