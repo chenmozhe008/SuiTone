@@ -68,7 +68,7 @@
 也可以添加参考图，分别说明想借鉴的场景、光线或风格。下图是当前版本的操作示意，展示原图、三张参考图和提示词；示例未发起生成。
 
 <div align="center">
-<img src="docs/images/ai-edit-demo-044.png" alt="AI 改图操作示意：原图、三张参考图和文字要求" width="900">
+<img src="docs/images/ai-edit-city-044.png" alt="AI 改图操作示意：原图、三张参考图和文字要求" width="900">
 </div>
 
 ## 支持的 AI 服务
