@@ -287,7 +287,7 @@ cd SuiTone
 - [Swin2SR](https://github.com/mv-lab/swin2sr)（Apache-2.0）：2 倍 / 4 倍放大
 - [rawpy](https://github.com/letmaik/rawpy)、[OpenCV](https://opencv.org)、[Pillow](https://python-pillow.org)、[NumPy](https://numpy.org)：图像读写与处理
 
-模型不放在源码仓库中；安装脚本从各自的原始页面下载，现有安装包包含模型。这些模型适用各自的上游许可证，与代码许可证不同；SegFormer 权重的使用与再分发授权仍需进一步确认。
+模型不放在源码仓库中；安装脚本从各自的原始页面下载，现有安装包包含模型。这些模型适用各自的上游许可证，与代码许可证不同。SegFormer 权重的许可标注为 `other`，其使用与再分发授权仍需进一步确认；[上游 SegFormer 代码许可证](https://github.com/NVlabs/SegFormer/blob/master/LICENSE) 将非商业使用限定为研究或评估用途，不能仅凭“自用、非商用”认定其他用途已获授权。
 
 ## 许可证
 

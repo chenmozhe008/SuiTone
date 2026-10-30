@@ -36,6 +36,11 @@ rm -rf "${ROOT}/tmp/pyi"
 # 用 onedir：onefile 每次启动都要解压 100 MB 以上，冷启动要十几秒，界面会先于引擎就绪。
 ( cd "${ROOT}/engine" && "${VENV}/bin/pyinstaller" --noconfirm --onedir --name suitone-engine \
     --distpath "${ROOT}/tmp/pyi/dist" --workpath "${ROOT}/tmp/pyi/build" --specpath "${ROOT}/tmp/pyi" \
+    --hidden-import assistant --hidden-import ai_recommendation --hidden-import image_edit \
+    --hidden-import api_providers --hidden-import anthropic_provider --hidden-import jimeng_edit \
+    --hidden-import suggestions --hidden-import smart --hidden-import recommendations \
+    --hidden-import enhance --hidden-import geometry --hidden-import inpaint --hidden-import match \
+    --hidden-import render --hidden-import info_bar --hidden-import lut --hidden-import vision \
     service.py >/dev/null 2>&1 ) || die "引擎编译失败，去掉 >/dev/null 看报错。"
 ENGINE_DIR="${ROOT}/tmp/pyi/dist/suitone-engine"
 [[ -x "${ENGINE_DIR}/suitone-engine" ]] || die "没有产出引擎可执行文件。"
@@ -52,6 +57,8 @@ ditto "${ROOT}/dist/SuiTone.app" "${STAGE}/${APP_NAME}.app"
 BUNDLE="${STAGE}/${APP_NAME}.app"
 RES="${BUNDLE}/Contents/Resources"
 mkdir -p "${RES}/engine-bin" "${RES}/models"
+mkdir -p "${RES}/ThirdPartyNotices"
+cp "${ROOT}/docs/licenses/SegFormer-LICENSE.txt" "${RES}/ThirdPartyNotices/SegFormer-LICENSE.txt"
 ditto "${ENGINE_DIR}" "${RES}/engine-bin"
 chmod +x "${RES}/engine-bin/suitone-engine"
 for d in segformer lama sr; do
