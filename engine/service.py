@@ -36,7 +36,7 @@ LIMITS = dict(water_var=(0, 2), dehaze_amt=(0, 1), sky_hue=(-180, 180), autumn=(
               highlights=(-1,1),shadows=(-1,1),effect_strength=(0,1),
               shadow_hue=(-180,180),shadow_chroma=(0,30),highlight_hue=(-180,180),highlight_chroma=(0,30),fade=(0,1),
               whites=(-1,1),blacks=(-1,1),light=(-1,1),vibrance=(-1,1),texture=(0,1),
-              rotation=(0,270),angle=(-45,45))
+              rotation=(0,270),angle=(-180,180))
 
 
 def _coordinate(value):

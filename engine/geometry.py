@@ -8,8 +8,11 @@ from PIL import Image, ImageOps
 
 
 def _largest_inside(width, height, angle):
-    """旋转后能放进去的最大矩形，避免四个角露出空白。"""
-    angle = math.radians(abs(angle))
+    """旋转后能放进去的最大矩形，避免四个角露出空白。
+
+    任意角度都适用：先把角度折到 0–90°，公式本身对大于 90° 的旋转同样成立。
+    """
+    angle = math.radians(abs(angle) % 180)
     sin_a, cos_a = abs(math.sin(angle)), abs(math.cos(angle))
     wider = width >= height
     long_side, short_side = (width, height) if wider else (height, width)

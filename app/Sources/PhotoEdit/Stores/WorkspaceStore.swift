@@ -59,6 +59,12 @@ final class WorkspaceStore {
     var aiEditMessageID: UUID?
     /// 在画布上临时查看某个版本（不改照片，点「回到当前」或离开面板即恢复）
     var versionPreview: String?
+    /// 验收截图用：启动参数 `-aiRefs` 带进来的参考图，进 AI 改图面板时自动填上
+    var aiEditReferences: [String] = []
+    /// 验收截图用：`-aiMention` 时自动在输入框里插一个图片块并弹出 @ 列表
+    var aiMentionDemo = false
+    /// 验收截图用：`-aiGenerate` 时自动用插入的图片块跑一次真实生成
+    var aiAutoPrompt = false
     /// 出图服务是否已配好（密钥只在真正生成时才读钥匙串，这里看保存标记，避免弹授权框）
     var imageServiceReady: Bool {
         guard let service = imageServices.first(where: { $0.id == imageService }) else { return false }
@@ -127,6 +133,8 @@ final class WorkspaceStore {
     var libraryTask: Task<Void, Never>?
     /// 只在单元测试里设置：把图集写到指定目录，几个测试并行时不互相踩。
     var libraryDirectory: URL?
+    /// 拖动自由旋转时的临时角度（度）：画面先在本地实时跟着转，松手才让引擎精确渲染
+    var angleDraft: Double = 0
     /// 裁切页正在框的范围（0–1 比例）和拖拽起点；裁切比例选的是哪一档
     var cropDraft: [Double]?
     var cropAnchor: [Double]?
@@ -271,6 +279,12 @@ final class WorkspaceStore {
             }
             if let tab = options["openTab"] as? String { inspectorTab = tab }
             if let settings = options["openSettings"] as? String { settingsTab = settings }
+            // 验收 AI 改图面板用：直接带上参考图，省得每次手点。`-aiRefs "a.jpg|b.jpg"`
+            if let refs = options["aiRefs"] as? String {
+                aiEditReferences = refs.split(separator: "|").map(String.init).filter { !$0.isEmpty }
+            }
+            if options["aiMention"] != nil { aiMentionDemo = true }
+            if options["aiGenerate"] != nil { aiAutoPrompt = true }
             if let point = (options["selectionPoint"] as? String)?.split(separator: ",").compactMap({ Double($0) }), point.count == 2 {
                 try? await Task.sleep(for: .milliseconds(500))
                 repairTool = "object"; repairPoint = point; commitSelectionPart()

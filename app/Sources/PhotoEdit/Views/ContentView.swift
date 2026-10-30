@@ -52,15 +52,20 @@ private struct WorkspaceHeader: View {
     }
     var body: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(AppIdentity.name).font(.system(size: 15, weight: .semibold))
-                Text(store.photos.isEmpty ? "照片编辑" : "\(store.included.count) 张照片")
-                    .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 9) {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable().interpolation(.high)
+                    .frame(width: 34, height: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(AppIdentity.name).font(.system(size: 15, weight: .semibold))
+                    Text(store.photos.isEmpty ? "照片编辑" : "\(store.included.count) 张照片")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
+            Button { store.showLibrary.toggle() } label: { Label("图集", systemImage: "sidebar.left") }
+                .help("显示或隐藏图集栏")
             Button { store.chooseImport() } label: { Label("添加照片", systemImage: "plus") }
                 .disabled(store.controlsBlocked)
-            Button { store.showLibrary.toggle() } label: { Label("图集", systemImage: "sidebar.left") }
-                .help("显示／隐藏左边的图集和历史记录")
             Spacer(minLength: 16)
             if !store.photos.isEmpty {
                 HStack(spacing: 6) {
@@ -89,28 +94,44 @@ private struct WorkspaceHeader: View {
 private struct CanvasHeader: View {
     @Bindable var store: WorkspaceStore
     @ViewBuilder private func toolButtons(spacing: CGFloat) -> some View {
-        let labels = true
         HStack(spacing: spacing) {
-            toggle("对比", "rectangle.split.2x1", $store.splitCompare, labels, help: "拖动画面上的分隔线比较原图和调整后").disabled(store.grid)
-            toggle("原图", "circle.lefthalf.filled", $store.showOriginal, labels, help: "按 \\ 切换整张原图")
+            chip("对比", "rectangle.split.2x1", store.splitCompare && !store.grid,
+                 help: "拖动画面上的分隔线比较原图和调整后") { store.splitCompare.toggle() }
+                .disabled(store.grid)
+            chip("原图", "circle.lefthalf.filled", store.showOriginal, help: "按 \\ 切换整张原图") { store.showOriginal.toggle() }
             Divider().frame(height: 18)
-            toggle("选区", "lasso", tool("selection"), labels, help: "画选区，可以多笔加减").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "selection")
-            toggle("移除", "bandage", tool("repair"), labels, help: "移除杂物").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
+            chip("选区", "lasso", store.inspectorTab == "selection", help: "画选区，可以多笔加减") { pick("selection") }
+                .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "selection")
+            chip("移除", "bandage", store.inspectorTab == "repair", help: "移除杂物") { pick("repair") }
+                .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
             aiButton
-            toggle("裁切", "crop.rotate", tool("crop"), labels, help: "裁切、旋转、翻转和拉直照片").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "crop")
-            toggle("抠图", "scissors", tool("cutout"), labels, help: "抠出照片中的主体，另存透明 PNG").disabled(store.current == nil || store.controlsBlocked)
-            toggle("画质", "wand.and.stars", tool("quality"), labels, help: "降噪与放大").disabled(store.current == nil || store.controlsBlocked)
+            chip("裁切", "crop.rotate", store.inspectorTab == "crop", help: "裁切、旋转、翻转和自由旋转") { pick("crop") }
+                .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "crop")
+            chip("抠图", "scissors", store.inspectorTab == "cutout", help: "抠出照片中的主体，另存透明 PNG") { pick("cutout") }
+                .disabled(store.current == nil || store.controlsBlocked)
+            chip("画质", "wand.and.stars", store.inspectorTab == "quality", help: "降噪与放大") { pick("quality") }
+                .disabled(store.current == nil || store.controlsBlocked)
         }.fixedSize()
     }
 
-    private func toggle(_ title: String, _ icon: String, _ isOn: Binding<Bool>, _ labels: Bool, help: String) -> some View {
-        Toggle(isOn: isOn) {
-            if labels { Label(title, systemImage: icon) } else { Image(systemName: icon) }
-        }.toggleStyle(.button).help(labels ? help : title + "：" + help)
+    /// 工具按钮：选中的那个整块高亮成浅色胶囊，一眼能看出现在在哪一页。
+    private func chip(_ title: String, _ icon: String, _ isOn: Bool, help: String,
+                      action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+                Text(title).font(.callout.weight(isOn ? .semibold : .regular))
+            }
+            .foregroundStyle(isOn ? Color(white: 0.12) : Color.white.opacity(0.82))
+            .padding(.horizontal, 10).frame(height: 26)
+            .background(isOn ? Color.white.opacity(0.92) : Color.clear, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 
-    private func tool(_ name: String) -> Binding<Bool> {
-        Binding(get: { store.inspectorTab == name }, set: { store.inspectorTab = $0 ? name : store.lastMainTab })
+    private func pick(_ name: String) {
+        store.inspectorTab = store.inspectorTab == name ? store.lastMainTab : name
     }
 
     private var aiOff: Bool {
@@ -126,7 +147,7 @@ private struct CanvasHeader: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "sparkles").font(.system(size: 11, weight: .bold))
-                Text("AI 改图").font(.callout.weight(on ? .semibold : .medium))
+                Text("AI 改图").font(.callout.weight(.semibold))
             }
             .foregroundStyle(on ? AnyShapeStyle(.white)
                                 : AnyShapeStyle(Color(red: 0.80, green: 0.70, blue: 1.0)))

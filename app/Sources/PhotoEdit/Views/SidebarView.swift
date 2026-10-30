@@ -45,6 +45,7 @@ struct FilmstripView: View {
                                             .padding(4)
                                         }
                                     }
+
                                 Text(photo.imported.name).font(.system(size: 10)).lineLimit(1)
                                     .foregroundStyle(photo.id == store.currentID ? .primary : .secondary)
                             }.frame(width: 112).opacity(photo.excluded ? 0.35 : 1)

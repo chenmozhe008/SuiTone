@@ -5,9 +5,10 @@ import UniformTypeIdentifiers
 /// 「AI 改图」工具：改哪里（整张／只改选区）→ 想改成什么 → 发给谁 → 生成；下方是这张照片的版本。
 struct AIEditPanel: View {
     @Bindable var store: WorkspaceStore
-    @State private var prompt = ""
+    @StateObject private var editor = MentionEditorModel()
     @State private var onlySelection = true
     @State private var referencePaths: [String] = []
+    @State private var showMention = false
     private let examples = ["换成雪山背景", "去掉人物并补出背景", "加一群海鸥", "天空换成晚霞"]
     private var service: ImageService? { store.imageServices.first { $0.id == store.imageService } }
     /// 这个模型能加几张参考图（含原图在内的官方上限；0 表示不给加）
@@ -49,7 +50,7 @@ struct AIEditPanel: View {
                     Text("最多 \(limit) 张").font(.caption).foregroundStyle(.secondary)
                 ) : nil) {
                     if limit == 0 {
-                        Text("当前的 \(store.imageModelName) 按官方文档不能附加参考图。需要参考别的图时，可以在设置里换个模型。")
+                        Text(store.imageModelName.isEmpty ? "先在设置里选择 AI 改图服务和模型，再添加参考图。" : "当前的 \(store.imageModelName) 按官方文档不能附加参考图。需要参考别的图时，可以在设置里换个模型。")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     } else if referencePaths.isEmpty {
                         HStack {
@@ -57,46 +58,51 @@ struct AIEditPanel: View {
                             Button("添加参考图…") { addReferences() }.buttonStyle(.link)
                         }
                     } else {
+                        ScrollView(.horizontal) {
                         HStack(spacing: 10) {
-                            ForEach(referencePaths, id: \.self) { path in
+                            ForEach(Array(referencePaths.enumerated()), id: \.element) { index, path in
                                 Button {
                                     referencePaths.removeAll { $0 == path }
                                 } label: {
-                                    LocalPhoto(path: path, fill: true).frame(width: 68, height: 50)
+                                    LocalPhoto(path: path, fill: true).frame(width: 74, height: 54)
                                         .clipShape(RoundedRectangle(cornerRadius: 6))
                                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.25)))
+                                        .overlay(alignment: .bottomLeading) { figureBadge("图\(index + 2)") }
                                         .overlay(alignment: .topTrailing) {
                                             Image(systemName: "xmark.circle.fill").font(.system(size: 13))
                                                 .foregroundStyle(.white, .black).padding(3)
                                         }
-                                }.buttonStyle(.plain).help("点一下移除这张参考图")
+                                }.buttonStyle(.plain).disabled(editor.hasReferenceMentions)
+                                    .help(editor.hasReferenceMentions ? "先从提示词中删除参考图引用，再移除参考图" : "点一下移除这张参考图")
                             }
                             if referencePaths.count < limit {
                                 Button { addReferences() } label: {
                                     VStack {
                                         Image(systemName: "plus").font(.system(size: 17))
                                         Text("添加").font(.caption2)
-                                    }.frame(width: 68, height: 50)
+                                    }.frame(width: 74, height: 54)
                                     .background(Color(white: 0.2), in: RoundedRectangle(cornerRadius: 6))
                                 }.buttonStyle(.plain)
                             }
-                            Spacer()
                         }
-                        Text("点缩略图移除；参考图会跟照片一起发给 AI，\(referencePaths.count)／\(limit) 张。")
-                            .font(.callout).foregroundStyle(.secondary)
+                        }.scrollIndicators(.visible)
+                        Text("角标就是它在提示词里的叫法；点缩略图可以移除。参考图会跟照片一起发给 AI，\(referencePaths.count)／\(limit) 张。")
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        if editor.hasReferenceMentions {
+                            Text("移除参考图前，请先删除提示词中的参考图引用。")
+                                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 section("想改成什么") {
-                    ZStack(alignment: .topLeading) {
-                        if prompt.isEmpty {
-                            Text("比如：把海面换成平静的湖面，人物和天空不变").font(.callout).foregroundStyle(.tertiary)
-                                .padding(.horizontal, 5).padding(.top, 8)
-                        }
-                        TextEditor(text: $prompt).font(.callout).scrollContentBackground(.hidden).frame(minHeight: 70, maxHeight: 120)
-                    }.padding(6).background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 8))
+                    composer
+                    if !referencePaths.isEmpty {
+                        Text("在框里打 @ 可以引用图片：原图是图1，参考图按缩略图顺序排。引用之后文字里显示的是图片，发给 AI 时对应「图N」。")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
                     FlowLayout(spacing: 8) {
                         ForEach(examples, id: \.self) { example in
-                            Button(example) { prompt = example }.buttonStyle(.plain).font(.callout)
+                            Button(example) { editor.setText(example) }.buttonStyle(.plain).font(.callout)
                                 .padding(.horizontal, 10).padding(.vertical, 5)
                                 .background(Color(white: 0.23), in: RoundedRectangle(cornerRadius: 7))
                         }
@@ -105,7 +111,7 @@ struct AIEditPanel: View {
                 section("发给谁", trailing: AnyView(Button("设置…") { store.settingsTab = "image" }.buttonStyle(.link))) {
                     if let service, store.imageServiceReady {
                         info("服务", service.title)
-                        info("发送内容", "不带调色的原片，长边 2048 像素" + (referencePaths.isEmpty ? "" : "＋\(referencePaths.count) 张参考图"))
+                        info("发送内容", "不带调色的原片，长边 2048 像素" + (referencePaths.isEmpty ? "" : "＋\(referencePaths.count) 张参考图（按缩略图顺序跟在后面）"))
                         info("费用", service.paid ? "按\(service.title)的标准计费" : "不收费")
                         info("结果", onlySelection && hasSelection ? "只替换选区里的部分，作为新版本，可撤销" : "整张新图，作为新版本，调色照常套用，可撤销")
                     } else {
@@ -118,12 +124,12 @@ struct AIEditPanel: View {
                     }
                 }
                 Button {
-                    store.startAIEdit(prompt: prompt, onlySelection: onlySelection, references: referencePaths)
+                    store.startAIEdit(prompt: editor.text, onlySelection: onlySelection, references: referencePaths)
                 } label: {
                     Text(store.generationTask != nil ? "正在生成…" : "生成").font(.body.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 6)
                 }.buttonStyle(.borderedProminent).controlSize(.large)
                     .disabled(!store.imageServiceReady || store.generationTask != nil || store.controlsBlocked
-                              || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (onlySelection && !hasSelection))
+                              || editor.isEmpty || (onlySelection && !hasSelection))
                 if let card, let id = store.aiEditMessageID { GenerationCardView(store: store, messageID: id, card: card) }
                 if store.photoVersions.count > 1 {
                     section("这张照片的版本") {
@@ -147,7 +153,32 @@ struct AIEditPanel: View {
                 }
             }.padding(16)
         }
-        .onAppear { onlySelection = hasSelection }
+        .onAppear {
+            onlySelection = hasSelection
+            // 验收截图时用启动参数 -aiRefs 预置参考图；正常使用这里是空的。
+            if referencePaths.isEmpty, !store.aiEditReferences.isEmpty { referencePaths = store.aiEditReferences }
+            if store.aiAutoPrompt, figures.count > 1 {
+                editor.setText("把 ")
+                editor.insert(name: figures[1].name, path: figures[1].path)
+                editor.view?.appendText(" 的色调，套到 ")
+                editor.insert(name: figures[0].name, path: figures[0].path)
+                editor.view?.appendText(" 上，保持构图不变")
+                let sent = editor.text
+                store.status = "验收：提示词 = \(sent)"
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    store.startAIEdit(prompt: sent, onlySelection: false, references: referencePaths)
+                }
+            }
+            if store.aiMentionDemo {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    editor.setText("把照片换成")
+                    if figures.count > 1 { editor.insert(name: figures[1].name, path: figures[1].path) }
+                    editor.view?.appendText("的样子")
+                }
+            }
+        }
         // 在这一页画出选区就默认只改选区；选区清空则改回整张
         .onChange(of: store.selectionParts.isEmpty) { _, empty in onlySelection = !empty }
         .onDisappear { store.versionPreview = nil }
@@ -178,6 +209,76 @@ struct AIEditPanel: View {
             referencePaths = Array(referencePaths.prefix(limit))
             store.status = "\(store.imageModelName) 最多 \(limit) 张参考图，多选的部分没有加上"
         }
+    }
+
+    /// 输入框：默认只有占位提示；打了 @ 才在框内展开可引用的图片，选完以图片块的形式嵌进文字。
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MentionEditor(model: editor,
+                          placeholder: "比如：照图2 的姿势，把图1 换成雪山背景",
+                          onMention: { if !figures.isEmpty { showMention = true } },
+                          onTyping: { if showMention { showMention = false } })
+                .frame(height: showMention ? 54 : 74)
+            if showMention { mentionList }
+        }
+        .padding(10)
+        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(
+            showMention ? Color(red: 0.62, green: 0.45, blue: 1.0).opacity(0.7) : Color.white.opacity(0.06),
+            lineWidth: 1))
+    }
+
+    /// 缩略图上的编号角标：实底黑底白字，图再小也能看清是第几张。
+    private func figureBadge(_ name: String) -> some View {
+        Text(name)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5).padding(.vertical, 1.5)
+            .background(Color.black.opacity(0.8), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.35), lineWidth: 0.6))
+            .padding(3)
+    }
+
+    /// @ 之后在输入框里展开的候选列表：图片 + 编号 + 是原图还是参考图。
+    private var mentionList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("可能@的内容").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("收起") { showMention = false }.buttonStyle(.link).font(.caption)
+            }.padding(.horizontal, 2).padding(.bottom, 4)
+            Divider().overlay(Color.white.opacity(0.08))
+            ForEach(Array(figures.enumerated()), id: \.offset) { index, figure in
+                Button { choose(figure.name) } label: {
+                    HStack(spacing: 8) {
+                        LocalPhoto(path: figure.path, fill: true).frame(width: 26, height: 26)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        Text(figure.name).font(.callout)
+                        Text(index == 0 ? "原图" : "参考图").font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.horizontal, 2).padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                Divider().overlay(Color.white.opacity(0.06))
+            }
+        }
+    }
+
+    private var figures: [(name: String, path: String)] {
+        var out: [(name: String, path: String)] = []
+        if let photo = store.current { out.append(("图1", photo.imported.path)) }
+        for (index, path) in referencePaths.enumerated() { out.append(("图\(index + 2)", path)) }
+        return out
+    }
+
+
+    /// 选 @ 列表里的某一项：把刚打的 @ 换成图片块，文字里也就跟着显示成图片了。
+    private func choose(_ name: String) {
+        showMention = false
+        editor.view?.deleteTrailingAtSign()
+        let path = figures.first { $0.name == name }?.path
+        editor.insert(name: name, path: path)
     }
 
     private func info(_ label: String, _ value: String) -> some View {

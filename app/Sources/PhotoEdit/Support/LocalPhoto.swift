@@ -16,6 +16,15 @@ private enum ImageCache {
     }
 }
 
+/// 读一张图的宽高比：优先用真正渲染出来的预览，避免自己再算一遍几何。
+@MainActor
+enum PhotoSize {
+    static func ratio(_ path: String) -> CGFloat? {
+        guard let image = ImageCache.load(path), image.size.height > 0, image.size.width > 0 else { return nil }
+        return image.size.width / image.size.height
+    }
+}
+
 struct LocalPhoto: View {
     let path: String
     /// 缩略图铺满格子并裁掉多余部分，避免比例不符时露出底色；主画布仍完整显示。

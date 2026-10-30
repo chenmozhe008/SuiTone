@@ -202,16 +202,18 @@ class ImageEditBridge:
         return dict(cancelled=True)
 
     def _load_references(self, paths):
-        """参考图从本地路径读入：校验能打开，压到长边 2048 的 JPEG 再发给服务，跟主图一个待遇。"""
+        """参考图从本地路径读入：校验能打开，压到长边 2048 的 JPEG 再发给服务，跟主图一个待遇。
+
+        走 image_io.load_image：HEIC / HEIF（iPhone 默认格式）和 RAW 也能读，色彩也跟主图一致。
+        """
+        from image_io import load_image
         out = []
         for raw in paths:
             path = Path(raw)
             if not path.is_file(): raise ValueError('参考图找不到：' + path.name)
             try:
-                with Image.open(path) as img:
-                    img = img.convert('RGB')
-            except Exception: raise ValueError('参考图不是有效图片：' + path.name) from None
-            img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+                img = load_image(path, long=2048)
+            except Exception: raise ValueError('参考图打不开：' + path.name) from None
             buffer = BytesIO(); img.save(buffer, 'JPEG', quality=92)
             if len(buffer.getvalue()) > 15*1024*1024: raise ValueError('参考图太大：' + path.name)
             out.append(buffer.getvalue())

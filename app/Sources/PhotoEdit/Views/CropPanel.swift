@@ -47,6 +47,11 @@ extension WorkspaceStore {
         }
     }
 
+    /// 松手才应用：整段拖动只记一条历史、只重算一次画面。
+    func applyAngle(_ angle: Double) {
+        change(abs(angle) < 0.01 ? "取消旋转" : String(format: "旋转 %.1f°", angle)) { $0.angle = angle }
+    }
+
     func straightenPreview(_ angle: Double) {
         // 拖动拉直滑杆时只改角度，不每一步都记历史。
         beginEditing("拉直画面")
@@ -116,6 +121,8 @@ extension WorkspaceStore {
 /// 右栏的裁切页：比例、旋转、翻转、拉直，加上一个「应用」把几何固定下来。
 struct CropPanel: View {
     @Bindable var store: WorkspaceStore
+    /// 拖动滑杆时的临时角度：这时不重算画面，松手才应用
+    @State private var angleDraft: Double?
     private let aspects: [(String, String, Double?)] = [
         ("original", "原始", nil), ("1:1", "1:1", 1), ("4:3", "4:3", 4.0 / 3),
         ("5:4", "5:4", 5.0 / 4), ("3:2", "3:2", 3.0 / 2), ("16:9", "16:9", 16.0 / 9),
@@ -157,16 +164,22 @@ struct CropPanel: View {
                 }
 
                 section("自由旋转") {
-                    HStack {
-                        Slider(value: Binding(get: { store.current?.parameters.angle ?? 0 },
-                                              set: { store.straightenPreview($0) }),
-                               in: -15...15, step: 0.1,
-                               onEditingChanged: { editing in if !editing { store.finishStraighten() } })
-                        Text(String(format: "%.1f°", store.current?.parameters.angle ?? 0))
+                    HStack(spacing: 10) {
+                        AngleSlider(value: Binding(get: { angleDraft ?? store.current?.parameters.angle ?? 0 },
+                                                   set: { value in
+                                                       angleDraft = value
+                                                       store.angleDraft = value
+                                                   }),
+                                    range: -180...180) {
+                            if let value = angleDraft { store.applyAngle(value) }
+                            angleDraft = nil
+                            store.angleDraft = 0
+                        }
+                        Text(String(format: "%.1f°", angleDraft ?? store.current?.parameters.angle ?? 0))
                             .font(.caption).monospacedDigit().frame(width: 46, alignment: .trailing)
                     }
-                    Text("按需要微调角度，转出来的空边会自动裁掉。")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text("任意角度都能转。拖动时只动数字，松手才重算画面；转完的空边会自动裁掉。")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
                 Button { store.finishCrop() } label: {
@@ -198,6 +211,37 @@ struct CropPanel: View {
     }
 }
 
+/// 自绘的角度滑杆：轨道 + 圆钮，纯净没有系统控件那条多余的横线。
+private struct AngleSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var onCommit: () -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = max(1, geometry.size.width)
+            let ratio = min(1, max(0, (value - range.lowerBound) / (range.upperBound - range.lowerBound)))
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color(white: 0.30)).frame(height: 4)
+                Capsule().fill(Color.white.opacity(0.9)).frame(width: width * ratio, height: 4)
+                Circle().fill(.white).frame(width: 14, height: 14)
+                    .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                    .offset(x: min(width - 14, max(0, width * ratio - 7)))
+            }
+            .frame(height: 18)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        let ratio = min(1, max(0, drag.location.x / width))
+                        value = range.lowerBound + ratio * (range.upperBound - range.lowerBound)
+                    }
+                    .onEnded { _ in onCommit() }
+            )
+        }.frame(height: 18)
+    }
+}
+
 /// 画布上的裁切框：外面压暗，里面画三分线，四角和四条边都能拖。
 struct CropOverlay: View {
     @Bindable var store: WorkspaceStore
@@ -214,9 +258,9 @@ struct CropOverlay: View {
                 path.addRect(CGRect(origin: .zero, size: size))
                 path.addRect(rect)
             }
-            .fill(Color.black.opacity(0.55), style: FillStyle(eoFill: true))
+            .fill(Color.black.opacity(0.6), style: FillStyle(eoFill: true))
 
-            Rectangle().path(in: rect).stroke(Color.white, lineWidth: 1.2)
+            Rectangle().path(in: rect).stroke(Color.white.opacity(0.9), lineWidth: 1)
 
             // 三分线
             Path { path in
@@ -226,13 +270,30 @@ struct CropOverlay: View {
                     path.move(to: CGPoint(x: x, y: rect.minY)); path.addLine(to: CGPoint(x: x, y: rect.maxY))
                     path.move(to: CGPoint(x: rect.minX, y: y)); path.addLine(to: CGPoint(x: rect.maxX, y: y))
                 }
-            }.stroke(Color.white.opacity(0.35), lineWidth: 0.7)
+            }.stroke(Color.white.opacity(0.28), lineWidth: 0.7)
 
-            // 四角与四边的手柄
+            // 四个角画 L 形托角（Lightroom 那种），其余位置不画东西——
+            // 中间那条短白条以前容易被看成一条虚横线，去掉。
+            Path { path in
+                let arm = min(22, min(rect.width, rect.height) / 3)
+                let corners: [(CGPoint, CGFloat, CGFloat)] = [
+                    (CGPoint(x: rect.minX, y: rect.minY), 1, 1),
+                    (CGPoint(x: rect.maxX, y: rect.minY), -1, 1),
+                    (CGPoint(x: rect.minX, y: rect.maxY), 1, -1),
+                    (CGPoint(x: rect.maxX, y: rect.maxY), -1, -1),
+                ]
+                for (point, dx, dy) in corners {
+                    path.move(to: CGPoint(x: point.x + dx * arm, y: point.y))
+                    path.addLine(to: point)
+                    path.addLine(to: CGPoint(x: point.x, y: point.y + dy * arm))
+                }
+            }.stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .square))
+
+            // 手柄本身不画出来，只作为拖拽热区；四条边也能拖，鼠标上去会变十字光标。
             ForEach(Array(handles.enumerated()), id: \.offset) { _, handle in
                 let point = CGPoint(x: handle.point(in: rect).x, y: handle.point(in: rect).y)
-                Rectangle().fill(Color.white)
-                    .frame(width: handle.corner ? 11 : 16, height: handle.corner ? 11 : 4)
+                Color.clear
+                    .frame(width: handle.corner ? 26 : 18, height: handle.corner ? 26 : 18)
                     .position(point)
                     .gesture(drag(handle))
             }

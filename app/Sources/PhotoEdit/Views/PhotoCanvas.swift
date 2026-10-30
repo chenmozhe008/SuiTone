@@ -23,6 +23,9 @@ struct PhotoCanvas: View {
                         }.frame(width:w,height:h)
                     }
                     LocalPhoto(path:displayPath(photo)).frame(width:w,height:h)
+                        // 自由旋转拖动中：本地先转，松手才由引擎重算，手感即时
+                        .rotationEffect(.degrees(liveAngle))
+                        .scaleEffect(coverScale(w: w, h: h, angle: liveAngle))
                     if splitActive {
                         let x=w*store.splitPosition
                         LocalPhoto(path:photo.imported.original).frame(width:w,height:h)
@@ -125,9 +128,7 @@ struct PhotoCanvas: View {
                 .overlay(alignment:.top) {
                     if store.repairEnabled && store.usesSelectionParts && store.repairDraft == nil { SelectionToolbar(store:store).padding(.top,6) }
                 }
-                .overlay(alignment:.topTrailing) {
-                    if store.inspectorTab != "cutout", store.current?.aiGenerated == true { aiBadge }
-                }
+
                 .overlay(alignment:.bottomLeading) {
                     if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}
                     else if store.showOriginal {canvasLabel("原图").padding(10)}
@@ -152,7 +153,24 @@ struct PhotoCanvas: View {
     }
 
     /// 画面显示比例：按裁切和旋转后实际要出的形状算，裁切页里仍显示完整画面以便重新框。
+    /// 拖动自由旋转时相对已提交角度的增量
+    private var liveAngle: Double {
+        guard store.inspectorTab == "crop", store.angleDraft != 0 else { return 0 }
+        return store.angleDraft - (store.current?.parameters.angle ?? 0)
+    }
+
+    /// 转过之后要放大一点，画面才不会露出空白角。
+    private func coverScale(w: CGFloat, h: CGFloat, angle: Double) -> CGFloat {
+        guard abs(angle) > 0.01, w > 1, h > 1 else { return 1 }
+        let radians = abs(angle) * .pi / 180
+        let cosine = abs(cos(radians)), sine = abs(sin(radians))
+        return max(1, max((w * cosine + h * sine) / w, (w * sine + h * cosine) / h))
+    }
+
     private func displayRatio(_ photo: PhotoRecord) -> CGFloat {
+        // 以渲染出来的预览为准：旋转、自由旋转、裁切都已经算进这张图里了，
+        // 自己再按原图比例推一遍，转到 90° 时裁切框就会跑到画面外面（框和照片对不上）。
+        if let path = photo.previewPath, let ratio = PhotoSize.ratio(path) { return ratio }
         var width = Double(photo.imported.width), height = Double(photo.imported.height)
         if store.inspectorTab != "crop" {
             if let crop = photo.parameters.crop, crop[2] > 0, crop[3] > 0 {
@@ -193,24 +211,6 @@ struct PhotoCanvas: View {
     private var splitActive: Bool {
         store.splitCompare && !store.showOriginal && !store.repairEnabled && store.repairDraft == nil && store.overlay.isEmpty
             && !(store.inspectorTab == "aiedit" && !store.selectionParts.isEmpty)
-    }
-
-    /// AI 生成的版本要一眼看得出来：实底徽标，不用半透明，避免"看不清"。
-    private var aiBadge: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "sparkles").font(.system(size: 10, weight: .bold))
-            Text("AI 生成").font(.system(size: 11, weight: .semibold))
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(
-            LinearGradient(colors: [Color(red: 0.56, green: 0.29, blue: 0.96), Color(red: 0.31, green: 0.55, blue: 1.0)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.4), lineWidth: 0.6))
-        .shadow(color: .black.opacity(0.4), radius: 5, y: 1)
-        .padding(10)
-        .allowsHitTesting(false)
     }
 
     private func canvasLabel(_ text:String, color: Color = .white)->some View {

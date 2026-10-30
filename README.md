@@ -17,15 +17,25 @@
 
 </div>
 
-随心修图是一款面向 Mac 的本地修图应用。和大多数「一句话生成一张新图」的工具不同，这里的 AI 只做一件事：把你想要的效果翻译成调色参数——曝光、对比、色温、局部区域、质感。参数落在照片旁边的调整记录里，你随时可以接着改、撤销、对比，或者换一套风格再试。
+随心修图是一款面向 Mac 的照片编辑应用。对话调整可以把你想要的效果翻译成曝光、对比、色温、局部区域等调色参数，你可以继续修改、撤销或对比。需要换背景、添加内容时，也可以选择 AI 改图生成新版本。
 
 所以 AI 出错也不会毁掉照片。它给的是一组你能看懂的数值，不是一个无法还原的结果。
 
-调色、分区识别、去杂物、放大全部在本机推理，照片不上传。只有你主动使用「对话」并确认发送预览图时，缩小后的预览才会发给你自己配置的 AI 服务。
+调色、分区识别、去杂物和放大在本机处理。使用「对话」或「AI 改图」时，照片预览及你选择的参考图会按界面说明发送给所选 AI 服务。
 
 <div align="center">
 <img src="docs/images/main.jpg" alt="随心修图：调整面板" width="900">
 </div>
+
+### 界面截图
+
+下列画面使用公开测试样片，展示调整、夜景风格与裁切界面。
+
+| 调整 | 夜景 | 裁切 |
+| --- | --- | --- |
+| ![人像调整界面](docs/images/adjust-043.png) | ![夜景调整界面](docs/images/night-043.png) | ![裁切与旋转界面](docs/images/crop-043.png) |
+
+样片来源：[Outdoor portrait](https://commons.wikimedia.org/wiki/File:Outdoor_portrait_(Unsplash).jpg)、[Shinjuku](https://commons.wikimedia.org/wiki/File:Shinjuku_-_Shinjuku255.jpg)，原文件均标注 CC0。
 
 ## 可以做什么
 
@@ -275,7 +285,7 @@ cd SuiTone
 - [Swin2SR](https://github.com/mv-lab/swin2sr)（Apache-2.0）：2 倍 / 4 倍放大
 - [rawpy](https://github.com/letmaik/rawpy)、[OpenCV](https://opencv.org)、[Pillow](https://python-pillow.org)、[NumPy](https://numpy.org)：图像读写与处理
 
-模型不随仓库分发，由安装脚本从各自的原始页面下载。这些模型各自适用其上游许可证，与下文的代码许可证是两件事；用于商业项目前请自行确认相应模型的授权范围。
+模型不放在源码仓库中；安装脚本从各自的原始页面下载，现有安装包包含模型。这些模型适用各自的上游许可证，与代码许可证不同；SegFormer 权重的使用与再分发授权仍需进一步确认。
 
 ## 许可证
 
