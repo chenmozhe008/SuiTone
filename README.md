@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="docs/images/icon.png" width="128" alt="随心修图图标">
+<img src="docs/images/icon.png" width="128" alt="随心 AI 修图图标">
 
-# 随心修图
+# 随心 AI 修图
 
 **SuiTone**，和 AI 对话修图的 Mac 应用
 
@@ -17,7 +17,7 @@
 
 </div>
 
-随心修图是一款免费开源的 Mac 修图工具。不会调色也没关系：把想法告诉 AI，或者选一款喜欢的风格，再按自己的眼光慢慢调整。需要换背景、添加内容时，还可以使用 AI 改图。
+随心 AI 修图是一款免费开源的 Mac 修图工具。不会调色也没关系：把想法告诉 AI，或者选一款喜欢的风格，再按自己的眼光慢慢调整。需要换背景、添加内容时，还可以使用 AI 改图。
 
 **三种方式，各有侧重：**
 
@@ -28,7 +28,7 @@
 应用本身及本地工具免费；AI 对话和 AI 改图使用你自己的账号或 API，可能消耗已有订阅额度或产生服务商费用，详情见下方说明。
 
 <div align="center">
-<img src="docs/images/adjust-044.png" alt="随心修图：照片和调整面板" width="900">
+<img src="docs/images/adjust-044.png" alt="随心 AI 修图：照片和调整面板" width="900">
 </div>
 
 ### 界面截图
@@ -178,7 +178,7 @@ bash ~/SuiTone/script/install.sh
 
 用 Claude Code、Codex、WorkBuddy 这类助手时，把下面这段发给它：
 
-> 请帮我安装「随心修图」（https://github.com/chenmozhe008/SuiTone）：优先从 https://github.com/chenmozhe008/SuiTone/releases/latest 下载 `SuiTone-<版本>-arm64.zip`，解压后把「随心修图.app」放进 /Applications，再运行 `xattr -dr com.apple.quarantine "/Applications/随心修图.app"`。装好后告诉我怎么导入第一张照片。
+> 请帮我安装「随心 AI 修图」（https://github.com/chenmozhe008/SuiTone）：优先从 https://github.com/chenmozhe008/SuiTone/releases/latest 下载 `SuiTone-<版本>-arm64.zip`，解压后把「随心修图.app」放进 /Applications，再运行 `xattr -dr com.apple.quarantine "/Applications/随心修图.app"`。装好后告诉我怎么导入第一张照片。
 
 <details>
 <summary>给 AI 助手的说明</summary>
