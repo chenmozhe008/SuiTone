@@ -75,17 +75,28 @@ def clean_key(key):
     return ''.join(c for c in text if c.isascii() and c.isprintable() and not c.isspace())
 
 
+def _read_error(exc, key):
+    """读服务商返回的错误原文，返回（给用户看的详情，错误码，未脱敏的原话）。"""
+    try:
+        body = json.loads(exc.read(8192))
+        error = body.get('error', body) if isinstance(body, dict) else body
+        if isinstance(error, dict):
+            code = str(error.get('code') or error.get('type') or '')
+            message = str(error.get('message') or '')
+        else:
+            code, message = '', str(error or '')
+    except Exception:
+        return '', '', ''
+    raw = message.strip()
+    if key and len(key) > 4: message = message.replace(key, '****'+key[-4:])
+    shown = message.strip()[:200]
+    return (('（服务商返回：'+shown+'）') if shown else ''), code, raw
+
+
 def _detail(exc, key):
     """取服务商返回的错误原话，便于判断原因；抹掉其中可能出现的密钥。"""
-    try:
-        body = json.loads(exc.read(4096))
-        error = body.get('error', body) if isinstance(body, dict) else body
-        message = error.get('message') if isinstance(error, dict) else error
-        message = str(message or '').strip()
-    except Exception:
-        return ''
-    if key and len(key) > 4:message = message.replace(key, '****'+key[-4:])
-    return ('（服务商返回：'+message[:200]+'）') if message else ''
+    return _read_error(exc, key)[0]
+
 
 
 def _send(request, provider, opener, timeout=90, limit=2*1024*1024, key=''):
@@ -94,12 +105,22 @@ def _send(request, provider, opener, timeout=90, limit=2*1024*1024, key=''):
         with opener(request, timeout=timeout) as response:
             return response.read(limit)
     except HTTPError as exc:
-        detail = _detail(exc, key)
+        detail, code, raw = _read_error(exc, key)
         if exc.code == 401:raise ValueError(name+' 不认这个密钥'+(detail or '，请核对是否完整复制')) from None
         if exc.code == 403:raise ValueError(name+' 拒绝访问，密钥可能没有开通这个模型'+detail) from None
         if exc.code == 402:raise ValueError(name+' 账户余额不足'+detail) from None
         if exc.code == 404:raise ValueError(name+' 找不到这个模型或接口地址，请检查模型名称'+detail) from None
-        if exc.code == 429:raise ValueError(name+' 请求受限或额度不足，请稍后重试'+detail) from None
+        if exc.code == 429:
+            # 方舟的 429 有两种：真限流，和「安心体验模式」下免费额度用完导致模型服务被暂停。
+            # 后者等多久都不会好，必须去控制台关掉该模式或调高用量上限，所以提示要分开。
+            blob = (code+' '+raw+' '+detail).lower()
+            if re.search(r'setlimitexceeded|set usage limit|has been paused|model activation|safe experience|用量上限|服务暂停', blob):
+                raise ValueError(name+' 这个模型的免费额度已用完，平台把这个模型的服务暂停了。'
+                                 '去火山方舟控制台「开通管理」页，把该模型的用量上限调高、或关掉「安心体验模式」；'
+                                 '也可以先换成列表里的其它模型。'
+                                 '控制台：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement'
+                                 +detail) from None
+            raise ValueError(name+' 请求太频繁，等几十秒再试；如果一直失败，去控制台看下用量和限额'+detail) from None
         if exc.code == 400:
             hint = '所选模型不支持这个请求或参数' if re.search(r'not supported|unsupported|不支持的参数', detail, re.I) else '请求内容或参数不被接受'
             raise ValueError(name+' 拒绝了请求，'+hint+detail) from None

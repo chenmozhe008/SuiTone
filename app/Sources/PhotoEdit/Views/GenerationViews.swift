@@ -43,7 +43,15 @@ struct GenerationCardView: View {
                 Text("已换成生成版本，可以继续调色；点下面的撤销换回原来的照片。").font(.callout).foregroundStyle(.secondary)
             case "failed":
                 Text(card.error ?? "生成未完成").font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                Button("重试") { store.startGeneration(messageID) }.disabled(store.generationTask != nil)
+                HStack(spacing: 14) {
+                    Button("重试") { store.startGeneration(messageID) }.disabled(store.generationTask != nil)
+                    // 额度用尽这类错误，光重试没用，得去服务商控制台开通或调额。
+                    if let link = consoleLink(card.error) {
+                        Link("去控制台开通 / 调额度", destination: link)
+                    }
+                    Button("换个模型…") { store.settingsTab = "image" }.buttonStyle(.link)
+                    Spacer()
+                }
             case "cancelled":
                 Text("已取消，原照片未改变。").font(.callout).foregroundStyle(.secondary)
             default:
@@ -51,6 +59,14 @@ struct GenerationCardView: View {
             }
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(white: 0.21), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// 错误文本里附带的控制台地址（例如火山方舟开通管理页），取出来做成可点的入口。
+    private func consoleLink(_ message: String?) -> URL? {
+        guard let message, let start = message.range(of: "https://") else { return nil }
+        let tail = message[start.lowerBound...]
+        let stop = tail.firstIndex { $0 == " " || $0 == "）" || $0 == "\n" } ?? tail.endIndex
+        return URL(string: String(tail[..<stop]))
     }
 
     private var title: String {
