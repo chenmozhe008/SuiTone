@@ -1,6 +1,16 @@
 import Foundation
 
 extension WorkspaceStore {
+    func undoAssistantChange(_ changeID: UUID) {
+        guard !chatting, !controlsBlocked else { return }
+        finishEditing()
+        guard undoChanges.last?.id == changeID else {
+            status = "这次调整之后还有其他操作，请按顺序撤销"
+            return
+        }
+        undo()
+    }
+
     func loadSuggestions(for assetID: String) async {
         suggestions = []
         let provider = assistantProvider, useVision = visionEnabled, credentials = apiCredentials, ready = assistantReady

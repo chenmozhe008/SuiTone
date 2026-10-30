@@ -3,6 +3,22 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct AssistantTransactionTests {
+    @Test @MainActor func testReceiptUndoOnlyUndoesItsOwnLatestChange() async {
+        let store = fixture(), items = store.photos
+        var params = items[0].parameters; params.exposure = 0.2
+        let job = AssistantJob(state: "done", reply: "", selection: "none", changes: [
+            AssistantChange(id: "original", params: params, notes: [])], error: nil)
+        await store.applyAssistantResult(job, items: items)
+        let id = store.chatMessages.last!.changeID!
+        store.change("手动色温") { $0.temperature = 0.3 }
+        store.undoAssistantChange(id)
+        #expect(store.photos[0].parameters.exposure == 0.2)
+        #expect(store.photos[0].parameters.temperature == 0.3)
+        store.undo(); store.previewTask?.cancel()
+        store.undoAssistantChange(id); store.previewTask?.cancel()
+        #expect(store.photos[0].parameters.exposure == 0)
+        #expect(store.chatMessages.last!.wasUndone)
+    }
     @Test @MainActor func testReviewSelectionFollowsRepairedAsset() {
         let store = fixture(), originals = store.photos
         var edited = originals[0]; edited.assetID = "repaired"

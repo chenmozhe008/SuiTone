@@ -99,6 +99,11 @@ struct AssistantPanel: View {
                                         }
                                     }
                                 }
+                                if let changeID = message.changeID, !message.wasUndone {
+                                    Button("撤销这次调整") { store.undoAssistantChange(changeID) }
+                                        .disabled(store.chatting || store.controlsBlocked || store.undoChanges.last?.id != changeID)
+                                        .help(store.undoChanges.last?.id == changeID ? "撤销这次对话的全部调整" : "请先撤销之后的操作")
+                                }
                                 if !message.notes.isEmpty {
                                     DisclosureGroup("查看实际调整 · 可撤销") {
                                         ForEach(Array(message.notes.enumerated()), id: \.offset) { _, line in
