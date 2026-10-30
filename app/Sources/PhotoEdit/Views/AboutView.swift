@@ -10,72 +10,181 @@ enum AboutTab: String, CaseIterable { case intro = "介绍", changelog = "更新
 
 struct AboutView: View {
     @ObservedObject private var state = AboutState.shared
-    @State private var checking = false
-    @State private var updateMessage: String?
-    @State private var releaseURL: URL?
+    @EnvironmentObject private var updates: UpdateChecker
     @State private var history: [(String, String)] = []
     @State private var historyMessage: String?
     @State private var loadingHistory = false
+    @State private var copied = ""
     private let repo = "chenmozhe008/SuiTone"
-
+    private let email = "327529709@qq.com"
+    private var diagnostics: String {
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
+        return "随心修图 \(AppIdentity.version)（\(build)），\(ProcessInfo.processInfo.operatingSystemVersionString)"
+    }
+    private let features: [(String, String, String)] = [
+        ("slider.horizontal.3", "照片调色", "用光线、颜色、质感滑块调整照片，也可应用风格或参考图。"),
+        ("text.bubble", "对话调整", "用自然语言描述想法，AI 分析照片后调整可继续编辑的参数。"),
+        ("lasso", "局部选区", "用画笔、套索、点选或方框选择区域，支持添加和减去。"),
+        ("bandage", "移除杂物", "选择不需要的内容后预览修复效果，确认后应用，可撤销。"),
+        ("scissors", "主体抠图", "点击照片中的主体，检查透明预览后保存为新的 PNG。"),
+        ("sparkles", "AI 改图", "通过出图服务修改整张照片或选区，生成的新版本可以撤销。")
+    ]
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 14) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 56, height: 56)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("随心修图").font(.title2.weight(.semibold))
-                    Text("版本 \(AppIdentity.version)").foregroundStyle(.secondary)
-                }
+        VStack(spacing: 0) {
+            HStack(spacing: 18) {
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 78, height: 78)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("随心修图").font(.system(size: 27, weight: .bold))
+                    Text("用自然语言和手动工具，把照片修成你想要的样子")
+                        .font(.callout)
+                    Text("版本 \(AppIdentity.version)　·　SuiTone")
+                        .font(.callout).opacity(0.8)
+                }.foregroundStyle(.white)
                 Spacer()
-            }
+            }.padding(.horizontal, 28).padding(.top, 36).padding(.bottom, 24)
+                .background(LinearGradient(colors: [Color(red: 0.18, green: 0.44, blue: 0.60), Color(red: 0.12, green: 0.28, blue: 0.42)], startPoint: .topLeading, endPoint: .bottomTrailing))
             Picker("", selection: $state.tab) {
                 ForEach(AboutTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }.pickerStyle(.segmented).labelsHidden()
+            }.pickerStyle(.segmented).labelsHidden().frame(width: 330).padding(.vertical, 18)
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 22) {
                     switch state.tab {
-                    case .intro:
-                        Text("用对话和调整工具编辑照片，支持调色、选区、移除、抠图和 AI 改图。")
-                        Text("AI 功能需要配置相应服务；照片会按功能说明发送给所选服务。")
-                            .foregroundStyle(.secondary)
-                        HStack {
-                            Button(checking ? "正在检查…" : "检查更新") { Task { await checkUpdates() } }.disabled(checking)
-                            if let releaseURL { Link("前往下载", destination: releaseURL) }
-                        }
-                        if let updateMessage { Text(updateMessage).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
-                    case .changelog:
-                        Button(loadingHistory ? "正在获取…" : "查看历史发布记录") { Task { await loadHistory() } }.disabled(loadingHistory)
-                        if let historyMessage { Text(historyMessage).foregroundStyle(.secondary) }
-                        ForEach(Array(history.enumerated()), id: \.offset) { _, release in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(release.0).font(.headline)
-                                Text(release.1).textSelection(.enabled)
-                            }
-                        }
-                        Text("开发版 \(AppIdentity.version)").font(.headline)
-                        Text("• 对话与手动调色、风格和局部调整\n• 选区、移除杂物、主体抠图和画质调整\n• AI 改图、生成版本与撤销\n• 改进抠图提示和选区操作")
-                        Text("这是当前开发版本的功能记录，正式发布后将按版本记录更新内容。")
-                            .foregroundStyle(.secondary)
-                    case .feedback:
-                        Text("使用中遇到问题，欢迎反馈。").font(.headline)
-                        Text("请描述操作步骤、遇到的问题和预期结果；如有需要，可自行附上截图。")
-                            .foregroundStyle(.secondary)
-                        Button { sendFeedback() } label: { Label("写反馈邮件", systemImage: "envelope") }
-                        Text("会打开邮件草稿，检查内容后由你决定是否发送。")
-                            .foregroundStyle(.secondary)
+                    case .intro: intro
+                    case .changelog: changelog
+                    case .feedback: feedback
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(height: 210)
-        }.padding(24).frame(width: 500)
+                    .padding(.horizontal, 28).padding(.bottom, 28)
+            }
+        }.frame(width: 680, height: 720).background(Color(white: 0.14))
     }
 
+    private var intro: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            sectionTitle("它是什么")
+            Text("随心修图是一款 Mac 照片编辑工具。可以用滑块、风格或对话调整光影与色彩，也可以选择局部、移除杂物、抠图和使用 AI 改图。")
+                .font(.callout).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+            sectionTitle("能做什么")
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                ForEach(features, id: \.1) { feature in
+                    card {
+                        VStack(alignment: .leading, spacing: 9) {
+                            Image(systemName: feature.0).font(.title3).foregroundStyle(.cyan)
+                            Text(feature.1).font(.callout.weight(.semibold))
+                            Text(feature.2).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }.frame(minHeight: 112, alignment: .topLeading)
+                    }
+                }
+            }
+            sectionTitle("使用说明")
+            bullet("调色参数可继续手动调整；保存调整记录后，可重新打开继续编辑。")
+            bullet("主体抠图另存透明 PNG，原照片保留。")
+            bullet("对话和 AI 改图需要配置服务；发送照片前会说明使用的服务。出图服务可能按用量收费。")
+            bullet("生成式改图会创建新图，内容和分辨率可能变化；原照片保留，操作可撤销。")
+            sectionTitle("软件更新")
+            card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("发现新版本后，左下角会显示更新入口。").font(.callout)
+                    HStack(spacing: 18) {
+                        Button("检查更新…") { updates.checkFromMenu() }.buttonStyle(.borderedProminent)
+                        Toggle("自动检查更新", isOn: $updates.automatic).toggleStyle(.checkbox)
+                    }
+                }
+            }
+        }
+    }
+
+    private var changelog: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                sectionTitle("更新记录")
+                Spacer()
+                Button(loadingHistory ? "正在获取…" : "刷新发布记录") { Task { await loadHistory() } }.disabled(loadingHistory)
+            }
+            if let historyMessage { Text(historyMessage).font(.callout).foregroundStyle(.secondary) }
+            ForEach(Array(history.enumerated()), id: \.offset) { _, release in
+                card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(release.0).font(.callout.weight(.bold)).foregroundStyle(.cyan)
+                        Text(.init(release.1)).font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("开发阶段 · 当前版本 \(AppIdentity.version)").font(.callout.weight(.bold)).foregroundStyle(.cyan)
+                    bullet("对话与手动调色，支持风格、参考图和局部调整。")
+                    bullet("支持选区加减、移除杂物、主体抠图和画质调整。")
+                    bullet("支持 AI 改图和生成版本，提供撤销与原图复原。")
+                    bullet("优化抠图提示、选区操作和风格展开入口。")
+                }
+            }
+            Text("正式发布后可在此查看各版本的更新说明。")
+                .font(.callout).foregroundStyle(.secondary)
+        }.task(id: state.tab) {
+            if state.tab == .changelog && history.isEmpty && historyMessage == nil { await loadHistory() }
+        }
+    }
+
+    private var feedback: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            card {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("使用中遇到问题，欢迎反馈").font(.headline)
+                    Text("描述操作过程并附上截图，有助于定位和改进。")
+                        .font(.callout).foregroundStyle(.secondary)
+                    HStack {
+                        Button { sendFeedback() } label: { Label("写反馈邮件", systemImage: "envelope.fill") }
+                            .buttonStyle(.borderedProminent).controlSize(.large)
+                        Button { copy(email) } label: { Label(copied == email ? "已复制邮箱" : email, systemImage: "doc.on.doc") }
+                            .controlSize(.large)
+                    }
+                    Text("会打开邮件草稿，内容由你确认后发送。")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            sectionTitle("反馈时请尽量包括")
+            bullet("进行到哪一步、你希望得到什么结果、实际发生了什么。")
+            bullet("问题是否每次都出现；若有报错，请附上完整文字或截图。")
+            bullet("照片格式、使用的工具或 AI 服务；请勿发送密钥。")
+            bullet("应用和 macOS 版本；邮件草稿会自动附上，也可以在下方复制。")
+            card {
+                HStack {
+                    Text(diagnostics).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                    Spacer()
+                    Button(copied == diagnostics ? "已复制" : "复制版本信息") { copy(diagnostics) }
+                }
+            }
+        }
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        HStack(spacing: 9) {
+            Capsule().fill(Color.cyan).frame(width: 4, height: 18)
+            Text(title).font(.headline)
+        }
+    }
+    private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content().frame(maxWidth: .infinity, alignment: .leading).padding(16)
+            .background(Color(white: 0.20), in: RoundedRectangle(cornerRadius: 13))
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.white.opacity(0.09)))
+    }
+    private func bullet(_ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 9) {
+            Text("•").foregroundStyle(.cyan)
+            Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string); copied = text
+    }
     private func sendFeedback() {
-        var url = URLComponents(); url.scheme = "mailto"; url.path = "327529709@qq.com"
+        var url = URLComponents(); url.scheme = "mailto"; url.path = email
         url.queryItems = [URLQueryItem(name: "subject", value: "随心修图反馈 v\(AppIdentity.version)"),
-                          URLQueryItem(name: "body", value: "\n\n请描述问题和操作步骤：\n\n随心修图 \(AppIdentity.version)，\(ProcessInfo.processInfo.operatingSystemVersionString)")]
+                          URLQueryItem(name: "body", value: "\n\n请描述问题和操作步骤：\n\n\(diagnostics)")]
         if let url = url.url { NSWorkspace.shared.open(url) }
     }
-
     @MainActor private func loadHistory() async {
         loadingHistory = true; defer { loadingHistory = false }
         guard let url = URL(string: "https://api.github.com/repos/\(repo)/releases?per_page=100") else { return }
@@ -95,28 +204,5 @@ struct AboutView: View {
                 }
             historyMessage = history.isEmpty ? "暂时没有正式发布记录。" : nil
         } catch { historyMessage = "无法获取发布记录，请检查网络后重试。" }
-    }
-
-    @MainActor private func checkUpdates() async {
-        checking = true; defer { checking = false }
-        releaseURL = nil
-        guard let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest") else { return }
-        do {
-            var request = URLRequest(url: url, timeoutInterval: 15)
-            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tag = json["tag_name"] as? String,
-                  let page = json["html_url"] as? String, let pageURL = URL(string: page),
-                  pageURL.scheme == "https", pageURL.host == "github.com" else {
-                updateMessage = "暂时无法获取更新信息。仓库或正式版本可能尚未发布，也可能是网络不可用。"; return
-            }
-            let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
-            if version.compare(AppIdentity.version, options: .numeric) == .orderedDescending {
-                updateMessage = "发现新版本 \(version)。请前往发布页面查看更新内容并下载。"
-                releaseURL = pageURL
-            } else { updateMessage = "当前版本 \(AppIdentity.version)，没有发现更新。" }
-        } catch { updateMessage = "无法检查更新，请检查网络后重试。" }
     }
 }

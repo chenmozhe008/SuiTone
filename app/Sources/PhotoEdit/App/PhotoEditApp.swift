@@ -17,12 +17,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct PhotoEditApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var store = WorkspaceStore()
+    @StateObject private var updates = UpdateChecker()
 
     var body: some Scene {
         WindowGroup(AppIdentity.windowTitle, id: "workspace") {
             ContentView(store: store)
+                .environmentObject(updates)
                 .preferredColorScheme(.dark)
-                .task { await store.start() }
+                .task { updates.checkIfDue(); await store.start() }
                 .onOpenURL { url in
                     if url.pathExtension=="photoedit" {store.openProject(url)}
                     else {store.importURLs([url])}
@@ -33,7 +35,7 @@ struct PhotoEditApp: App {
         .windowToolbarStyle(.unifiedCompact)
         .commands {
             CommandGroup(replacing: .appInfo) {
-                AboutMenu()
+                AboutMenu(updates: updates)
             }
             CommandGroup(replacing: .appSettings) {
                 Button("设置…") { store.settingsTab = "chat" }.keyboardShortcut(",")
@@ -58,7 +60,7 @@ struct PhotoEditApp: App {
             }
         }
         Window("关于随心修图", id: "about") {
-            AboutView().preferredColorScheme(.dark)
+            AboutView().environmentObject(updates).preferredColorScheme(.dark)
         }
         .windowResizability(.contentSize)
     }
@@ -66,9 +68,10 @@ struct PhotoEditApp: App {
 
 private struct AboutMenu: View {
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject var updates: UpdateChecker
     var body: some View {
         Button("关于随心修图") { AboutState.shared.tab = .intro; openWindow(id: "about") }
-        Button("更新记录") { AboutState.shared.tab = .changelog; openWindow(id: "about") }
+        Button("检查更新…") { updates.checkFromMenu() }
         Button("反馈") { AboutState.shared.tab = .feedback; openWindow(id: "about") }
     }
 }

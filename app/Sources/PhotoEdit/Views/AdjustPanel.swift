@@ -79,8 +79,10 @@ struct AdjustPanel: View {
                         HStack(spacing: 6) {
                             Text(expandedStyles ? "收起" : "展开全部 \(styles.count) 款")
                             Image(systemName: expandedStyles ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
-                        }.font(.callout.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 8)
-                            .background(Color(white: 0.22), in: RoundedRectangle(cornerRadius: 8))
+                        }.font(.callout.weight(.semibold)).foregroundStyle(Color(red: 0.62, green: 0.86, blue: 1))
+                            .frame(maxWidth: .infinity).padding(.vertical, 9)
+                            .background(Color(red: 0.17, green: 0.27, blue: 0.34), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.35, green: 0.61, blue: 0.73).opacity(0.55)))
                     }.buttonStyle(.plain)
                 }
             }

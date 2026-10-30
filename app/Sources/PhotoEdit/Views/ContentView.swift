@@ -54,8 +54,6 @@ private struct WorkspaceHeader: View {
             Button { store.chooseImport() } label: { Label("添加照片", systemImage: "plus") }
                 .disabled(store.controlsBlocked)
             Spacer(minLength: 16)
-            Button("关于") { AboutState.shared.tab = .intro; openWindow(id: "about") }
-                .help("关于随心修图、更新记录与反馈")
             if !store.photos.isEmpty {
                 HStack(spacing: 6) {
                     Button { store.undo() } label: { Label("撤销", systemImage: "arrow.uturn.backward") }
@@ -133,8 +131,37 @@ private struct CanvasHeader: View {
 
 private struct WorkspaceStatus: View {
     @Bindable var store: WorkspaceStore
+    @Environment(\.openWindow) private var openWindow
+    @EnvironmentObject private var updates: UpdateChecker
     var body: some View {
         HStack(spacing: 10) {
+            Button { AboutState.shared.tab = .intro; openWindow(id: "about") } label: {
+                Label("关于", systemImage: "info.circle")
+                    .font(.callout.weight(.medium)).padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color(white: 0.23), in: RoundedRectangle(cornerRadius: 7))
+            }.buttonStyle(.plain).help("关于随心修图")
+            switch updates.phase {
+            case .downloading(let fraction):
+                ProgressView(value: fraction).frame(width: 55).controlSize(.mini)
+                Text("\(Int(fraction * 100))%").font(.callout).monospacedDigit()
+            case .installing:
+                ProgressView().controlSize(.mini)
+                Text("正在安装").font(.callout)
+            case .idle:
+                if let release = updates.available {
+                    Button { updates.offerAvailable() } label: {
+                        Label("新版本 \(release.version)", systemImage: "arrow.down.circle.fill")
+                            .font(.callout.weight(.semibold)).padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Color.cyan.opacity(0.15), in: RoundedRectangle(cornerRadius: 7))
+                    }.buttonStyle(.plain).foregroundStyle(.cyan)
+                } else {
+                    Button("v\(AppIdentity.version)") { AboutState.shared.tab = .changelog; openWindow(id: "about") }
+                        .buttonStyle(.plain).font(.callout.weight(.medium)).foregroundStyle(.primary)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(Color(white: 0.23), in: RoundedRectangle(cornerRadius: 7)).help("查看更新记录")
+                }
+            }
+            Divider().frame(height: 16)
             if store.busy || store.rendering || store.batchProgress { ProgressView().controlSize(.mini) }
             Text(store.status).font(.caption).lineLimit(1)
             if store.batchProgress {
@@ -150,7 +177,7 @@ private struct WorkspaceStatus: View {
                 Button("显示导出") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path) }
                     .font(.caption).buttonStyle(.link)
             }
-        }.padding(.horizontal, 16).frame(height: 32).background(Color(white: 0.12))
+        }.padding(.horizontal, 16).frame(height: 44).background(Color(white: 0.12))
     }
 }
 
