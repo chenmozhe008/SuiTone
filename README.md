@@ -108,8 +108,9 @@
 | 即梦（火山方舟） | Seedream 5.0 lite / 4.5 / 4.0 | 14 张 |
 | Gemini | gemini-2.5-flash-image | 3 张 |
 | Gemini | Nano Banana 2.1 / Gemini 3 Pro Image | 14 张 |
+| Ideogram | Ideogram 4.5 | 5 张（原图和最多 4 张参考图） |
 
-数字来自[火山方舟图片生成 API](https://www.volcengine.com/docs/82379/1541523)和 Gemini 的模型规格，改代码时按官方文档更新，不要自行放宽。
+数字来自[火山方舟图片生成 API](https://www.volcengine.com/docs/82379/1541523)、Gemini 的模型规格和 [Ideogram Precise Edit 文档](https://developer.ideogram.ai/api-reference/images/precise-edit/ideogram-4-5)，改代码时按官方文档更新，不要自行放宽。
 
 ## 系统要求
 
@@ -123,11 +124,11 @@
 ### 方式一：下载安装包（推荐）
 
 1. 在 [Releases](https://github.com/chenmozhe008/SuiTone/releases/latest) 下载 `SuiTone-<版本>-arm64.zip`（约 450 MB），双击解压
-2. 把解压出来的「随心修图」拖进「应用程序」文件夹
+2. 把解压出来的「随心 AI 修图」拖进「应用程序」文件夹
 3. 首次打开时，系统可能提示「无法验证开发者」（本应用未做 Apple 公证）。点「完成」，到「系统设置 → 隐私与安全性」，在页面下方点「仍要打开」；也可以在终端运行一次：
 
    ```bash
-   xattr -dr com.apple.quarantine /Applications/随心修图.app
+   xattr -dr com.apple.quarantine "/Applications/随心 AI 修图.app"
    ```
 
 安装包里已经带了修图引擎和全部模型，不需要装 Python、不需要编译、不需要额外下载。打开就能用。
@@ -152,7 +153,7 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/SuiTone/master/script/
 
 第一次大约 5–15 分钟，取决于网速。再次运行同一个命令就是更新。这条路适合想自己改代码的人；只是想用的话，装方式一的包就可以。
 
-不想下模型（分区、去杂物、放大会不可用，调色和导出照常）：
+仅准备环境、暂不下载模型（缺少模型时，调色预览、分区、去杂物、放大及导出可能不可用）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chenmozhe008/SuiTone/master/script/install.sh | bash -s -- --no-models
@@ -178,7 +179,7 @@ bash ~/SuiTone/script/install.sh
 
 用 Claude Code、Codex、WorkBuddy 这类助手时，把下面这段发给它：
 
-> 请帮我安装「随心 AI 修图」（https://github.com/chenmozhe008/SuiTone）：优先从 https://github.com/chenmozhe008/SuiTone/releases/latest 下载 `SuiTone-<版本>-arm64.zip`，解压后把「随心修图.app」放进 /Applications，再运行 `xattr -dr com.apple.quarantine "/Applications/随心修图.app"`。装好后告诉我怎么导入第一张照片。
+> 请帮我安装「随心 AI 修图」（https://github.com/chenmozhe008/SuiTone）：优先从 https://github.com/chenmozhe008/SuiTone/releases/latest 下载 `SuiTone-<版本>-arm64.zip`，解压后把「随心 AI 修图.app」放进 /Applications，再运行 `xattr -dr com.apple.quarantine "/Applications/随心 AI 修图.app"`。装好后告诉我怎么导入第一张照片。
 
 <details>
 <summary>给 AI 助手的说明</summary>
@@ -187,7 +188,7 @@ bash ~/SuiTone/script/install.sh
 - 应用为临时签名（ad-hoc），未做 Apple 公证，所以需要清一次隔离属性，或让用户在「隐私与安全性」里点「仍要打开」
 - 用户数据在 `~/Library/Application Support/SuiTone`（会话与版本），卸载时连它一起删
 - 如果用户想改代码，改用源码方式：`script/install.sh`（虚拟环境 `~/.cache/photo-edit/venv`，模型 `~/.cache/photo-edit/{segformer,lama,sr}`）
-- 验证：`codesign --verify --strict "/Applications/随心修图.app"`，`pgrep -x SuiTone` 有输出
+- 验证：`codesign --verify --strict "/Applications/随心 AI 修图.app"`，`pgrep -x SuiTone` 有输出
 
 </details>
 
@@ -211,7 +212,7 @@ cd SuiTone
 1. 启动应用，把照片拖进窗口，或点「+ 添加照片」。导入时不会自动改照片。
 2. 右侧「调整」里先试风格：点缩略图即可预览，滑块决定强度。
 3. 想用文字调色，切到「对话」：在「设置 → 对话和看图」选择已登录的命令行账号，或填写 API 密钥并选支持看图的模型。先做「看图测试」，同意发送预览后输入「画面暖一点，人脸亮一点」；检查建议并按界面提示应用。
-4. 要换背景或加东西，点工具栏「AI 改图」：在「设置 → AI 改图」配置即梦（火山方舟）或 Gemini 出图服务；选择整张照片或画选区，按需添加参考图，写清要求，确认发送内容和费用后点「生成」。
+4. 要换背景或加东西，点工具栏「AI 改图」：在「设置 → AI 改图」配置即梦（火山方舟）、Gemini 或 Ideogram 出图服务；选择整张照片或画选区，按需添加参考图，写清要求，确认发送内容和费用后点「生成」。
 5. 「导出」生成新照片；「保存调整记录」保留可继续编辑的工程。
 
 | 快捷键 | 作用 |
@@ -251,7 +252,7 @@ cd SuiTone
 ## 常见问题
 
 **第一次打开提示「无法验证开发者」？**
-应用没有做 Apple 公证。在「系统设置 → 隐私与安全性」页面下方点「仍要打开」，或运行 `xattr -dr com.apple.quarantine /Applications/随心修图.app`，之后就可以正常双击打开。
+应用没有做 Apple 公证。在「系统设置 → 隐私与安全性」页面下方点「仍要打开」，或运行 `xattr -dr com.apple.quarantine "/Applications/随心 AI 修图.app"`，之后就可以正常双击打开。
 
 **安装时卡在下载模型？**
 模型来自 HuggingFace，国内网络需要代理。设好 `https_proxy` 后重新运行安装命令，已下载的部分会跳过。用安装包的话没有这一步，模型已经在包里。
@@ -281,7 +282,7 @@ cd SuiTone
 每次操作都是独立版本，⌘Z 撤销，或者点版本对比退回任意一步。原图始终没有被修改。
 
 **怎么卸载？**
-退出应用，删除 `/Applications/随心修图.app`、`~/SuiTone`、`~/.cache/photo-edit` 和 `~/Library/Application Support/SuiTone`。后两个是模型和会话数据，删掉会连同调整记录一起清空。
+退出应用，删除 `/Applications/随心 AI 修图.app`、`~/SuiTone`、`~/.cache/photo-edit` 和 `~/Library/Application Support/SuiTone`。后两个是模型和会话数据，删掉会连同调整记录一起清空。
 
 ## 反馈
 

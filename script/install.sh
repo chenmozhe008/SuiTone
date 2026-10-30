@@ -5,7 +5,7 @@
 #
 # 可重复运行：已存在源码会更新，已存在虚拟环境和模型会跳过。
 # 选项：
-#   --no-models        不下载 AI 模型（约 420 MB）：分区、去杂物、放大不可用，调色和导出照常
+#   --no-models        不下载 AI 模型（约 420 MB）：缺少模型时调色预览和导出等功能可能不可用
 #   --src <目录>       指定源码目录，默认 ~/SuiTone
 #   --prefix <目录>    安装位置，默认 /Applications
 #   --no-build         只准备环境，不编译不安装
@@ -141,10 +141,10 @@ if [[ "${INSTALL_MODELS}" == "1" ]]; then
   fetch "https://huggingface.co/Xenova/swin2SR-realworld-sr-x4-64-bsrgan-psnr/resolve/main/onnx/model.onnx" \
         "${ASSET_ROOT}/sr/swin2SR-realworld-sr-x4-64-bsrgan-psnr.onnx" 50000000 "4 倍放大模型"
   if [[ ! -f "${ASSET_ROOT}/segformer/model.onnx" ]]; then
-    warn "模型不完整，分区、去杂物、放大暂不可用；调色和导出不受影响。"
+    warn "模型不完整，调色预览、分区、去杂物、放大或导出可能不可用。"
   fi
 else
-  info "已跳过模型下载：分区、去杂物、放大暂不可用"
+  info "已跳过模型下载：缺少模型时调色预览和导出等功能可能不可用"
 fi
 
 # ── 5. 编译与安装 ───────────────────────────────────────────

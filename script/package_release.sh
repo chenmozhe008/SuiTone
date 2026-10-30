@@ -37,7 +37,7 @@ rm -rf "${ROOT}/tmp/pyi"
 ( cd "${ROOT}/engine" && "${VENV}/bin/pyinstaller" --noconfirm --onedir --name suitone-engine \
     --distpath "${ROOT}/tmp/pyi/dist" --workpath "${ROOT}/tmp/pyi/build" --specpath "${ROOT}/tmp/pyi" \
     --hidden-import assistant --hidden-import ai_recommendation --hidden-import image_edit \
-    --hidden-import api_providers --hidden-import anthropic_provider --hidden-import jimeng_edit \
+    --hidden-import api_providers --hidden-import anthropic_provider --hidden-import jimeng_edit --hidden-import ideogram_edit \
     --hidden-import suggestions --hidden-import smart --hidden-import recommendations \
     --hidden-import enhance --hidden-import geometry --hidden-import inpaint --hidden-import match \
     --hidden-import render --hidden-import info_bar --hidden-import lut --hidden-import vision \
