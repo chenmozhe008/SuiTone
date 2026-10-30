@@ -3,6 +3,15 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct AssistantTransactionTests {
+    @Test @MainActor func testReviewSelectionFollowsRepairedAsset() {
+        let store = fixture(), originals = store.photos
+        var edited = originals[0]; edited.assetID = "repaired"
+        let operation = RemovalOperation(box: [0.1, 0.2, 0.4, 0.5])
+        let selected = store.reviewSelection(photos: [edited], originals: originals, repair: ("original", operation))
+        #expect(selected?.id == "repaired")
+        #expect(selected?.box == operation.box)
+        #expect(store.reviewSelection(photos: [edited], originals: originals, repair: ("other", operation)) == nil)
+    }
     @Test @MainActor func testReviewFeedbackRemainsVisibleAfterSuccessfulAdjustment() async {
         let store = fixture(), items = store.photos
         var params = items[0].parameters; params.exposure = 0.2

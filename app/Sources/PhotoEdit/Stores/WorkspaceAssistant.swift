@@ -108,7 +108,7 @@ extension WorkspaceStore {
                         var reviewReply: String?
                         let review: (([PhotoRecord]) async throws -> [AssistantChange])? = sendImages ? { prepared in
                             let result = try await self.reviewAssistantChanges(prepared, originals: items, provider: provider,
-                                originalRequest: message, referenceIDs: referenceIDs, credentials: credentials)
+                                originalRequest: message, referenceIDs: referenceIDs, credentials: credentials, repair: repair)
                             reviewReply = result.reply
                             return result.changes ?? []
                         } : nil
@@ -316,8 +316,16 @@ extension WorkspaceStore {
         return permitted(originalFields, firstFields, reviewedFields)
     }
 
+    func reviewSelection(photos: [PhotoRecord], originals: [PhotoRecord],
+                         repair: (id: String, operation: RemovalOperation)?) -> (id: String, box: [Double])? {
+        guard let repair, let original = originals.first(where: { $0.assetID == repair.id }),
+              let edited = photos.first(where: { $0.id == original.id }) else { return nil }
+        return (edited.assetID, repair.operation.box)
+    }
+
     private func reviewAssistantChanges(_ photos: [PhotoRecord], originals: [PhotoRecord], provider: String,
-                                        originalRequest: String, referenceIDs: [String], credentials: APICredentials?) async throws -> AssistantJob {
+                                        originalRequest: String, referenceIDs: [String], credentials: APICredentials?,
+                                        repair: (id: String, operation: RemovalOperation)?) async throws -> AssistantJob {
         assistantPhase = "正在复看调整结果"
         // 开始请求时允许取消标记先落下；拿到任务 ID 后再通知引擎取消。
         assistantApplying = false
@@ -332,6 +340,9 @@ extension WorkspaceStore {
                 return ["id": photo.assetID, "source_id": source.assetID,
                         "params": try EngineClient.object(source.parameters), "quality": try EngineClient.object(source.quality)]
             }]
+        if let selection = reviewSelection(photos: photos, originals: originals, repair: repair) {
+            body["repair_selection"] = ["id": selection.id, "box": selection.box]
+        }
         credentials?.apply(to: &body)
         struct Started: Decodable { var id: String }
         let started: Started = try await engine.request("assistant", body: body)

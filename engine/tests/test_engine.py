@@ -329,6 +329,10 @@ class EngineTests(unittest.TestCase):
                 self.assertLess(image.getpixel((image.width//4,image.height//2))[0],50)
                 self.assertGreater(image.getpixel((image.width*3//4,image.height//2))[0],150)
                 self.assertFalse(image.getexif())
+            data['repair_selection']={'id':'edited','box':[.1,.2,.4,.5]}
+            with_selection=prepare_images(MockEngine(),data)
+            self.assertEqual(len(with_selection),2)
+            self.assertIn('用户指定的选区',with_selection[1]['label'])
 
     def test_review_job_does_not_claim_images_when_consent_is_off(self):
         from assistant import AssistantBridge
