@@ -112,7 +112,10 @@ struct QualityPanel: View {
                 Text("放大 2 倍").tag(2)
                 Text("放大 4 倍").tag(4)
             }
-            Text("调整后可预览、对比和撤销。放大首次生成较慢。").font(.callout).foregroundStyle(.secondary)
+            Text("使用本机 AI 模型放大照片。2 倍和 4 倍指宽、高分别放大；小图可优先试 2 倍。")
+                .font(.callout).foregroundStyle(.secondary)
+            Text("放大可能需要较长时间，也可能改变细节；调整后可预览、对比和撤销。")
+                .font(.callout).foregroundStyle(.secondary)
             Spacer()
         }.padding(16).disabled(store.controlsBlocked)
     }

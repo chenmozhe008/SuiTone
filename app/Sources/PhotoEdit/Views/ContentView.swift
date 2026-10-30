@@ -133,7 +133,6 @@ private struct CanvasHeader: View {
                 .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "selection")
             chip("移除", "bandage", store.inspectorTab == "repair", help: "移除杂物") { pick("repair") }
                 .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
-            aiButton
             chip("裁切", "crop.rotate", store.inspectorTab == "crop", help: "裁切、旋转、翻转和自由旋转") { pick("crop") }
                 .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "crop")
             chip("抠图", "scissors", store.inspectorTab == "cutout", help: "抠出照片中的主体，另存透明 PNG") { pick("cutout") }
@@ -203,11 +202,13 @@ private struct CanvasHeader: View {
     var body: some View {
         // 工具按钮始终带文字；窗口窄时先藏照片名，再把按钮间距收紧，不退化成看不懂的纯图标。
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) { title; Spacer(minLength: 12); toolButtons(spacing: 8); gridPicker }
-            HStack(spacing: 10) { Spacer(minLength: 0); toolButtons(spacing: 6); gridPicker }
+            HStack(spacing: 12) { title; Spacer(minLength: 12); toolButtons(spacing: 8); Divider().frame(height: 18); aiButton; gridPicker }
+            HStack(spacing: 10) { Spacer(minLength: 0); toolButtons(spacing: 6); Divider().frame(height: 18); aiButton; gridPicker }
             HStack(spacing: 6) {
                 ScrollView(.horizontal) { toolButtons(spacing: 4).controlSize(.small) }
                     .scrollIndicators(.visible)
+                Divider().frame(height: 18)
+                aiButton
                 gridPicker
             }
         }.padding(.horizontal, 18).frame(height: 54)
