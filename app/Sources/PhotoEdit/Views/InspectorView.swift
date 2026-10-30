@@ -41,6 +41,8 @@ struct InspectorView: View {
                 if tab == "chat" || tab == "adjust" { store.lastMainTab = tab }
                 if Self.titles[tab] != nil { store.grid = false }
                 if tab == "adjust" { store.loadStyleTiles(); if store.analysis == nil { store.loadAnalysis() } }
+                // 进 AI 改图页也要把已有选区画出来，不然不知道这次会改哪一块。
+                if tab == "aiedit", !store.selectionParts.isEmpty, store.selectionOverlay == nil { store.refreshSelection() }
             }
     }
 

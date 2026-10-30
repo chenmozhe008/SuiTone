@@ -37,7 +37,8 @@ struct PhotoCanvas: View {
                             canvasLabel("调整后").opacity(store.splitPosition<0.92 ? 1 : 0)
                         }.frame(width:w,height:h,alignment:.top)
                     }
-                    if store.repairEnabled, store.usesSelectionParts, store.repairDraft == nil, store.repairMaskOverlay == nil, let overlay = store.selectionOverlay {
+                    // AI 改图页不画选区，但已经画好的选区要留着看得见：否则切回来不知道这次会改哪一块。
+                    if (store.repairEnabled || store.inspectorTab == "aiedit"), store.usesSelectionParts, store.repairDraft == nil, store.repairMaskOverlay == nil, let overlay = store.selectionOverlay {
                         LocalPhoto(path: overlay).frame(width: w, height: h).allowsHitTesting(false)
                     }
                     if store.usesSelectionParts, let b = store.selectionDraftBox {
@@ -124,6 +125,9 @@ struct PhotoCanvas: View {
                     if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}
                     else if store.showOriginal {canvasLabel("原图").padding(10)}
                     else if store.repairDraft != nil {canvasLabel(store.repairShowingBefore ? "修复前" : "修复预览").padding(10)}
+                    else if store.inspectorTab == "aiedit" && store.selectionOverlay != nil && !store.selectionParts.isEmpty {
+                        canvasLabel("选区：只改这块").padding(10)
+                    }
                     else if !store.overlay.isEmpty && !splitActive {
                         canvasLabel(store.overlay.hasPrefix("selection-") ? "选区" : RegionNames.title(store.overlay)+"选区").padding(10)
                     }
@@ -169,6 +173,7 @@ struct PhotoCanvas: View {
     /// 修复、看选区或整张看原图时不叠加滑动对比，避免两种对比同时出现。
     private var splitActive: Bool {
         store.splitCompare && !store.showOriginal && !store.repairEnabled && store.repairDraft == nil && store.overlay.isEmpty
+            && !(store.inspectorTab == "aiedit" && !store.selectionParts.isEmpty)
     }
 
     private func canvasLabel(_ text:String)->some View {

@@ -1,6 +1,7 @@
 """API 密钥接入：Claude 走原生接口，其余各家走 OpenAI 兼容接口；密钥只由调用方在内存中提供。"""
 import base64
 import json
+import re
 import unicodedata
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -99,7 +100,9 @@ def _send(request, provider, opener, timeout=90, limit=2*1024*1024, key=''):
         if exc.code == 402:raise ValueError(name+' 账户余额不足'+detail) from None
         if exc.code == 404:raise ValueError(name+' 找不到这个模型或接口地址，请检查模型名称'+detail) from None
         if exc.code == 429:raise ValueError(name+' 请求受限或额度不足，请稍后重试'+detail) from None
-        if exc.code == 400:raise ValueError(name+' 拒绝了请求，可能是所选模型不支持看图'+detail) from None
+        if exc.code == 400:
+            hint = '所选模型不支持这个请求或参数' if re.search(r'not supported|unsupported|不支持的参数', detail, re.I) else '请求内容或参数不被接受'
+            raise ValueError(name+' 拒绝了请求，'+hint+detail) from None
         raise ValueError(name+' API 未完成请求（HTTP '+str(exc.code)+'）'+detail) from None
     except (URLError, TimeoutError, OSError):
         raise ValueError('无法连接 '+name+' API，请检查网络后重试') from None

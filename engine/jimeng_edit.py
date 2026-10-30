@@ -30,6 +30,18 @@ def output_size(width, height, long=2048):
     return f'{w}x{h}'
 
 
+def _post(key, body, opener):
+    request = Request(ENDPOINT, data=json.dumps(body, ensure_ascii=False).encode(), method='POST',
+                      headers={'Content-Type': 'application/json', 'Authorization': 'Bearer '+key})
+    return _send(request, {'title': '即梦'}, opener, timeout=180, limit=60*1024*1024, key=key)
+
+
+def _unsupported(message):
+    """服务商说某个参数不被当前模型支持时返回 True，用来决定是否退到最小请求重试。"""
+    text = message.lower()
+    return 'not supported' in text or 'unsupported' in text or '不支持的参数' in message
+
+
 def jimeng_edit(key, model, image, prompt, *, opener=_open):
     key = clean_key(key) if isinstance(key, str) else ''
     if not key: raise ValueError('请先填写即梦（火山方舟）的 API 密钥')
@@ -41,11 +53,17 @@ def jimeng_edit(key, model, image, prompt, *, opener=_open):
             mime = {'JPEG': 'jpeg', 'PNG': 'png'}.get(source.format); size = source.size
     except Exception: raise ValueError('输入图片仅支持有效的 JPEG 或 PNG') from None
     if not mime: raise ValueError('输入图片仅支持有效的 JPEG 或 PNG')
-    body = dict(model=model, prompt=prompt, image='data:image/'+mime+';base64,'+base64.b64encode(image).decode('ascii'),
-                size=output_size(*size), response_format='b64_json', sequential_image_generation='disabled', watermark=False)
-    request = Request(ENDPOINT, data=json.dumps(body, ensure_ascii=False).encode(), method='POST',
-                      headers={'Content-Type': 'application/json', 'Authorization': 'Bearer '+key})
-    payload = _send(request, {'title': '即梦'}, opener, timeout=180, limit=60*1024*1024, key=key)
+    encoded = 'data:image/'+mime+';base64,'+base64.b64encode(image).decode('ascii')
+    # 组图参数 sequential_image_generation 文档里默认就是 disabled，而且只有部分模型认这个字段，
+    # 传上去会直接 400（"the parameter is not supported by the current model"），所以不传。
+    body = dict(model=model, prompt=prompt, image=encoded,
+                size=output_size(*size), response_format='b64_json', watermark=False)
+    try:
+        payload = _post(key, body, opener)
+    except ValueError as exc:
+        if not _unsupported(str(exc)): raise
+        # 少数模型连 watermark / size 这类可选参数也不认：只带必要字段再试一次。
+        payload = _post(key, dict(model=model, prompt=prompt, image=encoded), opener)
     try:
         result = []
         for item in json.loads(payload).get('data', []):
