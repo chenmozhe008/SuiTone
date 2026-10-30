@@ -54,7 +54,7 @@ class GeometryTests(unittest.TestCase):
 
     def test_straighten_never_leaves_black_corners(self):
         image = Image.new('RGB', (300, 200), (240, 240, 240))
-        for angle in (-8, -3, 2.5, 7):
+        for angle in (-180, -135, -90, -46, -8, -3, 2.5, 7, 46, 90, 135, 180):
             result = np.asarray(geometry.apply(image, dict(angle=angle)), np.float64)
             corners = [result[0, 0], result[0, -1], result[-1, 0], result[-1, -1]]
             for corner in corners:

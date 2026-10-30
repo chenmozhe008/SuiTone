@@ -69,6 +69,7 @@ IMAGE_SERVICES = {
                            'doubao-seedream-4-0-250828']),
     'gemini': dict(title='Gemini', default_model='gemini-nano-banana-2.1', paid=True,
                    models=['gemini-nano-banana-2.1']),
+    'ideogram': dict(title='Ideogram', default_model='ideogram-4-5', paid=True, models=['ideogram-4-5']),
     'mock': dict(title='模拟出图（测试用）', default_model='mock', paid=False, models=['mock']),
 }
 
@@ -89,6 +90,7 @@ OFFICIAL_IMAGE_LIMITS = {
     'gemini-3-pro-image-preview': 14,
     'gemini-nano-banana-2.1': 14,
     'mock': 1,
+    'ideogram-4-5': 5,
 }
 
 
@@ -135,6 +137,9 @@ def call_service(service, key, model, image_bytes, prompt, *, references=(), ope
     if service not in IMAGE_SERVICES: raise ValueError('未知的出图服务')
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
     if service == 'mock': return mock_edit(image_bytes, prompt)
+    if service == 'ideogram':
+        from ideogram_edit import ideogram_edit
+        return ideogram_edit(key, model or IMAGE_SERVICES['ideogram']['default_model'], image_bytes, prompt, references=references, opener=opener)
     if service == 'gemini': return gemini_edit(key, model or IMAGE_SERVICES['gemini']['default_model'], image_bytes, prompt, references=references, opener=opener)
     from jimeng_edit import jimeng_edit
     return jimeng_edit(key, model or IMAGE_SERVICES['jimeng']['default_model'], image_bytes, prompt, references=references, opener=opener)

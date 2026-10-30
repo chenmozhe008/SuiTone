@@ -129,8 +129,10 @@ struct ImageServiceSheet: View {
                             Text(index == 0 ? name + "（最新）" : name).tag(name)
                         }
                         if !model.isEmpty && !(service?.models ?? []).contains(model) && !manualModel { Text(model).tag(model) }
-                        Divider()
-                        Text("手动填写…").tag("\u{0}manual")
+                        if selected != "ideogram" {
+                            Divider()
+                            Text("手动填写…").tag("\u{0}manual")
+                        }
                     }
                     if manualModel {
                         TextField("模型名称", text: $model, prompt: Text("例：doubao-seedream-5-0-pro-260628"))
@@ -185,7 +187,7 @@ struct ImageServiceSheet: View {
             storedKey = UserDefaults.standard.bool(forKey: "imageKeySaved." + selected)
         }
         .onChange(of: selected) { _, id in
-            key = ""; model = store.imageModels[id] ?? ""
+            key = ""; manualModel = false; model = store.imageModels[id] ?? ""
             storedKey = UserDefaults.standard.bool(forKey: "imageKeySaved." + id)
             notice = nil; confirmingDelete = false
         }

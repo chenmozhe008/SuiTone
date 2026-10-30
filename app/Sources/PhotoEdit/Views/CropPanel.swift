@@ -62,12 +62,12 @@ extension WorkspaceStore {
     /// 松手才应用：整段拖动只记一条历史、只重算一次画面。
     func applyAngle(_ angle: Double) {
         let value = CropGeometry.snappedAngle(angle)
-        change(abs(value) < 0.01 ? "取消旋转" : String(format: "拉直 %.1f°", -value)) { $0.angle = value }
+        change(abs(value) < 0.01 ? "取消旋转" : String(format: "旋转 %.1f°", -value)) { $0.angle = value }
     }
 
     func straightenPreview(_ angle: Double) {
         // 拖动拉直滑杆时只改角度，不每一步都记历史。
-        beginEditing("拉直画面")
+        beginEditing("旋转画面")
         update { $0.angle = CropGeometry.snappedAngle(angle) }
     }
 
@@ -337,10 +337,10 @@ struct CropPanel: View {
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
-                section("拉直") {
+                section("自由旋转") {
                     HStack(spacing: 10) {
                         stepButton("−", help: "逆时针 0.5°") { nudge(-0.5) }
-                        StraightenSlider(value: angle, range: -45...45) { value in
+                        StraightenSlider(value: angle, range: -180...180) { value in
                             store.straightenPreview(-value)
                         } onEnd: { _ in
                             store.finishStraighten()
@@ -351,15 +351,15 @@ struct CropPanel: View {
                         stepButton("+", help: "顺时针 0.5°") { nudge(0.5) }
                     }
                     HStack {
-                        Text("−45°").font(.caption2).foregroundStyle(.tertiary)
+                        Text("−180°").font(.caption2).foregroundStyle(.tertiary)
                         Spacer()
                         Text(String(format: "%+.1f°", angle))
                             .font(.callout.weight(.semibold)).monospacedDigit()
                             .foregroundStyle(abs(angle) < 0.05 ? Color.secondary : ToolAccent.blue.text)
                         Spacer()
-                        Text("+45°").font(.caption2).foregroundStyle(.tertiary)
+                        Text("+180°").font(.caption2).foregroundStyle(.tertiary)
                     }
-                    Text("拖动时预览拉直效果，双击滑杆归零。")
+                    Text("拖动旋转照片，双击滑杆归零；大角度旋转会裁去边缘空白。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -374,7 +374,7 @@ struct CropPanel: View {
                         Label("重新框选", systemImage: "crop").frame(maxWidth: .infinity)
                     }.buttonStyle(.borderedProminent).disabled(store.controlsBlocked)
                         .help("在照片上重新拖一个框；已经应用的裁切不会丢")
-                    Text("裁切已应用，框已收起。要再裁一次就点「重新框选」，比例、旋转、拉直随时能接着调。")
+                    Text("裁切已应用，框已收起。要再裁一次就点「重新框选」，比例和旋转随时能接着调。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -386,7 +386,7 @@ struct CropPanel: View {
     }
 
     private func nudge(_ delta: Double) {
-        let value = min(45, max(-45, angle + delta))
+        let value = min(180, max(-180, angle + delta))
         store.applyAngle(-value)
     }
 
