@@ -76,15 +76,7 @@ struct PhotoCanvas: View {
                 .frame(width:w,height:h)
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance:0).onEnded {value in
-                    if store.inspectorTab == "crop" {
-                        store.cropDraft = cropStart.flatMap { start in
-                            cropHandle.map { CropGeometry.dragged(start: start, handle: $0, from: value.startLocation,
-                                                                  to: value.location, size: CGSize(width: w, height: h),
-                                                                  freeform: store.cropAspect == "free") }
-                        } ?? store.cropDraft
-                        cropStart = nil; cropHandle = nil
-                        return
-                    }
+                    if store.inspectorTab == "crop" { return }
                     if drawingChatSelection { drawingChatSelection = false; return }
                     let tap=hypot(value.translation.width,value.translation.height)<4
                     let point=[Double(min(1,max(0,value.location.x/w))),Double(min(1,max(0,value.location.y/h)))]
@@ -109,22 +101,7 @@ struct PhotoCanvas: View {
                     guard store.inspectorTab == "adjust", !splitActive, tap else {return}
                     store.pickRegion(x:point[0],y:point[1])
                 }.onChanged {value in
-                    // 裁切页：所有拖动都归裁切框，画框 / 移动 / 拉手柄都在这里算。
-                    if store.inspectorTab == "crop" {
-                        let size = CGSize(width: w, height: h)
-                        guard size.width > 1, size.height > 1 else { return }
-                        let box = store.cropDraft ?? [0, 0, 1, 1]
-                        if cropStart == nil {
-                            cropStart = box
-                            cropHandle = CropGeometry.handle(at: value.startLocation, box: box, size: size,
-                                                             freeform: store.cropAspect == "free")
-                        }
-                        guard let start = cropStart, let handle = cropHandle else { return }
-                        store.cropDraft = CropGeometry.dragged(start: start, handle: handle, from: value.startLocation,
-                                                               to: value.location, size: size,
-                                                               freeform: store.cropAspect == "free")
-                        return
-                    }
+                    if store.inspectorTab == "crop" { return }
                     if splitActive {store.splitPosition=min(1,max(0,value.location.x/w));return}
                     if store.inspectorTab == "chat", !store.repairEnabled, !store.controlsBlocked, !store.chatting {
                         guard hypot(value.translation.width,value.translation.height)>=4 || drawingChatSelection else { return }
@@ -157,26 +134,13 @@ struct PhotoCanvas: View {
                     }
                 })
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
-                .onContinuousHover { phase in
-                    // 裁切页告诉人「这里能拖什么」：框内是移动，角上是拉大小，框外是重新画。
-                    guard store.inspectorTab == "crop" else {
-                        if cropCursor != .arrow { cropCursor = .arrow; NSCursor.arrow.set() }
-                        return
+                // 裁切页的拖动层：铺满整块画布，从照片外的灰底起手也照样能拖（PS 也是这样）。
+                // 只挂在照片矩形上的话，手一偏落在灰底上就完全没反应，看起来就是「框拖不动」。
+                .overlay {
+                    if store.inspectorTab == "crop" {
+                        cropDragLayer(origin: CGPoint(x: (geometry.size.width - w) / 2, y: (geometry.size.height - h) / 2),
+                                      size: CGSize(width: w, height: h))
                     }
-                    guard case .active(let point) = phase else {
-                        if cropCursor != .arrow { cropCursor = .arrow; NSCursor.arrow.set() }
-                        return
-                    }
-                    let box = store.cropDraft ?? [0, 0, 1, 1]
-                    let next: CropCursor
-                    switch CropGeometry.handle(at: point, box: box, size: CGSize(width: w, height: h),
-                                               freeform: store.cropAspect == "free") {
-                    case .inside: next = .openHand
-                    case .left, .right: next = .resizeHorizontal
-                    case .top, .bottom: next = .resizeVertical
-                    default: next = .crosshair
-                    }
-                    if next != cropCursor { cropCursor = next; next.cursor.set() }
                 }
 
                 .overlay(alignment:.bottom) {
@@ -191,7 +155,7 @@ struct PhotoCanvas: View {
                     }
                 }
                 .overlay(alignment:.bottomLeading) {
-                    if store.inspectorTab == "crop" { canvasLabel(cropHint).padding(10) }
+                    if store.inspectorTab == "crop" { canvasLabel(cropHint).padding(10).allowsHitTesting(false) }
                     else if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}
                     else if store.showOriginal {canvasLabel("原图").padding(10)}
                     else if store.repairDraft != nil {canvasLabel(store.repairShowingBefore ? "修复前" : "修复预览").padding(10)}
@@ -278,6 +242,49 @@ struct PhotoCanvas: View {
         store.inspectorTab != "crop"
             && store.splitCompare && !store.showOriginal && !store.repairEnabled && store.repairDraft == nil && store.overlay.isEmpty
             && !(store.inspectorTab == "aiedit" && !store.selectionParts.isEmpty)
+    }
+
+    /// 裁切页铺满画布的拖动层：坐标从画布换算到照片，落在灰色留白上也照常算。
+    /// 框内拖动＝移动，四角四边＝改大小，其余地方（含照片外的留白）＝重新框。
+    private func cropDragLayer(origin: CGPoint, size: CGSize) -> some View {
+        func local(_ point: CGPoint) -> CGPoint {
+            CGPoint(x: point.x - origin.x, y: point.y - origin.y)
+        }
+        return Color.clear
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard size.width > 1, size.height > 1 else { return }
+                        let from = local(value.startLocation), to = local(value.location)
+                        let box = store.cropDraft ?? [0, 0, 1, 1]
+                        if cropStart == nil {
+                            cropStart = box
+                            cropHandle = CropGeometry.handle(at: from, box: box, size: size,
+                                                             freeform: store.cropAspect == "free")
+                        }
+                        guard let start = cropStart, let handle = cropHandle else { return }
+                        store.cropDraft = CropGeometry.dragged(start: start, handle: handle, from: from, to: to, size: size,
+                                                               freeform: store.cropAspect == "free")
+                    }
+                    .onEnded { _ in cropStart = nil; cropHandle = nil }
+            )
+            .onContinuousHover { phase in
+                // 鼠标形状告诉人「这里能拖什么」：手形移动、箭头拉边、十字画框。
+                guard case .active(let point) = phase else {
+                    if cropCursor != .arrow { cropCursor = .arrow; NSCursor.arrow.set() }
+                    return
+                }
+                let next: CropCursor
+                switch CropGeometry.handle(at: local(point), box: store.cropDraft ?? [0, 0, 1, 1], size: size,
+                                           freeform: store.cropAspect == "free") {
+                case .inside: next = .openHand
+                case .left, .right: next = .resizeHorizontal
+                case .top, .bottom: next = .resizeVertical
+                default: next = .crosshair
+                }
+                if next != cropCursor { cropCursor = next; next.cursor.set() }
+            }
     }
 
     /// 裁切页左下角的一行提示：先把「框怎么动」讲清楚，第一次进来的人不用猜。
