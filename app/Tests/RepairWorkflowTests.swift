@@ -41,6 +41,22 @@ import Testing
         #expect(store.repairTool == "box")
     }
 
+    @Test @MainActor func testMultipleSelectionUsesFirstPhotoForPreview() {
+        let store = fixture()
+        store.repairDraft = nil
+        let second = ImportedPhoto(id: "second", path: "/second.jpg", name: "second.jpg", thumbnail: "/thumb2.png",
+                                   original: "/source2.png", width: 1200, height: 800, similarTo: nil)
+        store.photos.append(PhotoRecord(imported: second, assetID: "second"))
+        store.selectedIDs = ["photo"]; store.currentID = "photo"
+        store.selectPhoto("second", modifiers: [.command])
+        #expect(store.targets.map(\.id) == ["photo", "second"])
+        #expect(store.currentID == "photo")
+        store.activate("second")
+        #expect(store.currentID == "photo")
+        store.selectPhoto("second", modifiers: [])
+        #expect(store.currentID == "second" && store.targets.count == 1)
+    }
+
     @Test @MainActor func testCancelLeavesPhotoAndHistoryUntouched() async {
         let store = fixture(), before = store.current!.snapshot
         #expect(store.controlsBlocked)

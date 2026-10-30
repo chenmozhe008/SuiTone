@@ -28,6 +28,12 @@ struct AdjustPanel: View {
                 } else if let region = store.localRegion {
                     localSection(region)
                 } else {
+                    if store.targets.count > 1, let photo = store.current {
+                        Text("已选择 \(store.targets.count) 张照片。风格预览以第一张「\(photo.imported.name)」为例，调整作用于所选照片。")
+                            .font(.callout).fixedSize(horizontal: false, vertical: true)
+                            .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.blue.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+                    }
                     styleSection
                     group("light", "光线", master: \.light, auto: true) {
                         slider("曝光", \.exposure, -3...3, reset: 0) { String(format: "%+.1f", $0) }

@@ -214,6 +214,7 @@ struct AssistantPanel: View {
         switch store.assistantProvider {
         case "codex": return "Codex / OpenAI"
         case "claude": return "Claude Code / Anthropic"
+        case "codebuddy": return "WorkBuddy / CodeBuddy"
         default: return (store.currentProvider?.title ?? "AI") + " API"
         }
     }

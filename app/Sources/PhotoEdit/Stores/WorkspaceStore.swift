@@ -251,7 +251,8 @@ final class WorkspaceStore {
     func activate(_ id: String?) {
         finishEditing()
         repairRevision += 1; repairDraft = nil; repairShowingBefore = false
-        currentID = id; analysis = nil; overlay = ""; clearRepairSelection(); localRegion = nil
+        let firstSelected = selected.count > 1 && id.map { selectedIDs.contains($0) } == true ? selected.first?.id : id
+        currentID = firstSelected; analysis = nil; overlay = ""; clearRepairSelection(); localRegion = nil
         analysisTask?.cancel()
         guard current != nil else { return }
         styleTiles=[:]
@@ -398,6 +399,7 @@ final class WorkspaceStore {
         } else if modifiers.contains(.command) {
             if selectedIDs.contains(id) { selectedIDs.remove(id) } else { selectedIDs.insert(id) }
         } else { selectedIDs = [id] }
-        activate(selectedIDs.contains(id) ? id : photos.first(where: { selectedIDs.contains($0.id) })?.id)
+        let first = selected.first?.id
+        activate(selected.count > 1 ? first : (selectedIDs.contains(id) ? id : first))
     }
 }

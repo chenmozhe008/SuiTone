@@ -3,6 +3,19 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct AssistantEngineIntegrationTests {
+    @Test @MainActor func testImportKeepsOriginalWithoutAutomaticAdjustment() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = root.appendingPathComponent("tmp/import-original-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let image = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGO0qdjCgA0wYRUdtBIAHQ8BeIKmlrAAAAAASUVORK5CYII="))
+        try image.write(to: fixture)
+        let store = WorkspaceStore(engine: EngineClient(root: root))
+        store.importURLs([fixture]); await store.importTask?.value
+        let photo = try #require(store.current)
+        #expect(photo.parameters == AdjustmentParameters())
+        #expect(photo.lookName == "原图" && photo.operations.isEmpty && photo.ready)
+        #expect(store.undoChanges.isEmpty)
+    }
     @Test @MainActor func testSuggestionUsesSelectionAndSkipsUnavailableRegions() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let fixture = root.appendingPathComponent("tmp/suggestion-fixture-\(UUID().uuidString)")

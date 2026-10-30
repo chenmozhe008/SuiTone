@@ -98,7 +98,7 @@ class CLIRequestError(ValueError):
 
 def cli_failure(provider,output):
     """只返回固定诊断，避免把 CLI 日志中的凭证、路径或用户输入暴露到界面。"""
-    name='Codex' if provider=='codex' else 'Claude Code'
+    name={'codex':'Codex','claude':'Claude Code','codebuddy':'WorkBuddy / CodeBuddy'}.get(provider,'AI')
     text=output.lower()
     if any(word in text for word in ['usage limit','rate limit','rate_limit','quota','insufficient_quota','429','too many requests','credit balance','billing']):
         return CLIRequestError(name+' 额度已用完或调用太频繁，请稍后再试，或在上方换一个对话引擎')
@@ -128,18 +128,20 @@ def executable(provider):
         'codex':[shutil.which('codex'),'/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex',
                  str(Path.home()/'.local/bin/codex'),'/opt/homebrew/bin/codex','/usr/local/bin/codex'],
         'claude':[shutil.which('claude'),str(Path.home()/'.local/bin/claude'),'/usr/local/bin/claude','/opt/homebrew/bin/claude'],
+        'codebuddy':[str(Path.home()/'Library/Application Support/SuiTone/codebuddy/node_modules/.bin/codebuddy'),shutil.which('codebuddy')],
     }
     return next((p for p in candidates.get(provider,[]) if p and os.path.isfile(p) and os.access(p,os.X_OK)),None)
 
 
 def parse_output(provider,text,last_message=None,stream=False):
     if provider=='codex':return json.loads(last_message or text)
+    name = 'WorkBuddy / CodeBuddy' if provider == 'codebuddy' else 'Claude Code'
     if stream:
         events=[json.loads(line) for line in text.splitlines() if line.strip()]
         envelope=next((event for event in reversed(events) if event.get('type')=='result'),None)
-        if envelope is None:raise ValueError('Claude Code 未返回最终结果')
+        if envelope is None:raise ValueError(name+' 未返回最终结果')
     else:envelope=json.loads(text)
-    if envelope.get('is_error'):raise ValueError('Claude Code 未完成请求，请检查其登录状态或可用额度')
+    if envelope.get('is_error'):raise ValueError(name+' 未完成请求，请检查其登录状态或可用额度')
     structured=envelope.get('structured_output')
     if isinstance(structured,dict):return structured
     result=envelope.get('result','').strip()
@@ -230,13 +232,13 @@ class AssistantBridge:
 
     def providers(self):
         from api_providers import public_catalog
-        result=[dict(id=p,title=t,kind='account',available=bool(executable(p))) for p,t in [('codex','Codex'),('claude','Claude Code')]]
+        result=[dict(id=p,title=t,kind='account',available=bool(executable(p))) for p,t in [('codex','Codex'),('claude','Claude Code'),('codebuddy','WorkBuddy / CodeBuddy')]]
         result+=[dict(item,kind='api',available=True) for item in public_catalog()]
         return result
 
     def start(self,data):
         from service import parameters,repair_input,quality_settings
-        if data.get('provider') in ['codex','claude']:
+        if data.get('provider') in ['codex','claude','codebuddy']:
             if not executable(data['provider']):raise ValueError('找不到这个 CLI，请先在本机安装并登录')
         else:
             from api_providers import resolve
@@ -325,7 +327,7 @@ class AssistantBridge:
             prompt=system+'\n'+json.dumps(context,ensure_ascii=False)
             if event.is_set():raise InterruptedError()
             with self.lock:self.jobs[key]=dict(state='thinking')
-            if data['provider'] not in ['codex','claude']:
+            if data['provider'] not in ['codex','claude','codebuddy']:
                 from api_providers import invoke
                 result=invoke(data,prompt,SCHEMA,images,cancel=event)
             else:
@@ -367,6 +369,12 @@ class AssistantBridge:
                     attachment=root/('image-'+str(index)+'.jpg')
                     attachment.write_bytes(image['data'])
                     command.extend(['--image',str(attachment)])
+            elif provider == 'codebuddy':
+                command=[executable(provider),'-p','--model','glm-5v-turbo','--output-format','stream-json' if images else 'json',
+                         '--tools','','--strict-mcp-config','--mcp-config','{"mcpServers":{}}',
+                         '--settings','{"disableAllHooks":true}','--no-session-persistence','--permission-mode','dontAsk']
+                prompt += '\n只返回符合以下 JSON Schema 的 JSON 对象，不要包含其他内容：\n' + json.dumps(SCHEMA,ensure_ascii=False)
+                if images:command.extend(['--input-format','stream-json'])
             else:
                 command=[executable(provider),'-p','--output-format','stream-json' if images else 'json','--json-schema',json.dumps(SCHEMA),
                          '--tools','','--strict-mcp-config','--mcp-config','{"mcpServers":{}}',
@@ -380,7 +388,7 @@ class AssistantBridge:
                 if cancel.is_set():raise InterruptedError()
                 child=subprocess.Popen(command,cwd=root,env=environment,stdin=subprocess.PIPE,stdout=stdout,stderr=stderr)
                 try:
-                    if provider=='claude' and images:
+                    if provider in ('claude','codebuddy') and images:
                         content=[dict(type='text',text=prompt)]
                         for image in images:
                             content.append(dict(type='text',text=image['label']))
@@ -414,7 +422,7 @@ class AssistantBridge:
                     if writer.is_alive() or input_errors:
                         raise ValueError('AI 输入未能完整发送，本地调整未改变。请重试')
                     stdout.seek(0);text=stdout.read(2*1024*1024).decode(errors='replace')
-                    try:return parse_output(provider,text,output.read_text() if output.exists() else None,stream=provider=='claude' and bool(images))
+                    try:return parse_output(provider,text,output.read_text() if output.exists() else None,stream=provider in ('claude','codebuddy') and bool(images))
                     except (ValueError,TypeError):raise ValueError('AI 没有返回有效的调整计划，设置未改变')
                 finally:
                     if child.poll() is None:

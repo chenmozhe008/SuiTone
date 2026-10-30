@@ -189,7 +189,7 @@ private struct WelcomeView: View {
             Image(systemName: "photo.stack").font(.system(size: 48, weight: .ultraLight)).foregroundStyle(Color(white: 0.6))
             VStack(spacing: 10) {
                 Text("照片调色").font(.system(size: 28, weight: .medium))
-                Text("导入照片，自动调整光影与色彩。")
+                Text("导入照片后，用对话或手动工具开始调整。")
                     .font(.callout).foregroundStyle(.secondary)
             }
             Button("导入照片或文件夹…") { store.chooseImport() }

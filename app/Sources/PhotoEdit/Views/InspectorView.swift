@@ -17,8 +17,8 @@ struct InspectorView: View {
                 }.padding(.horizontal, 16).frame(height: 56)
             } else {
                 Picker("面板", selection: $store.inspectorTab) {
-                    Text("对话").tag("chat")
                     Text("调整").tag("adjust")
+                    Text("对话").tag("chat")
                 }.pickerStyle(.segmented).labelsHidden().frame(width: 220).frame(maxWidth: .infinity).frame(height: 56)
             }
             Divider()

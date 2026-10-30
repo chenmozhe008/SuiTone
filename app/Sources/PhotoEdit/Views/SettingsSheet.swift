@@ -88,7 +88,8 @@ struct SettingsSheet: View {
     private func state(_ provider: AssistantProvider) -> (text: String, color: Color) {
         if provider.id == store.assistantProvider && store.assistantReady { return ("当前使用", .green) }
         if !provider.available { return ("未安装", .secondary) }
-        if !provider.isAPI || store.apiKeySaved(provider.id) { return ("已配置", .primary) }
+        if !provider.isAPI { return ("已安装", .primary) }
+        if store.apiKeySaved(provider.id) { return ("已配置", .primary) }
         return ("未配置", .secondary)
     }
 
@@ -109,6 +110,10 @@ struct SettingsSheet: View {
                 Text(provider.available ? "使用本机已登录的 \(provider.title)，用你自己的订阅额度，不需要密钥。"
                                         : "这台电脑上没有找到 \(provider.title)。安装并登录后重新打开随心修图即可使用。")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
+                if provider.id == "codebuddy" {
+                    Text("使用已验证可看图的 GLM-5V-Turbo；调用会消耗同账号的积分。")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
                 if provider.id == store.assistantProvider {
                     Text(store.visionEnabled ? "已允许它看照片预览。" : "第一次对话时会请你允许它看照片预览。")
                         .font(.callout).foregroundStyle(.secondary)

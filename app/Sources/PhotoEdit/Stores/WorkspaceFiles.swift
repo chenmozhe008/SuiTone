@@ -13,9 +13,7 @@ extension WorkspaceStore {
         finishEditing(); importing = true; progressDone = 0; progressTotal = 0
         status = reference ? "正在读取参考图…" : "正在查找照片…"
         importTask = Task {
-            var originals: [String: EditSnapshot] = [:]
             defer {
-                if !reference { recordChange("导入时智能初调", before: originals) }
                 importing = false; importTask = nil
             }
             do {
@@ -25,31 +23,21 @@ extension WorkspaceStore {
                 var failures = scan.errors
                 for path in scan.paths {
                     if Task.isCancelled { status = "已停止导入，已经读入的照片保留"; break }
-                    status = "\(reference ? "读取参考" : "智能初调") \(progressDone + 1)/\(progressTotal)"
+                    status = "\(reference ? "读取参考" : "导入照片") \(progressDone + 1)/\(progressTotal)"
                     let result: ImportResponse = try await engine.request("import", body: ["paths": [path]])
                     failures += result.errors
                     for item in result.photos {
                         if reference {
                             if !references.contains(where: { $0.id == item.id }) { references.append(item) }
                         } else if !photos.contains(where: { $0.id == item.id }) {
-                            let record = PhotoRecord(imported: item, assetID: item.id)
-                            originals[item.id] = record.snapshot; photos.append(record)
+                            var record = PhotoRecord(imported: item, assetID: item.id)
+                            record.ready = true; photos.append(record)
                             if currentID == nil { currentID = item.id; selectedIDs = [item.id] }
-                            do {
-                                let look: SmartResponse = try await engine.request("smart", body: ["id": item.id, "style": "smart"])
-                                if let i = photos.firstIndex(where: { $0.id == item.id }) {
-                                    photos[i].parameters = look.params; photos[i].lookName = look.title
-                                    photos[i].notes = look.notes; photos[i].previewPath = look.preview; photos[i].ready = true
-                                }
-                            } catch {
-                                if let i = photos.firstIndex(where: { $0.id == item.id }) { photos[i].ready = true }
-                                failures.append(item.name + " 初调未完成：" + error.localizedDescription)
-                            }
                         }
                     }
                     progressDone += 1
                 }
-                if !Task.isCancelled { status = reference ? "参考图已就绪" : "自动调整完成 · \(included.count) 张照片" }
+                if !Task.isCancelled { status = reference ? "参考图已就绪" : "照片已导入 · \(included.count) 张" }
                 if !failures.isEmpty { error = failures.joined(separator: "\n") }
                 if !reference, photos.count > 1, inspectorTab != "repair" { grid = true }
                 if !reference { refreshGrid();loadStyleTiles() }
