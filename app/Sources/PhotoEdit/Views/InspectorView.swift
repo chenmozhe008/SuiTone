@@ -17,7 +17,7 @@ struct InspectorView: View {
                     if store.inspectorTab == "crop" {
                         Text("回车应用，换页点上方页签").font(.caption).foregroundStyle(.secondary)
                     } else {
-                        Button("完成") { store.inspectorTab = store.lastMainTab }
+                        Button(store.inspectorTab == "cutout" ? "退出抠图" : "完成") { store.inspectorTab = store.lastMainTab }
                             .buttonStyle(.borderedProminent).disabled(store.busy)
                     }
                 }.padding(.horizontal, 16).frame(height: 56)

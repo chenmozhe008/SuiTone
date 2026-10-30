@@ -21,7 +21,10 @@ extension WorkspaceStore {
                 guard currentID == photo.id, current?.snapshot == photo.snapshot, repairPoint == point, inspectorTab == "cutout" else { return }
                 cutoutPreview = output.path; cutoutSnapshot = photo.snapshot
                 status = String(format: "已抠出主体，约占画面 %.0f%%，请检查边缘", coverage * 100)
-            } catch { self.error = error.localizedDescription; status = "抠图未完成" }
+            } catch {
+                if currentID == photo.id, repairPoint == point { repairPoint = nil }
+                self.error = error.localizedDescription; status = "抠图未完成，请重新点击主体"
+            }
         }
     }
 
@@ -32,7 +35,8 @@ extension WorkspaceStore {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = URL(fileURLWithPath: photo.imported.name).deletingPathExtension().lastPathComponent + "-抠图.png"
-        panel.message = "保存为新的透明 PNG，原照片不变"
+        panel.message = "保存抠图：背景透明，原照片不变"
+        panel.prompt = "保存抠图"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         busy = true; status = "正在按原尺寸生成透明 PNG…"
         Task {

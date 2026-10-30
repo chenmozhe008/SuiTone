@@ -160,6 +160,10 @@ struct PhotoCanvas: View {
                 }
                 .overlay(alignment:.bottomLeading) {
                     if store.inspectorTab == "crop" { canvasLabel(cropHint).padding(10).allowsHitTesting(false) }
+                    else if store.inspectorTab == "cutout" {
+                        canvasLabel(store.cutoutPreview == nil ? "在照片上点一下要保留的人或物" : "方格表示透明背景 · 可在右侧保存抠图")
+                            .padding(10).allowsHitTesting(false)
+                    }
                     else if store.inspectorTab == "aiedit" && store.versionPreview != nil {canvasLabel("版本预览，照片未改动").padding(10)}
                     else if store.showOriginal {canvasLabel("原图").padding(10)}
                     else if store.repairDraft != nil {canvasLabel(store.repairShowingBefore ? "修复前" : "修复预览").padding(10)}
