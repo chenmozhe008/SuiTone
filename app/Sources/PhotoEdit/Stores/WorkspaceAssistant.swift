@@ -71,8 +71,8 @@ extension WorkspaceStore {
     }
 
     func applySuggestion(_ card: SuggestionCard) {
-        guard let photo = current, !photo.excluded else { return }
-        runPhotoOperation(.suggestion(card.id), items: [photo], label: card.title)
+        guard !targets.isEmpty else { return }
+        runPhotoOperation(.suggestion(card.id), items: targets, label: card.title)
     }
 
     func sendChat() {

@@ -88,22 +88,27 @@ extension WorkspaceStore {
         batchTask = Task {
             var before: [String: EditSnapshot] = [:]
             defer { recordChange(label, before: before); batchWorking = false; batchTask = nil }
-            var skipped = 0
+            var skipped = 0, unavailable = 0, processed = 0
             for photo in items {
                 if Task.isCancelled { status = "已停止，已完成的调整可以撤销"; return }
+                defer { processed += 1 }
                 do {
-                    status = "\(label) \(progressDone + 1)/\(progressTotal)"
+                    status = "\(label) \(processed + 1)/\(progressTotal)"
                     let result = try await prepareOperation(operation, on: photo)
                     if commitPrepared(result, expected: photo.snapshot) {
                         before[photo.id] = photo.snapshot; progressDone += 1
                     } else { skipped += 1 }
                 } catch {
                     if Task.isCancelled { status = "已停止，已完成的调整可以撤销" }
+                    else if case .suggestion = operation, error.localizedDescription == "这张照片没有可用的此项建议" {
+                        unavailable += 1; continue
+                    }
                     else { self.error = error.localizedDescription }
                     return
                 }
             }
             status = "\(label)完成 · \(progressDone) 张" + (skipped > 0 ? " · \(skipped) 张已改变，跳过" : "")
+                + (unavailable > 0 ? " · \(unavailable) 张不适用，跳过" : "")
         }
     }
 }

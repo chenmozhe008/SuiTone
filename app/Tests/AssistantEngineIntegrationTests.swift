@@ -3,6 +3,51 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct AssistantEngineIntegrationTests {
+    @Test @MainActor func testSuggestionUsesSelectionAndSkipsUnavailableRegions() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = root.appendingPathComponent("tmp/suggestion-fixture-\(UUID().uuidString)")
+        let engineDir = fixture.appendingPathComponent("engine")
+        try FileManager.default.createDirectory(at: engineDir, withIntermediateDirectories: true)
+        let encoder = JSONEncoder(); encoder.outputFormatting = .withoutEscapingSlashes
+        let pythonPath = String(data: try encoder.encode(root.appendingPathComponent("engine").path), encoding: .utf8)!
+        let script = """
+        import os,sys
+        sys.path.insert(0, \(pythonPath))
+        import service
+        def fake(self,key,card_id,raw,quality=None):
+            asset=self.asset(key)
+            if card_id=='sky' and asset.path.stem=='second':
+                raise ValueError('这张照片没有可用的此项建议')
+            p=service.parameters(raw); p['shadows']=0.12
+            return dict(params=p,title='测试建议',notes=[],preview=str(asset.image_path))
+        service.Engine.apply_suggestion=fake
+        service.serve(sys.argv[sys.argv.index('--root')+1],os.environ['PHOTO_EDIT_SESSION_TOKEN'])
+        """
+        try script.write(to: engineDir.appendingPathComponent("service.py"), atomically: true, encoding: .utf8)
+        let sample = root.appendingPathComponent("tmp/local-quality-20261030/public-small.jpg")
+        guard FileManager.default.fileExists(atPath: sample.path) else { return }
+        let paths = ["first", "second", "third"].map { fixture.appendingPathComponent($0 + ".jpg") }
+        for path in paths { try FileManager.default.copyItem(at: sample, to: path) }
+        let store = WorkspaceStore(engine: EngineClient(root: fixture))
+        let imported: ImportResponse = try await store.engine.request("import", body: ["paths": paths.map(\.path)])
+        #expect(imported.photos.count == 3)
+        store.photos = imported.photos.map { item in var photo = PhotoRecord(imported: item, assetID: item.id); photo.ready = true; return photo }
+        store.currentID = store.photos[0].id
+        store.selectedIDs = Set(store.photos.prefix(2).map(\.id))
+        store.applySuggestion(SuggestionCard(id: "shadows", title: "提亮暗部"))
+        await store.batchTask?.value
+        #expect(store.photos[0].parameters.shadows == 0.12 && store.photos[1].parameters.shadows == 0.12)
+        #expect(store.photos[2].parameters.shadows == 0)
+        store.undo(); store.previewTask?.cancel()
+        #expect(store.photos[0].parameters.shadows == 0 && store.photos[1].parameters.shadows == 0)
+        store.applySuggestion(SuggestionCard(id: "sky", title: "天空更通透"))
+        await store.batchTask?.value
+        #expect(store.photos[0].parameters.shadows == 0.12 && store.photos[1].parameters.shadows == 0)
+        #expect(store.status.contains("1 张不适用，跳过"))
+        #expect(store.undoChanges.count == 1)
+        store.previewTask?.cancel()
+    }
+
     @Test @MainActor func testClaudeChatRunsThroughLocalServiceAndUpdatesPreview() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let sample = root.appendingPathComponent("output/stage2-20261028/city-public.jpg")
