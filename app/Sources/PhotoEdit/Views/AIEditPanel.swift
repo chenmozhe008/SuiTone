@@ -115,6 +115,7 @@ struct AIEditPanel: View {
                 section("生成服务", trailing: AnyView(Button("设置…") { store.settingsTab = "image" }.buttonStyle(.link))) {
                     if let service, store.imageServiceReady {
                         info("服务", service.title)
+                        info("模型", store.imageModelName.isEmpty ? service.defaultModel : store.imageModelName)
                         info("发送内容", "不带调色的原片，长边 2048 像素" + (referencePaths.isEmpty ? "" : "＋\(referencePaths.count) 张参考图（按缩略图顺序跟在后面）"))
                         info("费用", service.paid ? "按\(service.title)的标准计费" : "不收费")
                         info("结果", onlySelection && hasSelection ? "只替换选区里的部分，作为新版本，可撤销" : "整张新图，作为新版本，调色照常套用，可撤销")

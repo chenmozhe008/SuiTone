@@ -70,9 +70,13 @@ final class WorkspaceStore {
     var aiAutoPrompt = false
     /// 出图服务是否已配好（密钥只在真正生成时才读钥匙串，这里看保存标记，避免弹授权框）
     var imageServiceReady: Bool {
+        // 密钥的保存标记在 UserDefaults 里，不是可观察属性；改了密钥就动一下这个数，界面才会跟着刷新。
+        _ = imageKeyRevision
         guard let service = imageServices.first(where: { $0.id == imageService }) else { return false }
         return service.id == "mock" || UserDefaults.standard.bool(forKey: "imageKeySaved." + service.id)
     }
+    /// 密钥增删后自增，用来通知界面重新算 imageServiceReady
+    var imageKeyRevision = 0
 
     /// 当前服务当前型号还能加几张参考图。数字来自引擎（照服务商官方文档），界面不自己定；
     /// 拿不到就当 0 张，宁可不加也不发出去被拒。
@@ -291,6 +295,13 @@ final class WorkspaceStore {
             if options["aiMention"] != nil { aiMentionDemo = true }
             if options["aiGenerate"] != nil { aiAutoPrompt = true }
             if let tab = options["openTab"] as? String { inspectorTab = tab }
+            // 验收用：假装这家服务已经存过密钥，检查「删除密钥」按钮和主界面的模型显示。`-debugImageKey jimeng`
+            if let id = options["debugImageKey"] as? String {
+                UserDefaults.standard.set(true, forKey: "imageKeySaved." + id)
+                imageService = id
+                imageModels[id] = "doubao-seedream-5-0-pro-260628"
+                imageKeyRevision &+= 1
+            }
             if let settings = options["openSettings"] as? String { settingsTab = settings }
             if let point = (options["selectionPoint"] as? String)?.split(separator: ",").compactMap({ Double($0) }), point.count == 2 {
                 try? await Task.sleep(for: .milliseconds(500))

@@ -18,6 +18,7 @@ struct GenerationCardView: View {
             case "proposed":
                 VStack(alignment: .leading, spacing: 4) {
                     row("发送到", service?.title ?? "尚未设置出图服务")
+                    if let service { row("模型", store.imageModels[service.id] ?? service.defaultModel) }
                     row("发送内容", "这张照片不带调色的原片，长边 2048 像素")
                     row("费用", service.map { $0.paid ? "按\($0.title)的标准计费" : "不收费" } ?? "—")
                     row("结果", card.selection == nil ? "一张新图片，你的调色照常套在上面；原图保留，可撤销" : "只替换选区里的部分，原尺寸保留；可撤销")
@@ -94,13 +95,17 @@ struct ImageServiceSheet: View {
     @State private var key = ""
     @State private var model = ""
     @State private var manualModel = false
+    /// 密钥是否已经存在钥匙串（值从 UserDefaults 标记同步过来，删掉后立刻变 false）
+    @State private var storedKey = false
+    @State private var confirmingDelete = false
+    @State private var notice: String?
     private var modelChoice: Binding<String> {
         Binding(get: { manualModel ? "\u{0}manual" : (model.isEmpty ? service?.defaultModel ?? "" : model) },
                 set: { if $0 == "\u{0}manual" { manualModel = true } else { model = $0; manualModel = false } })
     }
 
     private var service: ImageService? { store.imageServices.first { $0.id == selected } }
-    private var savedKey: Bool { UserDefaults.standard.bool(forKey: "imageKeySaved." + selected) }
+    private var savedKey: Bool { storedKey }
     /// 模型 ID 只能是字母数字和 . _ -（如 doubao-seedream-5-0-pro-260628，或在线推理的 ep-2026… 接入点）。
     private var modelIssue: String? {
         let text = model.trimmingCharacters(in: .whitespaces)
@@ -143,9 +148,26 @@ struct ImageServiceSheet: View {
                         .buttonStyle(.link).font(.callout)
                 }.padding(.horizontal, 24)
             }
-            Text("密钥保存在本机钥匙串。出图按服务商标准计费。保存时不会调用服务，出图能力要等第一次真正生成后才算验证过。")
-                .font(.callout).foregroundStyle(.secondary).padding(.horizontal, 24)
-            HStack {
+            Text(notice ?? "密钥保存在本机钥匙串。出图按服务商标准计费。保存时不会调用服务，出图能力要等第一次真正生成后才算验证过。")
+                .font(.callout)
+                .foregroundStyle(notice == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 24)
+            HStack(spacing: 12) {
+                if selected != "mock" && savedKey {
+                    Button(role: .destructive) { confirmingDelete = true } label: {
+                        // 暗红底 + 白字：暗色界面里红色文字会糊在灰底上，白字红底才看得清，破坏性也一眼分明。
+                        HStack(spacing: 6) {
+                            Image(systemName: "trash").font(.callout)
+                            Text("删除密钥").font(.callout.weight(.medium))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(Color(red: 0.42, green: 0.15, blue: 0.15), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(red: 1, green: 0.42, blue: 0.38).opacity(0.55), lineWidth: 1))
+                        .contentShape(RoundedRectangle(cornerRadius: 6))
+                    }.buttonStyle(.plain)
+                        .help("删掉这台电脑上保存的密钥（存在钥匙串里），模型选择保留")
+                }
                 Spacer()
                 Button("取消", action: done).keyboardShortcut(.cancelAction)
                 Button("保存") {
@@ -160,7 +182,22 @@ struct ImageServiceSheet: View {
         .onAppear {
             selected = store.imageServices.contains { $0.id == store.imageService } ? store.imageService : (store.imageServices.first?.id ?? "")
             model = store.imageModels[selected] ?? ""
+            storedKey = UserDefaults.standard.bool(forKey: "imageKeySaved." + selected)
         }
-        .onChange(of: selected) { _, id in key = ""; model = store.imageModels[id] ?? "" }
+        .onChange(of: selected) { _, id in
+            key = ""; model = store.imageModels[id] ?? ""
+            storedKey = UserDefaults.standard.bool(forKey: "imageKeySaved." + id)
+            notice = nil; confirmingDelete = false
+        }
+        .alert("删除这台的 \(service?.title ?? "服务") 密钥？", isPresented: $confirmingDelete) {
+            Button("删除密钥", role: .destructive) {
+                store.removeImageServiceKey(selected)
+                key = ""; storedKey = false
+                notice = "密钥已从钥匙串删除。要再次出图，请重新粘贴密钥并保存。"
+            }
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("删除后这台电脑上不再保存这个密钥，需要重新粘贴才能出图。已经生成的图片不受影响，模型选择也会保留。")
+        }
     }
 }

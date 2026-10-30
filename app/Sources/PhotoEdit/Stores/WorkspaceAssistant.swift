@@ -533,9 +533,17 @@ extension WorkspaceStore {
         if let key {
             Keychain.save(key, for: "image." + id)
             UserDefaults.standard.set(!key.isEmpty, forKey: "imageKeySaved." + id)
+            imageKeyRevision &+= 1
         }
         imageModels[id] = model
         imageService = id
+    }
+
+    /// 删掉这台电脑上保存的密钥，模型选择保留；之后要重新粘贴密钥才能出图。
+    func removeImageServiceKey(_ id: String) {
+        Keychain.delete("image." + id)
+        UserDefaults.standard.set(false, forKey: "imageKeySaved." + id)
+        imageKeyRevision &+= 1
     }
 }
 

@@ -14,6 +14,15 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
+    /// 删掉某个账号的条目；本来就不存在也算成功。
+    @discardableResult
+    static func delete(_ account: String) -> Bool {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                    kSecAttrAccount as String: account]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
     @discardableResult
     static func save(_ value: String, for account: String) -> Bool {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
