@@ -180,7 +180,7 @@ def validate_plan(plan,targets,engine,available_context=None):
         p=parameters(available[key]['params']) if preset=='keep' else suggest(context,preset)['params']
         selected=available_context.get('repair_selection')
         if selected and selected['id']==key:
-            shape={k:deepcopy(v) for k,v in selected.items() if k in ('box','strokes','radius','polygon','point')}
+            shape={k:deepcopy(v) for k,v in selected.items() if k in ('box','strokes','radius','polygon','point','parts')}
             digest=sha256(json.dumps(shape,sort_keys=True,separators=(',',':')).encode()).hexdigest()[:12]
             selected=('selection-'+digest,shape)
         else:selected=None
@@ -267,11 +267,13 @@ class AssistantBridge:
             item['params']=parameters(item['params']);item['quality']=quality_settings(item.get('quality'))
         selected=data.get('repair_selection')
         if selected is not None:
-            if not isinstance(selected,dict) or set(selected)-{'id','box','strokes','radius','polygon','point'} or 'box' not in selected or selected.get('id') not in {t['id'] for t in targets}:
+            if not isinstance(selected,dict) or set(selected)-{'id','box','strokes','radius','polygon','point','parts'} or 'box' not in selected or selected.get('id') not in {t['id'] for t in targets}:
                 raise ValueError('修复选区不属于当前范围')
             repair_input(selected['box'])
             from service import shape_input
             shape_input(selected.get('strokes'),selected.get('radius'),selected.get('polygon'),selected.get('point'))
+            from service import parts_input
+            parts_input(selected.get('parts'))
         history=data.get('history',[])
         if not isinstance(history,list) or len(history)>16:raise ValueError('对话上下文过长')
         for item in history:

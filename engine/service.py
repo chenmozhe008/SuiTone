@@ -40,6 +40,19 @@ def _coordinate(value):
     return isinstance(value,(float,int)) and not isinstance(value,bool) and math.isfinite(value) and 0<=value<=1
 
 
+def parts_input(parts):
+    """多笔选区：每笔是画笔、套索、点选或方框之一，subtract 表示从选区里减掉。"""
+    if parts is None:return
+    if not isinstance(parts,list) or not 0<len(parts)<=60:raise ValueError('选区笔画数量无效')
+    if not any(isinstance(p,dict) and not p.get('subtract') for p in parts):raise ValueError('选区至少要有一笔是添加')
+    for part in parts:
+        if not isinstance(part,dict) or set(part)-{'box','strokes','radius','polygon','point','subtract'}:raise ValueError('选区笔画格式无效')
+        if not isinstance(part.get('subtract',False),bool):raise ValueError('选区笔画格式无效')
+        if not any(part.get(k) is not None for k in ('box','strokes','polygon','point')):raise ValueError('选区笔画是空的')
+        if part.get('box') is not None:repair_input(part['box'])
+        shape_input(part.get('strokes'),part.get('radius'),part.get('polygon'),part.get('point'))
+
+
 def shape_input(strokes=None,radius=None,polygon=None,point=None):
     """画笔、套索、点选的坐标都是 0–1 比例；限制数量，防止异常请求拖垮修补。"""
     if strokes is not None:
@@ -114,10 +127,11 @@ def parameters(raw):
     for key, selection in p['manual_masks'].items():
         if not isinstance(key,str) or not key.startswith('selection-') or len(key)!=22 or not all(c in '0123456789abcdef' for c in key[10:]):
             raise ValueError('手动选区编号无效')
-        if not isinstance(selection,dict) or set(selection)-{'box','strokes','radius','polygon','point'}:
+        if not isinstance(selection,dict) or set(selection)-{'box','strokes','radius','polygon','point','parts'}:
             raise ValueError('手动选区格式无效')
         repair_input(selection.get('box'))
         shape_input(selection.get('strokes'),selection.get('radius'),selection.get('polygon'),selection.get('point'))
+        parts_input(selection.get('parts'))
     if not isinstance(p['local'], dict) or set(p['local'])-({'water','sky','land','person'}|set(p['manual_masks'])):
         raise ValueError('未知局部区域')
     for name, values in p['local'].items():
@@ -403,12 +417,12 @@ class Engine:
             tiles[style['id']]=str(path)
         return dict(tiles=tiles)
 
-    def remove(self, key, box, classes=None, keep=None, strokes=None, radius=None, polygon=None, point=None):
-        repair_input(box,classes,keep);shape_input(strokes,radius,polygon,point)
+    def remove(self, key, box, classes=None, keep=None, strokes=None, radius=None, polygon=None, point=None, parts=None):
+        repair_input(box,classes,keep);shape_input(strokes,radius,polygon,point);parts_input(parts)
         from inpaint import remove
         asset=self.asset(key)
         with Image.open(asset.image_path) as im:
-            image,mask=remove(im,box=tuple(box),classes=classes,keep=keep,strokes=strokes,radius=radius,polygon=polygon,point=point)
+            image,mask=remove(im,box=tuple(box),classes=classes,keep=keep,strokes=strokes,radius=radius,polygon=polygon,point=point,parts=parts)
         if not (np.asarray(mask)>127).any():
             raise ValueError('选区里没有找到要去掉的东西。请查看选区，或换一种选法。')
         new_key=uuid4().hex
@@ -422,21 +436,37 @@ class Engine:
             with pixels_path.open('xb') as handle:np.save(handle,pixels)
         self.assets[new_key]=Asset(new_key,asset.path,path,asset.original_path,asset.thumbnail,asset.fingerprint,
                                   asset.operations+[{k:v for k,v in dict(box=box,classes=classes,keep=keep,strokes=strokes,
-                                                    radius=radius,polygon=polygon,point=point).items() if v is not None or k=='box'}],pixels_path)
+                                                    radius=radius,polygon=polygon,point=point,parts=parts).items() if v is not None or k=='box'}],pixels_path)
         return dict(id=new_key,source=str(path),mask=str(mask_path))
 
-    def repair_mask(self,key,box,classes=None,keep=None,strokes=None,radius=None,polygon=None,point=None):
-        repair_input(box,classes,keep);shape_input(strokes,radius,polygon,point)
+    def repair_mask(self,key,box,classes=None,keep=None,strokes=None,radius=None,polygon=None,point=None,parts=None):
+        repair_input(box,classes,keep);shape_input(strokes,radius,polygon,point);parts_input(parts)
         from inpaint import build_mask
         asset=self.asset(key)
         with Image.open(asset.image_path) as source:
-            mask=build_mask(source,classes=classes,box=box,keep=keep,strokes=strokes,radius=radius,polygon=polygon,point=point)
+            mask=build_mask(source,classes=classes,box=box,keep=keep,strokes=strokes,radius=radius,polygon=polygon,point=point,parts=parts)
             m=np.asarray(mask,np.float32)/255*.55
             rgb=np.asarray(source.convert('RGB'),np.float32)/255
             overlay=Image.fromarray(np.uint8(np.clip(rgb*(1-m[...,None])+np.array([.85,.35,.35])*m[...,None],0,1)*255+.5))
         if not m.any(): raise ValueError('没有识别到选定类别，请调整框选或模式')
         path=self.folder/(uuid4().hex+'-repair-overlay.png');save_new(overlay,path)
         return dict(overlay=str(path),pixels=int((m>0).sum()))
+
+    def selection_overlay(self,key,selection):
+        """正在画的选区合成后的样子：透明底上选中部分淡红、边缘白线，叠在预览上看加减后的真实结果。"""
+        import cv2
+        from inpaint import shape_mask
+        if not isinstance(selection,dict) or set(selection)-{'box','strokes','radius','polygon','point','parts'}:raise ValueError('选区格式无效')
+        shape_input(selection.get('strokes'),selection.get('radius'),selection.get('polygon'),selection.get('point'));parts_input(selection.get('parts'))
+        context,_=self.analysis(key)
+        inside=(shape_mask(context.image,selection.get('strokes'),selection.get('radius'),selection.get('polygon'),
+                           selection.get('point'),selection.get('parts'),allow_large=True)>.5).astype(np.uint8)
+        width=max(2,context.image.width//500)
+        line=cv2.dilate(inside,np.ones((width*2+1,width*2+1),np.uint8))-cv2.erode(inside,np.ones((3,3),np.uint8))
+        rgba=np.zeros((*inside.shape,4),np.uint8);rgba[inside>0]=(240,80,80,80)
+        rgba[cv2.dilate(line,np.ones((3,3),np.uint8))>0]=(0,0,0,110);rgba[line>0]=(255,255,255,235)
+        path=self.folder/(uuid4().hex+'-selection.png');save_new(Image.fromarray(rgba,'RGBA'),path)
+        return dict(overlay=str(path),coverage=float(inside.mean()))
 
     def region_outline(self,key,raw,name):
         """选区轮廓：透明底上只画边缘（白线＋浅黑描边），叠在预览上常驻显示，不遮挡颜色。"""
@@ -621,9 +651,10 @@ def serve(root, token, watch_stdin=True):
                     elif self.path=='/assistant':result=engine.assistant.start(data)
                     elif self.path=='/assistant-cancel':result=engine.assistant.cancel(data['id'])
                     elif self.path=='/remove': result=engine.remove(data['id'],data['box'],data.get('classes'),data.get('keep'),
-                                                                    data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'))
+                                                                    data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'),data.get('parts'))
                     elif self.path=='/repair-mask': result=engine.repair_mask(data['id'],data['box'],data.get('classes'),data.get('keep'),
-                                                                              data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'))
+                                                                              data.get('strokes'),data.get('radius'),data.get('polygon'),data.get('point'),data.get('parts'))
+                    elif self.path=='/selection-overlay': result=engine.selection_overlay(data['id'],data['selection'])
                     elif self.path=='/region-outline': result=engine.region_outline(data['id'],data['params'],data['name'])
                     elif self.path=='/manual-mask-overlay': result=engine.manual_mask_overlay(data['id'],data['params'],data['name'])
                     elif self.path=='/adopt-generated': result=engine.adopt_generated(data['id'],data['path'])

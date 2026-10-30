@@ -114,7 +114,32 @@ import Testing
         let operation = store.removalOperation(store.selectionBox!)
         #expect(operation.strokes == [[[0.2, 0.3], [0.4, 0.5]]])
         #expect(operation.radius == store.brushSize)
-        store.finishRepairTransition(to: "adjust")
+        store.finishRepairTransition(to: "adjust")  // 换功能不丢选区
+        #expect(store.selectionBox != nil && !store.repairStrokes.isEmpty)
+        store.finishRepairTransition(to: "cutout")  // 抠图是单独点选，清掉
         #expect(store.selectionBox == nil && store.repairStrokes.isEmpty)
+    }
+
+    @Test @MainActor func testSelectionPartsAddSubtractUndoAndFeedRemoval() {
+        let store = fixture()
+        store.repairDraft = nil; store.inspectorTab = "selection"
+        store.repairTool = "box"; store.selectionSubtract = true
+        store.selectionDraftBox = [0.1, 0.1, 0.5, 0.5]; store.commitSelectionPart()
+        #expect(store.selectionParts.isEmpty)  // 没有添加过时不能先减
+        store.selectionSubtract = false
+        store.selectionDraftBox = [0.1, 0.1, 0.5, 0.5]; store.commitSelectionPart()
+        store.repairTool = "brush"; store.selectionSubtract = true
+        store.repairStrokes = [[[0.3, 0.3], [0.35, 0.35]]]; store.commitSelectionPart()
+        #expect(store.selectionParts.count == 2 && store.selectionParts[1].subtract && store.repairStrokes.isEmpty)
+        #expect(store.selectionBox == [0.1, 0.1, 0.5, 0.5])  // 外接框只算添加的部分
+        let operation = store.removalOperation(store.selectionBox!)
+        #expect(operation.parts?.count == 2 && operation.strokes == nil)
+        store.undoSelectionPart()
+        #expect(store.selectionParts.count == 1)
+        store.repairTool = "object"; store.selectionSubtract = false
+        store.repairPoint = [0.8, 0.8]; store.commitSelectionPart()
+        #expect(store.selectionBox == [0, 0, 1, 1])  // 点选物体范围由引擎识别，外接框取整张
+        store.clearRepairSelection()
+        #expect(store.selectionParts.isEmpty && store.selectionBox == nil)
     }
 }

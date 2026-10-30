@@ -16,7 +16,15 @@ def _jpeg(path, selection=None):
         width, height = image.size
         draw=ImageDraw.Draw(image);color=(255,80,30);line_width=max(2,width//250)
         point=lambda p:(round(p[0]*width),round(p[1]*height))
-        if selection.get('strokes'):
+        if selection.get('parts'):
+            # 多笔选区（有加有减）：合成真实形状后描出边缘，AI 看到的就是最终选中的范围。
+            import cv2, numpy as np
+            from inpaint import shape_mask
+            inside=(shape_mask(image,None,None,None,None,selection['parts'],allow_large=True)>.5).astype(np.uint8)
+            edge=cv2.dilate(inside,np.ones((line_width*2+1,)*2,np.uint8))-inside
+            pixels=np.asarray(image).copy();pixels[edge>0]=color
+            image=Image.fromarray(pixels);draw=ImageDraw.Draw(image)
+        elif selection.get('strokes'):
             stroke_width=max(2,round(2*selection.get('radius',.02)*width))
             for stroke in selection['strokes']:
                 points=[point(p) for p in stroke]

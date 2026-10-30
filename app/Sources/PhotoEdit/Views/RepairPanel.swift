@@ -28,22 +28,8 @@ struct RepairPanel: View {
                         Button("保留修复") { store.applyRepairPreview() }.buttonStyle(.borderedProminent)
                     }
                 } else {
-                    Picker("选法", selection: $store.repairTool) {
-                        Text("画笔").tag("brush")
-                        Text("套索").tag("lasso")
-                        Text("点选物体").tag("object")
-                        Text("方框").tag("box")
-                    }.pickerStyle(.segmented).labelsHidden()
-                        .onChange(of: store.repairTool) { _, _ in store.clearRepairSelection() }
-                    Text(hint).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    if store.repairTool == "brush" {
-                        HStack(spacing: 10) {
-                            Text("笔刷").font(.callout)
-                            Slider(value: $store.brushSize, in: 0.005...0.08).controlSize(.small)
-                            Circle().fill(Color(red: 0.95, green: 0.3, blue: 0.3).opacity(0.6))
-                                .frame(width: 8 + store.brushSize * 300, height: 8 + store.brushSize * 300).frame(width: 34)
-                        }
-                    }
+                    Text("用照片上方的工具条选出要去掉的东西，可以多笔加减。涂得比杂物略大一圈效果更好。")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Button {
                         store.remove()
                     } label: {
@@ -54,7 +40,7 @@ struct RepairPanel: View {
                     }.buttonStyle(.borderedProminent).controlSize(.large)
                         .disabled(!store.validRepairSelection || working)
                     FlowLayout(spacing: 8) {
-                        Button("重新选择") { store.clearRepairSelection() }
+                        Button("清除选区") { store.clearRepairSelection() }
                             .disabled(store.selectionBox == nil || working)
                         Button("调整选区") { store.editSelectedRegion() }
                             .disabled(!store.validRepairSelection || working)

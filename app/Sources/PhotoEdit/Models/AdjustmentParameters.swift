@@ -129,6 +129,23 @@ struct ImportedPhoto: Decodable, Identifiable, Sendable {
     var similarTo: String?
 }
 
+/// 多笔选区里的一笔：画笔、套索、点选物体或方框之一；subtract 表示从选区里减掉。
+struct SelectionPart: Codable, Equatable, Sendable {
+    var box: [Double]? = nil
+    var strokes: [[[Double]]]? = nil
+    var radius: Double? = nil
+    var polygon: [[Double]]? = nil
+    var point: [Double]? = nil
+    var subtract = false
+
+    var kind: String {
+        if strokes != nil { return "画笔" }
+        if polygon != nil { return "套索" }
+        if point != nil { return "点选物体" }
+        return "方框"
+    }
+}
+
 struct RemovalOperation: Codable, Equatable, Sendable {
     var box: [Double]
     var classes: [String]?
@@ -142,6 +159,8 @@ struct RemovalOperation: Codable, Equatable, Sendable {
     var point: [Double]? = nil
     /// 换成 AI 生成图：存在 Application Support/SuiTone/generated 里的文件路径（此时 box 为整张）
     var generated: String? = nil
+    /// 多笔选区（按顺序加减）；有它时忽略上面的单笔字段
+    var parts: [SelectionPart]? = nil
 }
 
 struct EditSnapshot: Equatable {

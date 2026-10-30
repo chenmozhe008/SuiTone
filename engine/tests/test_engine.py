@@ -769,6 +769,26 @@ class EngineTests(unittest.TestCase):
         self.assertLessEqual(close,.8);self.assertGreaterEqual(far,.45);self.assertLess(far,close)
         self.assertIn('天空比这张暗很多',warning[0]);self.assertIn('水颜色',warning[0]);self.assertNotIn('暗很多',advice[0])
 
+    def test_selection_parts_add_and_subtract_in_order(self):
+        from inpaint import build_mask,shape_mask
+        from service import parts_input
+        from unittest.mock import patch
+        image=Image.new('RGB',(200,100),(120,120,120))
+        parts=[dict(box=[0,0,.5,1]),dict(strokes=[[[.25,.1],[.25,.9]]],radius=.03,subtract=True),
+               dict(polygon=[[.7,.2],[.9,.2],[.9,.8],[.7,.8]])]
+        m=shape_mask(image,parts=parts)>.5
+        self.assertTrue(m[50,10]);self.assertFalse(m[50,50]);self.assertTrue(m[50,160]);self.assertFalse(m[50,120])
+        removal=np.asarray(build_mask(image,box=(0,0,1,1),parts=parts,grow=1))>127
+        self.assertTrue(removal[50,160]);self.assertFalse(removal[50,120])
+        # 选区里点选允许大片区域（如整片天空），移除杂物时仍然拒绝
+        p=np.zeros((2,10,10),np.float32);p[1]=1;p[0,8:,:]=1;p[1,8:,:]=0
+        with patch('segmentation.probabilities',return_value=(p,{0:'person',1:'sky'})):
+            self.assertGreater(shape_mask(image,parts=[dict(point=[.5,.3])]).mean(),.5)
+            with self.assertRaises(ValueError):build_mask(image,box=(0,0,1,1),point=[.5,.3])
+        for bad in [[],[dict(box=[0,0,.5,1],subtract=True)],[dict(subtract=False)],[dict(box=[0,0,.5,1],glow=1)],[dict(box=[0,0,.5,1],subtract='yes')]]:
+            with self.assertRaises(ValueError):parts_input(bad)
+        parts_input(parts)
+
     def test_brush_lasso_and_object_selection_masks(self):
         from inpaint import build_mask
         from service import shape_input

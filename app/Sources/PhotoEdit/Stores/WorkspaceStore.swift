@@ -73,6 +73,17 @@ final class WorkspaceStore {
     var repairPolygon: [[Double]] = []
     var repairPoint: [Double]?
     var brushSize = 0.025
+    /// 多笔选区：已画好的各笔（选区、移除、AI 改图三页共用）
+    var selectionParts: [SelectionPart] = []
+    /// 工具条上选的是「减去」；按住 ⌥ 也临时算减去
+    var selectionSubtract = false
+    /// 方框选法拖动中的框（松手才变成一笔）
+    var selectionDraftBox: [Double]?
+    /// 引擎合成后的选区样子（透明底，选中部分淡红＋白边）
+    var selectionOverlay: String?
+    /// 正在继续编辑的已保存选区（局部调整里的手动选区）
+    var editingSelectionKey: String?
+    var selectionRevision = 0
     var repairMode = "box"
     var repairClasses = "railing, fence"
     var repairEnabled = false
@@ -212,6 +223,10 @@ final class WorkspaceStore {
                 selectedIDs = Set(photos.prefix(count).map(\.id)); activate(photos.first?.id)
             }
             if let tab = options["openTab"] as? String { inspectorTab = tab }
+            if let point = (options["selectionPoint"] as? String)?.split(separator: ",").compactMap({ Double($0) }), point.count == 2 {
+                try? await Task.sleep(for: .milliseconds(500))
+                repairTool = "object"; repairPoint = point; commitSelectionPart()
+            }
             if let region = options["localRegion"] as? String {
                 loadAnalysis(); try? await Task.sleep(for: .seconds(2)); selectLocalRegion(region)
             }

@@ -234,8 +234,9 @@ def local_mask(analysis,name,feather,W,manual_masks=None):
             from inpaint import shape_mask
             from PIL import ImageDraw
             image=analysis.image
-            if any(selection.get(k) is not None for k in ('strokes','polygon','point')):
-                m=shape_mask(image,selection.get('strokes'),selection.get('radius'),selection.get('polygon'),selection.get('point'))
+            if any(selection.get(k) is not None for k in ('strokes','polygon','point','parts')):
+                m=shape_mask(image,selection.get('strokes'),selection.get('radius'),selection.get('polygon'),selection.get('point'),
+                             selection.get('parts'),allow_large=True)
             else:
                 mask=Image.new('L',image.size,0);draw=ImageDraw.Draw(mask)
                 l,t,r,b=selection['box'];draw.rectangle((int(l*image.width),int(t*image.height),int(r*image.width),int(b*image.height)),fill=255)

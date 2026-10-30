@@ -230,6 +230,7 @@ struct AdjustPanel: View {
                 Button("重置\(name)") { store.change("重置" + name) { $0.local[region] = nil } }
                     .disabled(store.current?.parameters.local[region] == nil)
                 if region.hasPrefix("selection-") {
+                    Button("编辑选区") { store.editSavedSelection(region) }
                     Button("删除选区") {
                         store.change("删除" + name) { $0.local[region] = nil; $0.manualMasks[region] = nil }
                         store.selectLocalRegion(nil)

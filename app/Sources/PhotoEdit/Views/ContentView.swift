@@ -64,6 +64,25 @@ private struct WorkspaceHeader: View {
 
 private struct CanvasHeader: View {
     @Bindable var store: WorkspaceStore
+    @ViewBuilder private func toolButtons(labels: Bool) -> some View {
+        HStack(spacing: 8) {
+            toggle("对比", "rectangle.split.2x1", $store.splitCompare, labels, help: "拖动画面上的分隔线比较原图和调整后").disabled(store.grid)
+            toggle("原图", "circle.lefthalf.filled", $store.showOriginal, labels, help: "按 \\ 切换整张原图")
+            Divider().frame(height: 18)
+            toggle("选区", "lasso", tool("selection"), labels, help: "画选区，可以多笔加减").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "selection")
+            toggle("移除", "bandage", tool("repair"), labels, help: "移除杂物").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
+            toggle("AI 改图", "sparkles", tool("aiedit"), labels, help: "用 AI 生成新图：换背景、加东西、去掉大物体").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "aiedit")
+            toggle("抠图", "scissors", tool("cutout"), labels, help: "抠出人物或物体，另存透明 PNG").disabled(store.current == nil || store.controlsBlocked)
+            toggle("画质", "wand.and.stars", tool("quality"), labels, help: "降噪与放大").disabled(store.current == nil || store.controlsBlocked)
+        }.fixedSize()
+    }
+
+    private func toggle(_ title: String, _ icon: String, _ isOn: Binding<Bool>, _ labels: Bool, help: String) -> some View {
+        Toggle(isOn: isOn) {
+            if labels { Label(title, systemImage: icon) } else { Image(systemName: icon) }
+        }.toggleStyle(.button).help(labels ? help : title + "：" + help)
+    }
+
     private func tool(_ name: String) -> Binding<Bool> {
         Binding(get: { store.inspectorTab == name }, set: { store.inspectorTab = $0 ? name : store.lastMainTab })
     }
@@ -75,17 +94,11 @@ private struct CanvasHeader: View {
                 Text(photo.lookName).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Toggle(isOn: $store.splitCompare) { Label("对比", systemImage: "rectangle.split.2x1") }
-                .toggleStyle(.button).help("拖动画面上的分隔线比较原图和调整后").disabled(store.grid)
-            Toggle(isOn: $store.showOriginal) { Label("原图", systemImage: "circle.lefthalf.filled") }
-                .toggleStyle(.button).help("按 \\ 切换整张原图")
-            // 图片工具直接放按钮，一眼可见；再点一次回到原来的页。
-            Toggle(isOn: tool("repair")) { Label("移除", systemImage: "bandage") }
-                .toggleStyle(.button).help("移除杂物").disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
-            Toggle(isOn: tool("cutout")) { Label("抠图", systemImage: "scissors") }
-                .toggleStyle(.button).help("抠出人物或物体，另存透明 PNG").disabled(store.current == nil || store.controlsBlocked)
-            Toggle(isOn: tool("quality")) { Label("画质", systemImage: "wand.and.stars") }
-                .toggleStyle(.button).help("降噪与放大").disabled(store.current == nil || store.controlsBlocked)
+            // 宽度够时显示文字，窄窗口自动只留图标（悬停看名字）。
+            ViewThatFits(in: .horizontal) {
+                toolButtons(labels: true)
+                toolButtons(labels: false)
+            }
             Picker("预览方式", selection: $store.grid) {
                 Image(systemName: "rectangle").tag(false)
                 Image(systemName: "square.grid.2x2").tag(true)

@@ -37,6 +37,14 @@ struct PhotoCanvas: View {
                             canvasLabel("调整后").opacity(store.splitPosition<0.92 ? 1 : 0)
                         }.frame(width:w,height:h,alignment:.top)
                     }
+                    if store.usesSelectionParts, store.repairDraft == nil, store.repairMaskOverlay == nil, let overlay = store.selectionOverlay {
+                        LocalPhoto(path: overlay).frame(width: w, height: h).allowsHitTesting(false)
+                    }
+                    if store.usesSelectionParts, let b = store.selectionDraftBox {
+                        Rectangle().stroke(store.selectionSubtract ? Color.orange : .white, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                            .frame(width: w*(b[2]-b[0]), height: h*(b[3]-b[1])).position(x: w*(b[0]+b[2])/2, y: h*(b[1]+b[3])/2)
+                            .allowsHitTesting(false)
+                    }
                     if store.inspectorTab == "adjust", store.localRegion != nil, store.overlay.isEmpty, !splitActive,
                        let outline = store.localOutline {
                         LocalPhoto(path: outline).frame(width: w, height: h).allowsHitTesting(false)
@@ -56,6 +64,12 @@ struct PhotoCanvas: View {
                     if drawingChatSelection { drawingChatSelection = false; return }
                     let tap=hypot(value.translation.width,value.translation.height)<4
                     let point=[Double(min(1,max(0,value.location.x/w))),Double(min(1,max(0,value.location.y/h)))]
+                    if store.repairEnabled && store.usesSelectionParts {
+                        guard !store.busy, store.repairDraft == nil else {return}
+                        if store.repairTool == "object" { if tap { store.repairPoint=point; store.commitSelectionPart() } }
+                        else { drawing=false; store.commitSelectionPart() }
+                        return
+                    }
                     if store.repairEnabled {
                         guard !store.busy, store.repairDraft == nil else {return}
                         if store.repairTool == "object" && tap {
@@ -96,11 +110,15 @@ struct PhotoCanvas: View {
                         guard value.translation != .zero else {return}
                         store.repairMaskOverlay=nil
                         let x0=clamp(value.startLocation.x/w),y0=clamp(value.startLocation.y/h)
-                        store.selectionBox=[min(x0,point[0]),min(y0,point[1]),max(x0,point[0]),max(y0,point[1])]
+                        let frame=[min(x0,point[0]),min(y0,point[1]),max(x0,point[0]),max(y0,point[1])]
+                        if store.usesSelectionParts { store.selectionDraftBox=frame } else { store.selectionBox=frame }
                     default: break
                     }
                 })
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
+                .overlay(alignment:.top) {
+                    if store.usesSelectionParts && store.repairDraft == nil { SelectionToolbar(store:store).padding(.top,6) }
+                }
                 .overlay(alignment:.bottomLeading) {
                     if store.showOriginal {canvasLabel("原图").padding(10)}
                     else if store.repairDraft != nil {canvasLabel(store.repairShowingBefore ? "修复前" : "修复预览").padding(10)}
@@ -122,7 +140,8 @@ struct PhotoCanvas: View {
 
     /// 画笔轨迹（半透明红，粗细即笔刷大小）、套索轮廓、点选位置。
     @ViewBuilder private func repairShapes(w:CGFloat,h:CGFloat)->some View {
-        let red=Color(red:0.95,green:0.3,blue:0.3)
+        // 正在画的这一笔：添加用红色，减去用橙色
+        let red=store.usesSelectionParts && store.selectionSubtract ? Color.orange : Color(red:0.95,green:0.3,blue:0.3)
         Canvas {context,_ in
             for stroke in store.repairStrokes {
                 var path=Path()

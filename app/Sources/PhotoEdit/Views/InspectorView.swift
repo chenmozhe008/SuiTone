@@ -3,13 +3,14 @@ import SwiftUI
 /// 右栏：「对话」（默认）和「调整」两页；修复、画质由画布工具栏进入，点「完成」回到原来的页。
 struct InspectorView: View {
     @Bindable var store: WorkspaceStore
-    private var toolMode: Bool { store.inspectorTab == "repair" || store.inspectorTab == "quality" || store.inspectorTab == "cutout" }
+    private static let titles = ["repair": "移除杂物", "quality": "画质增强", "cutout": "抠图", "selection": "选区", "aiedit": "AI 改图"]
+    private var toolMode: Bool { Self.titles[store.inspectorTab] != nil }
 
     var body: some View {
         VStack(spacing: 0) {
             if toolMode {
                 HStack {
-                    Text(store.inspectorTab == "repair" ? "移除杂物" : store.inspectorTab == "cutout" ? "抠图" : "画质增强").font(.headline)
+                    Text(Self.titles[store.inspectorTab] ?? "").font(.headline)
                     Spacer()
                     Button("完成") { store.inspectorTab = store.lastMainTab }
                         .buttonStyle(.borderedProminent).disabled(store.busy)
@@ -25,18 +26,19 @@ struct InspectorView: View {
             case "repair": RepairPanel(store: store)
             case "quality": QualityPanel(store: store)
             case "cutout": CutoutPanel(store: store)
+            case "selection": SelectionPanel(store: store)
             case "adjust": AdjustPanel(store: store)
             default: AssistantPanel(store: store)
             }
         }.background(Color(white: 0.15))
             .onChange(of: store.inspectorTab) { _, tab in
                 store.finishRepairTransition(to: tab)
-                store.repairEnabled = tab == "repair" || tab == "cutout"
+                store.repairEnabled = ["repair", "cutout", "selection", "aiedit"].contains(tab)
                 store.cutoutPreview = nil; store.cutoutSnapshot = nil
                 if tab == "cutout" { store.repairTool = "object" }
                 store.overlay = ""; store.showOriginal = false; store.localRegion = nil
                 if tab == "chat" || tab == "adjust" { store.lastMainTab = tab }
-                if tab == "repair" || tab == "quality" || tab == "cutout" { store.grid = false }
+                if Self.titles[tab] != nil { store.grid = false }
                 if tab == "adjust" { store.loadStyleTiles(); if store.analysis == nil { store.loadAnalysis() } }
             }
     }
