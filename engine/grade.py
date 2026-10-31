@@ -116,7 +116,7 @@ def grade_array(img, water=(54.0,-17.0,-7.0), water_var=0.6, dehaze_amt=1.0,
                 temperature=0.0,tint=0.0,highlights=0.0,shadows=0.0,effect_strength=1.0,
                 shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.,
                 whites=0.,blacks=0.,light=0.,vibrance=0.,texture=0.,local=None,manual_masks=None,
-                rotation=None,angle=None,flip=None,crop=None):
+                rotation=None,angle=None,flip=None,crop=None,rotation_expanded=None):
     # 裁切、旋转、拉直和翻转在渲染之后单独套用，调色这里不参与。
     if auto_dehaze:
         if analysis is None:

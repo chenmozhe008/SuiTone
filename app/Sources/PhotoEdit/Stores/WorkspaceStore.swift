@@ -163,6 +163,10 @@ final class WorkspaceStore {
     var angleDraft: Double?
     var rotationEditing = false
     /// 裁切页正在框的范围（0–1 比例）；裁切比例选的是哪一档
+    var cropExpanded = false
+    var cropBaseline: [Double]?
+    var rotationFrameAnchor: [Double]?
+    var rotationFrameAnchorAngle = 0.0
     var cropDraft: [Double]?
     /// 是否正在框选：确定、按回车、离开裁切页或换照片之后都算「裁完」，框收起来。
     /// 框一直压在画面上，看起来像「点了确定没生效」。
@@ -467,7 +471,7 @@ final class WorkspaceStore {
                     var previewParams = photo.parameters
                     // 裁切页要看到完整画面（含将被裁掉的部分），框才不会错位。
                     let cropMode = cropPreviewing
-                    if cropMode { previewParams.crop = nil }
+                    if cropMode { previewParams.crop = nil; previewParams.rotationExpanded = cropExpanded }
                     let response: PreviewResponse = try await engine.request("preview", body: ["id": photo.assetID, "params": try EngineClient.object(previewParams), "quality": try EngineClient.object(photo.quality)])
                     if currentID == photo.id, current?.assetID == photo.assetID, cropPreviewing == cropMode,
                        let i = currentIndex, photos[i].quality == photo.quality {

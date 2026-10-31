@@ -493,6 +493,20 @@ class EngineTests(unittest.TestCase):
             expected=apply(real_grade(image,analysis=context,**neutral()),dict(angle=12))
             self.assertTrue(np.array_equal(np.asarray(Image.open(rotated['preview'])),np.asarray(expected)))
 
+    def test_expanded_crop_survives_baking_and_replay(self):
+        from service import replay_operations
+        from geometry import apply
+        image = Image.fromarray(np.random.default_rng(14).integers(30, 220, (120, 160, 3), dtype=np.uint8))
+        with TemporaryDirectory() as folder:
+            engine = Engine(folder)
+            source = Path(folder) / 'source.png'; save_new(image, source)
+            asset = engine.import_one(source)
+            raw = dict(angle=12, rotation_expanded=True, crop=[.2, .2, .6, .6])
+            baked = engine.bake_geometry(asset.id, raw)
+            self.assertTrue(baked['operation']['geometry']['rotation_expanded'])
+            replayed, _ = replay_operations(engine.asset(baked['id']))
+            np.testing.assert_array_equal(np.asarray(replayed), np.asarray(apply(image, raw)))
+
     def test_export_uses_each_photos_quality_and_preserves_recipe(self):
         from unittest.mock import patch
         from smart import neutral

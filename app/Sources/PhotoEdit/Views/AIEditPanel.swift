@@ -164,11 +164,13 @@ struct AIEditPanel: View {
                     } else {
                         FlowLayout(spacing: 6) {
                             ForEach(["auto"] + ratios, id: \.self) { ratio in
-                                Button(ratio == "auto" ? "自动" : ratio) { aspectRatio = ratio }
-                                    .buttonStyle(.plain)
-                                    .font(.callout.weight(aspectRatio == ratio ? .semibold : .regular))
-                                    .padding(.horizontal, 9).padding(.vertical, 5)
-                                    .background(aspectRatio == ratio ? Color.accentColor : Color(white: 0.23), in: RoundedRectangle(cornerRadius: 6))
+                                Button { aspectRatio = ratio } label: {
+                                    Text(ratio == "auto" ? "自动" : ratio)
+                                        .font(.callout.weight(aspectRatio == ratio ? .semibold : .regular))
+                                        .padding(.horizontal, 9).padding(.vertical, 5)
+                                        .background(aspectRatio == ratio ? Color.accentColor : Color(white: 0.23), in: RoundedRectangle(cornerRadius: 6))
+                                        .contentShape(Rectangle())
+                                }.buttonStyle(.plain)
                             }
                         }
                     }

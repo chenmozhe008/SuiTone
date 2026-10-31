@@ -60,6 +60,18 @@ class GeometryTests(unittest.TestCase):
             for corner in corners:
                 self.assertTrue((corner > 200).all(), f'{angle}° 时角落被填黑了')
 
+    def test_expanded_rotation_retains_outer_image_and_crops_exact_canvas(self):
+        image = Image.fromarray(np.random.default_rng(9).integers(20, 240, (200, 300, 3), dtype=np.uint8))
+        full = geometry.apply(image, dict(angle=10, rotation_expanded=True))
+        self.assertGreater(full.width, image.width)
+        self.assertGreater(full.height, image.height)
+        crop = [.2, .2, .5, .5]
+        result = geometry.apply(image, dict(angle=10, rotation_expanded=True, crop=crop))
+        expected = full.crop((round(.2 * full.width), round(.2 * full.height),
+                              round(.7 * full.width), round(.7 * full.height)))
+        np.testing.assert_array_equal(np.asarray(result), np.asarray(expected))
+        self.assertNotEqual(np.asarray(result).tobytes(), np.asarray(geometry.apply(image, dict(angle=10))).tobytes())
+
     def test_straighten_keeps_original_aspect(self):
         """拉直后宽高比要和拖动时看到的一致，界面才不会在松手后突然变形。"""
         image = Image.new('RGB', (300, 200))

@@ -73,6 +73,7 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
     /// 几何调整：旋转（90 的整数倍）、拉直角度、翻转、裁切范围（0–1 比例）
     var rotation = 0.0
     var angle = 0.0
+    var rotationExpanded = false
     var flip = ""
     var crop: [Double]? = nil
     var hasGeometry: Bool {
@@ -86,7 +87,7 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
         case temperature,tint,highlights,shadows,effectStrength,skinProtect,smooth,bright,matchStrength,enabled,regions
         case shadowHue,shadowChroma,highlightHue,highlightChroma,fade
         case whites,blacks,light,vibrance,texture,local,manualMasks
-        case rotation,angle,flip,crop
+        case rotation,angle,flip,crop,rotationExpanded
     }
     init(from decoder:Decoder) throws {
         self.init()
@@ -126,6 +127,7 @@ struct AdjustmentParameters: Codable, Equatable, Sendable {
         manualMasks=try c.decodeIfPresent([String:RemovalOperation].self,forKey:.manualMasks) ?? [:]
         rotation=try c.decodeIfPresent(Double.self,forKey:.rotation) ?? 0
         angle=try c.decodeIfPresent(Double.self,forKey:.angle) ?? 0
+        rotationExpanded=try c.decodeIfPresent(Bool.self,forKey:.rotationExpanded) ?? false
         flip=try c.decodeIfPresent(String.self,forKey:.flip) ?? ""
         crop=try c.decodeIfPresent([Double].self,forKey:.crop)
     }
@@ -181,6 +183,7 @@ struct RemovalOperation: Codable, Equatable, Sendable {
 struct GeometryAdjustment: Codable, Equatable, Sendable {
     var rotation = 0.0
     var angle = 0.0
+    var rotationExpanded: Bool? = nil
     var flip = ""
     var crop: [Double]? = nil
 }

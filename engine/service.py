@@ -29,7 +29,7 @@ DEFAULTS = dict(water=[54., -17., -7.], water_var=.6, dehaze_amt=1., sky_hue=-10
                 temperature=0.,tint=0.,highlights=0.,shadows=0.,effect_strength=1.,
                 shadow_hue=-160.,shadow_chroma=0.,highlight_hue=65.,highlight_chroma=0.,fade=0.,
                 whites=0.,blacks=0.,light=0.,vibrance=0.,texture=0.,local={},manual_masks={},
-                rotation=0, angle=0., flip='', crop=None)
+                rotation=0, angle=0., flip='', crop=None, rotation_expanded=False)
 LIMITS = dict(water_var=(0, 2), dehaze_amt=(0, 1), sky_hue=(-180, 180), autumn=(0, 1),
               black_white=(0, 1), contrast=(0, 2), exposure=(-3, 3), saturation=(0, 2),
               smooth=(0, 1), bright=(0, 1), match_strength=(0, 1),temperature=(-1,1),tint=(-1,1),
@@ -142,6 +142,7 @@ def parameters(raw):
         for key, value in values.items():number(value, *LOCAL_FIELDS[key])
     if p['rotation'] % 90: raise ValueError('旋转角度只能是 90 度的整数倍')
     if p['flip'] not in ('', 'h', 'v'): raise ValueError('翻转方式无效')
+    if not isinstance(p['rotation_expanded'], bool): raise ValueError('旋转裁切格式无效')
     crop = p['crop']
     if crop is not None:
         if not isinstance(crop, list) or len(crop) != 4 or not all(_coordinate(x) for x in crop):
@@ -592,7 +593,7 @@ class Engine:
         path=self.folder/(new_key+'-source.png');save_new(working,path)
         thumb_path=self.folder/(new_key+'-thumb.jpg');save_new(thumb,thumb_path)
         operation=dict(box=[0.,0.,1.,1.],geometry=dict(rotation=int(p['rotation'])%360,angle=float(p['angle']),
-                                                       flip=p['flip'],crop=p['crop']))
+                                                       flip=p['flip'],crop=p['crop'],rotation_expanded=p['rotation_expanded']))
         self.assets[new_key]=Asset(new_key,asset.path,path,asset.original_path,thumb_path,asset.fingerprint,
                                    asset.operations+[operation],None)
         self.analyses.pop(key,None)

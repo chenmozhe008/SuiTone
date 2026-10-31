@@ -9,6 +9,8 @@ struct PhotoCanvas: View {
     @State private var cropStart: [Double]?
     @State private var cropHandle: CropGeometry.Handle?
     @State private var cropRotationStart: Double?
+    @State private var cropViewOffset = CGSize.zero
+    @State private var cropOffsetStart = CGSize.zero
     @State private var cropCursor: CropCursor = .arrow
     var body: some View {
         GeometryReader {geometry in
@@ -79,6 +81,7 @@ struct PhotoCanvas: View {
                     }
                 }
                 .frame(width:w,height:h)
+                .offset(store.cropEditing && store.cropExpanded ? cropViewOffset : .zero)
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance:0).onEnded {value in
                     if store.inspectorTab == "crop" { return }
@@ -147,7 +150,8 @@ struct PhotoCanvas: View {
                 // 只挂在照片矩形上的话，手一偏落在灰底上就完全没反应，看起来就是「框拖不动」。
                 .overlay {
                     if store.inspectorTab == "crop", store.cropEditing {
-                        cropDragLayer(origin: CGPoint(x: (geometry.size.width - w) / 2, y: (geometry.size.height - h) / 2),
+                        cropDragLayer(origin: CGPoint(x: (geometry.size.width - w) / 2 + (store.cropExpanded ? cropViewOffset.width : 0),
+                                                    y: (geometry.size.height - h) / 2 + (store.cropExpanded ? cropViewOffset.height : 0)),
                                       size: CGSize(width: w, height: h))
                     }
                 }
@@ -191,6 +195,9 @@ struct PhotoCanvas: View {
                 }.frame(maxWidth:.infinity,maxHeight:.infinity)
             }
         }
+        .onChange(of: store.cropEditing) { _, _ in cropViewOffset = .zero }
+        .onChange(of: store.current?.parameters.angle) { _, _ in cropViewOffset = .zero }
+        .onChange(of: store.currentID) { _, _ in cropViewOffset = .zero }
         .dropDestination(for:URL.self) {urls,_ in store.importURLs(urls);return true}
     }
 
@@ -260,6 +267,7 @@ struct PhotoCanvas: View {
                         let box = store.cropDraft ?? [0, 0, 1, 1]
                         if cropStart == nil {
                             cropStart = box
+                            cropOffsetStart = cropViewOffset
                             cropHandle = CropGeometry.handle(at: from, box: box, size: size,
                                                              freeform: store.cropAspect == "free")
                             if cropHandle == .rotate { cropRotationStart = -(store.current?.parameters.angle ?? 0) }
@@ -273,8 +281,17 @@ struct PhotoCanvas: View {
                             store.straightenPreview(-(wrapped < 0 ? wrapped + 180 : wrapped - 180))
                             return
                         }
-                        store.cropDraft = CropGeometry.dragged(start: start, handle: handle, from: from, to: to, size: size,
-                                                               freeform: store.cropAspect == "free")
+                        store.rotationFrameAnchor = nil
+                        if handle == .inside && store.cropExpanded {
+                            let opposite = CGPoint(x: from.x - (to.x - from.x), y: from.y - (to.y - from.y))
+                            let moved = store.constrainCropDraft(CropGeometry.dragged(start: start, handle: handle, from: from, to: opposite, size: size, freeform: true))
+                            store.cropDraft = moved
+                            cropViewOffset = CGSize(width: cropOffsetStart.width - (moved[0] - start[0]) * size.width,
+                                                    height: cropOffsetStart.height - (moved[1] - start[1]) * size.height)
+                        } else {
+                            store.cropDraft = store.constrainCropDraft(CropGeometry.dragged(start: start, handle: handle, from: from, to: to, size: size,
+                                                                   freeform: store.cropAspect == "free"))
+                        }
                     }
                     .onEnded { _ in
                         if cropHandle == .rotate { store.finishStraighten() }
@@ -303,6 +320,7 @@ struct PhotoCanvas: View {
     /// 裁切页左下角的一行提示：先把「框怎么动」讲清楚，第一次进来的人不用猜。
     private var cropHint: String {
         guard store.cropEditing else { return "裁切已应用 · 点右栏「重新框选」再裁一次" }
+        if store.cropExpanded { return "框内拖动画面 · 四角四边裁切 · 角外旋转" }
         let box = store.cropDraft ?? [0, 0, 1, 1]
         let full = box[0] < 0.002 && box[1] < 0.002 && box[2] > 0.998 && box[3] > 0.998
         return full ? "拖动四角或边缘裁切 · 框内拖出新框 · 角外拖动旋转"

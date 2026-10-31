@@ -3,6 +3,28 @@ import Testing
 @testable import PhotoEdit
 
 @Suite struct CropGeometryTests {
+    @Test func rotatedFrameStaysWithinPhotoAndSmallerFramesCanMoveFurther() {
+        let source = CGSize(width: 1200, height: 800), angle = 20.0
+        let canvas = CropGeometry.canvasSize(size: source, angle: angle)
+        for flip in ["", "h", "v"] {
+            for x in [-0.5, 0.0, 0.5, 1.0] {
+                let box = CropGeometry.constrainCanvas([x, 0.3, 0.3, 0.25], size: source, angle: angle, flip: flip)
+                let a = angle * .pi / 180, c = cos(a), s = sin(a)
+                for px in [box[0], box[0] + box[2]] {
+                    for py in [box[1], box[1] + box[3]] {
+                        var dx = (px - 0.5) * canvas.width, dy = (py - 0.5) * canvas.height
+                        if flip == "h" { dx = -dx }; if flip == "v" { dy = -dy }
+                        #expect(abs(c * dx - s * dy) <= source.width / 2)
+                        #expect(abs(s * dx + c * dy) <= source.height / 2)
+                    }
+                }
+            }
+        }
+        let small = CropGeometry.constrainCanvas([0.8, 0.4, 0.15, 0.15], size: source, angle: angle, flip: "")
+        let big = CropGeometry.constrainCanvas([0.8, 0.2, 0.6, 0.6], size: source, angle: angle, flip: "")
+        #expect(small[0] + small[2] / 2 > big[0] + big[2] / 2)
+    }
+
     @Test func drawsFreelyInEitherDirectionAndClampsToPhoto() throws {
         let first = try #require(CropGeometry.drawn(from: CGPoint(x: 80, y: 90), to: CGPoint(x: 20, y: 10), size: CGSize(width: 100, height: 100)))
         #expect(abs(first[0] - 0.2) < 0.00001 && abs(first[1] - 0.1) < 0.00001)
@@ -113,6 +135,32 @@ import Testing
         store.currentID = "photo"
         store.inspectorTab = "crop"
         return store
+    }
+
+    @Test @MainActor func rotatingBackDoesNotAccumulateCropLoss() throws {
+        let store = fixture()
+        store.beginCrop()
+        for angle in stride(from: 0.0, through: 30.0, by: 0.5) { store.straightenPreview(angle) }
+        for angle in stride(from: 30.0, through: 0.0, by: -0.5) { store.straightenPreview(angle) }
+        store.finishStraighten()
+        let box = try #require(store.cropDraft)
+        #expect(box[2] > 0.99 && box[3] > 0.99)
+    }
+
+    @Test @MainActor func rotatingAfterConfirmationReopensTheAppliedCrop() {
+        let store = fixture()
+        store.cropDraft = [0.1, 0.2, 0.7, 0.6]
+        store.cropEditing = true
+        store.finishCrop()
+        #expect(!store.cropEditing)
+        store.straightenPreview(-4)
+        #expect(store.cropEditing)
+        #expect(store.cropExpanded && store.cropDraft != nil)
+        store.finishStraighten()
+        store.finishCrop()
+        store.applyAngle(-5)
+        #expect(store.cropEditing)
+        #expect(store.cropExpanded && store.cropDraft != nil)
     }
 
     @Test @MainActor func confirmingKeepsTheCropPageAndRecordsOnce() throws {

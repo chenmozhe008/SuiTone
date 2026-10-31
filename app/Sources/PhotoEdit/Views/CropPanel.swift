@@ -5,13 +5,46 @@ extension WorkspaceStore {
     /// 进入裁切页：把照片现在的裁切范围装进画布上的框。
     func beginCrop() {
         guard let photo = current else { return }
-        cropDraft = photo.parameters.crop ?? [0, 0, 1, 1]
+        cropExpanded = photo.parameters.rotationExpanded || abs(photo.parameters.angle) >= 0.01
+        let saved = photo.parameters.crop ?? [0, 0, 1, 1]
+        if cropExpanded && !photo.parameters.rotationExpanded {
+            let size = cropSourceSize(photo)
+            cropDraft = CropGeometry.legacyOnCanvas(saved, size: size, angle: photo.parameters.angle)
+        } else {
+            cropDraft = saved
+        }
+        cropBaseline = cropDraft
+        rotationFrameAnchor = nil
         cropEditing = true
         cropAspect = "free"
         if photo.ready { schedulePreview() }
     }
 
     var cropPreviewing: Bool { inspectorTab == "crop" && cropEditing }
+
+    private func cropSourceSize(_ photo: PhotoRecord) -> CGSize {
+        let width = CGFloat(photo.imported.width), height = CGFloat(photo.imported.height)
+        return Int(photo.parameters.rotation) % 180 == 90 ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
+    }
+
+    /// 旋转画布变化时，让现有裁切框保持实际大小和相对中心，再约束到照片内。
+    private func prepareExpandedCrop(for newAngle: Double) {
+        guard let photo = current else { return }
+        let size = cropSourceSize(photo), oldAngle = photo.parameters.angle
+        if rotationFrameAnchor == nil {
+            let box = cropDraft ?? [0, 0, 1, 1]
+            rotationFrameAnchor = cropExpanded ? box : CropGeometry.legacyOnCanvas(box, size: size, angle: oldAngle)
+            rotationFrameAnchorAngle = oldAngle
+        }
+        guard let anchor = rotationFrameAnchor else { return }
+        cropDraft = CropGeometry.remapCanvas(anchor, size: size, from: rotationFrameAnchorAngle, to: newAngle, flip: photo.parameters.flip)
+        cropExpanded = true
+    }
+
+    func constrainCropDraft(_ box: [Double]) -> [Double] {
+        guard cropExpanded, let photo = current else { return box }
+        return CropGeometry.constrainCanvas(box, size: cropSourceSize(photo), angle: photo.parameters.angle, flip: photo.parameters.flip)
+    }
 
     /// 选比例：在当前框里取一个居中的、这个比例的最大框。原来框得小，换了比例不会突然跳回整张。
     func applyCropAspect(_ ratio: Double?) {
@@ -23,19 +56,22 @@ extension WorkspaceStore {
         guard width > 0, height > 0 else { return }
         let ratio = ratio ?? width / height
         // 归一化框的横向/纵向比是 k 时，画出来的实际比例是 k × 原画面比例。
-        let k = ratio / (width / height)
+        let canvas = cropExpanded ? CropGeometry.canvasSize(size: cropSourceSize(photo), angle: photo.parameters.angle) : CGSize(width: width, height: height)
+        let k = ratio / (canvas.width / canvas.height)
         let box = cropDraft ?? [0, 0, 1, 1]
         let cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2
         var cw = box[2], ch = box[3]
         if k >= 1 { ch = cw / k } else { cw = ch * k }
         if ch > box[3] { ch = box[3]; cw = ch * k }
         if cw > box[2] { cw = box[2]; ch = cw / k }
-        cropDraft = CropGeometry.centered([cw, ch], around: [cx, cy])
+        cropDraft = constrainCropDraft(CropGeometry.centered([cw, ch], around: [cx, cy]))
+        rotationFrameAnchor = nil
     }
 
     /// 转 90°：画面转了，已经框好的范围跟着转，不会白丢。
     func rotateQuarter(_ direction: Int) {
         guard current != nil else { return }
+        rotationFrameAnchor = nil
         let clockwise = direction > 0
         cropDraft = CropGeometry.rotated(cropDraft ?? [0, 0, 1, 1], quarter: clockwise ? 1 : -1)
         cropAspect = "free"
@@ -50,6 +86,7 @@ extension WorkspaceStore {
     /// 翻转：已经框好的范围跟着镜像，构图不丢。
     func toggleFlip(_ axis: String) {
         guard current != nil else { return }
+        rotationFrameAnchor = nil
         cropDraft = CropGeometry.flipped(cropDraft ?? [0, 0, 1, 1], axis: axis)
         cropAspect = "free"
         let title = axis == "h" ? "水平翻转" : "垂直翻转"
@@ -61,11 +98,15 @@ extension WorkspaceStore {
 
     /// 松手才应用：整段拖动只记一条历史、只重算一次画面。
     func applyAngle(_ angle: Double) {
+        if !cropEditing { beginCrop() }
         let value = CropGeometry.snappedAngle(angle)
+        prepareExpandedCrop(for: value)
         change(abs(value) < 0.01 ? "取消旋转" : String(format: "旋转 %.1f°", -value)) { $0.angle = value }
     }
 
     func straightenPreview(_ angle: Double) {
+        if !cropEditing { beginCrop() }
+        prepareExpandedCrop(for: CropGeometry.snappedAngle(angle))
         rotationEditing = true
         angleDraft = -CropGeometry.snappedAngle(angle)
         beginEditing("旋转画面")
@@ -90,9 +131,8 @@ extension WorkspaceStore {
     /// 画布上的框跟已经应用的范围不一样（有还没应用的改动）。
     var cropDirty: Bool {
         guard cropEditing, inspectorTab == "crop", let draft = cropDraft else { return false }
-        let full = draft[0] < 0.001 && draft[1] < 0.001 && draft[2] > 0.999 && draft[3] > 0.999
-        guard let existing = current?.parameters.crop else { return !full }
-        return !zip(draft, existing).allSatisfy { abs($0 - $1) < 0.0005 }
+        guard let baseline = cropBaseline else { return true }
+        return !zip(draft, baseline).allSatisfy { abs($0 - $1) < 0.0005 }
     }
 
     /// 换照片前把裁切这件事拦住：返回 true 表示已经挂起，调用方别再往下切。
@@ -136,22 +176,24 @@ extension WorkspaceStore {
     func commitCrop() {
         guard let photo = current, let draft = cropDraft else { return }
         let full = draft[0] < 0.001 && draft[1] < 0.001 && draft[2] > 0.999 && draft[3] > 0.999
-        // 框没动过就别再记一条历史：连点「确定」不该把历史堆满。
-        let existing = photo.parameters.crop
-        if full && existing == nil { return }
-        if let existing, !full, zip(draft, existing).allSatisfy({ abs($0 - $1) < 0.0005 }) { return }
-        change(full ? "恢复整幅画面" : "裁切画面") { parameters in
-            parameters.crop = full ? nil : draft
+        let selected: [Double]? = full && !cropExpanded ? nil : draft
+        let same = photo.parameters.rotationExpanded == cropExpanded && photo.parameters.crop == selected
+        if same { return }
+        change(full && !cropExpanded ? "恢复整幅画面" : "裁切画面") { parameters in
+            parameters.crop = selected
+            parameters.rotationExpanded = cropExpanded
         }
+        cropBaseline = draft
     }
 
     func resetGeometry() {
         guard current != nil else { return }
         cropDraft = [0, 0, 1, 1]
+        cropExpanded = false; cropBaseline = cropDraft; rotationFrameAnchor = nil
         cropEditing = true
         cropAspect = "free"
         change("恢复原始构图") { parameters in
-            parameters.rotation = 0; parameters.angle = 0; parameters.flip = ""; parameters.crop = nil
+            parameters.rotation = 0; parameters.angle = 0; parameters.rotationExpanded = false; parameters.flip = ""; parameters.crop = nil
         }
     }
 
@@ -172,6 +214,7 @@ extension WorkspaceStore {
                 photos[index].operations.append(result.operation)
                 photos[index].parameters.rotation = 0
                 photos[index].parameters.angle = 0
+                photos[index].parameters.rotationExpanded = false
                 photos[index].parameters.flip = ""
                 photos[index].parameters.crop = nil
                 photos[index].parameters.manualMasks = [:]
@@ -598,6 +641,56 @@ enum CropGeometry {
         }
         // 框外拖动一律重新画；锁了比例时按原来的比例画，不会把比例弄丢。
         return .draw
+    }
+
+    static func canvasSize(size: CGSize, angle: Double) -> CGSize {
+        let a = angle * .pi / 180
+        let c = abs(cos(a)), s = abs(sin(a))
+        return CGSize(width: max(1, ceil(c * size.width + s * size.height)),
+                      height: max(1, ceil(s * size.width + c * size.height)))
+    }
+
+    /// 将旧版本中以居中内接矩形为基准的裁切框，映射到完整旋转画布。
+    static func legacyOnCanvas(_ box: [Double], size: CGSize, angle: Double) -> [Double] {
+        let W = max(1, Double(size.width)), H = max(1, Double(size.height))
+        let canvas = canvasSize(size: size, angle: angle)
+        let ew = Double(canvas.width), eh = Double(canvas.height)
+        let a = angle * .pi / 180, c = abs(cos(a)), s = abs(sin(a))
+        let scale = abs(angle) < 0.01 ? 1 : c + s * max(W / H, H / W)
+        let w = abs(angle) < 0.01 ? W : max(1, floor(W / scale) - 1)
+        let h = abs(angle) < 0.01 ? H : max(1, floor(H / scale) - 1)
+        return [((ew - w) / 2 + box[0] * w) / ew, ((eh - h) / 2 + box[1] * h) / eh,
+                box[2] * w / ew, box[3] * h / eh]
+    }
+
+    static func remapCanvas(_ box: [Double], size: CGSize, from old: Double, to angle: Double, flip: String) -> [Double] {
+        let before = canvasSize(size: size, angle: old), after = canvasSize(size: size, angle: angle)
+        let w = box[2] * before.width, h = box[3] * before.height
+        let cx = (box[0] + box[2] / 2 - 0.5) * before.width + after.width / 2
+        let cy = (box[1] + box[3] / 2 - 0.5) * before.height + after.height / 2
+        return constrainCanvas([(cx - w / 2) / after.width, (cy - h / 2) / after.height,
+                                w / after.width, h / after.height], size: size, angle: angle, flip: flip)
+    }
+
+    /// 将矩形四角限制在旋转后的照片内；框越小，可移动的范围越大。
+    static func constrainCanvas(_ box: [Double], size: CGSize, angle: Double, flip: String) -> [Double] {
+        let W = max(1, Double(size.width)), H = max(1, Double(size.height))
+        let canvas = canvasSize(size: size, angle: angle), ew = Double(canvas.width), eh = Double(canvas.height)
+        let a = angle * .pi / 180, c = cos(a), s = sin(a)
+        var w = max(1, box[2] * ew), h = max(1, box[3] * eh)
+        let scale = min(1, max(1, W - 4) / max(1, abs(c) * w + abs(s) * h),
+                        max(1, H - 4) / max(1, abs(s) * w + abs(c) * h))
+        w *= scale; h *= scale
+        var dx = (box[0] + box[2] / 2 - 0.5) * ew
+        var dy = (box[1] + box[3] / 2 - 0.5) * eh
+        if flip == "h" { dx = -dx }; if flip == "v" { dy = -dy }
+        let maxU = max(0, (W - abs(c) * w - abs(s) * h) / 2 - 2)
+        let maxV = max(0, (H - abs(s) * w - abs(c) * h) / 2 - 2)
+        let u = min(maxU, max(-maxU, c * dx - s * dy))
+        let v = min(maxV, max(-maxV, s * dx + c * dy))
+        dx = c * u + s * v; dy = -s * u + c * v
+        if flip == "h" { dx = -dx }; if flip == "v" { dy = -dy }
+        return [(ew / 2 + dx - w / 2) / ew, (eh / 2 + dy - h / 2) / eh, w / ew, h / eh]
     }
 
     /// 一次拖动的结果：起手框 + 起止点 → 新框。

@@ -122,8 +122,9 @@ private struct WorkspaceHeader: View {
 
 private struct CanvasHeader: View {
     @Bindable var store: WorkspaceStore
-    @ViewBuilder private func toolButtons(spacing: CGFloat) -> some View {
+    @ViewBuilder private func toolButtons(spacing: CGFloat, group: Int = 0) -> some View {
         HStack(spacing: spacing) {
+            if group != 2 {
             chip("原图", "circle.lefthalf.filled", store.showOriginal, help: "按 \\ 切换整张原图") { store.toggleOriginal() }
             chip("对比", "rectangle.split.2x1", store.splitCompare && !store.grid,
                  help: store.compareAvailable ? "拖动画面上的分隔线比较原图和调整后" : "请先完成当前工具，再查看对比") { store.toggleCompare() }
@@ -133,12 +134,15 @@ private struct CanvasHeader: View {
                 .disabled(store.current == nil || store.controlsBlocked)
             chip("选区", "lasso", store.inspectorTab == "selection", help: "画选区，可以多笔加减") { pick("selection") }
                 .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "selection")
+            }
+            if group != 1 {
             chip("移除", "bandage", store.inspectorTab == "repair", help: "移除杂物") { pick("repair") }
                 .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "repair")
             chip("裁切", "crop.rotate", store.inspectorTab == "crop", help: "裁切、旋转、翻转和自由旋转") { pick("crop") }
                 .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "crop")
             chip("抠图", "scissors", store.inspectorTab == "cutout", help: "抠出照片中的主体，另存透明 PNG") { pick("cutout") }
                 .disabled(store.current == nil || store.controlsBlocked)
+            }
         }.fixedSize()
     }
 
@@ -202,16 +206,13 @@ private struct CanvasHeader: View {
     var body: some View {
         // 工具按钮始终带文字；窗口窄时先藏照片名，再把按钮间距收紧，不退化成看不懂的纯图标。
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) { title; Spacer(minLength: 12); toolButtons(spacing: 8); Divider().frame(height: 18); aiButton; gridPicker }
-            HStack(spacing: 10) { Spacer(minLength: 0); toolButtons(spacing: 6); Divider().frame(height: 18); aiButton; gridPicker }
-            HStack(spacing: 6) {
-                ScrollView(.horizontal) { toolButtons(spacing: 4).controlSize(.small) }
-                    .scrollIndicators(.visible)
-                Divider().frame(height: 18)
-                aiButton
-                gridPicker
-            }
-        }.padding(.horizontal, 18).frame(height: 54)
+            HStack(spacing: 12) { title; Spacer(minLength: 12); toolButtons(spacing: 8); Divider().frame(height: 18); aiButton; gridPicker }.frame(height: 54)
+            HStack(spacing: 10) { Spacer(minLength: 0); toolButtons(spacing: 6); Divider().frame(height: 18); aiButton; gridPicker }.frame(height: 54)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 4) { toolButtons(spacing: 4, group: 1); Spacer(minLength: 0); gridPicker }
+                HStack(spacing: 4) { toolButtons(spacing: 4, group: 2); Spacer(minLength: 0); aiButton }
+            }.padding(.vertical, 8)
+        }.padding(.horizontal, 18)
     }
 
     @ViewBuilder private var title: some View {

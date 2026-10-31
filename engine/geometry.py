@@ -43,7 +43,11 @@ def apply(image, params):
     crop = params.get('crop')
     if rotation:
         image = image.rotate(-rotation, resample=Image.BICUBIC, expand=True)
-    image = straighten(image, angle)
+    if params.get('rotation_expanded'):
+        if abs(angle) >= 0.01:
+            image = image.rotate(angle, resample=Image.BICUBIC, expand=True)
+    else:
+        image = straighten(image, angle)
     if flip == 'h':
         image = ImageOps.mirror(image)
     elif flip == 'v':
@@ -58,7 +62,7 @@ def apply(image, params):
     return image
 
 
-GEOMETRY_KEYS = ('rotation', 'angle', 'flip', 'crop')
+GEOMETRY_KEYS = ('rotation', 'angle', 'flip', 'crop', 'rotation_expanded')
 
 
 def color_params(params):

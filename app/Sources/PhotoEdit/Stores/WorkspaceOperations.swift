@@ -69,7 +69,7 @@ extension WorkspaceStore {
             struct Adopted: Decodable { var id: String; var stored: String }
             let result: Adopted = try await engine.request("adopt-generated", body: ["id": photo.assetID, "path": path])
             if resetGeometry {
-                prepared.parameters.rotation = 0; prepared.parameters.angle = 0
+                prepared.parameters.rotation = 0; prepared.parameters.angle = 0; prepared.parameters.rotationExpanded = false
                 prepared.parameters.flip = ""; prepared.parameters.crop = nil
             }
             let rendered: PreviewResponse = try await engine.request("preview", body: ["id": result.id,
