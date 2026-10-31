@@ -72,6 +72,45 @@ STYLES = [
 ]
 STYLE_BY_ID={style['id']:style for style in STYLES}
 
+# 每款风格适合什么画面，只用于排序和首屏推荐，不影响参数本身。
+# portrait 人像／landscape 风光／city 城市街景／night 夜色／daily 日常／food 食物
+STYLE_SCENES = {
+    'smart': ['portrait','landscape','city','night','daily','food'],
+    'true': ['portrait','landscape','city','night','daily','food'],
+    'clean': ['portrait','landscape','city','daily','food'],
+    'bright': ['portrait','landscape','daily','food'],
+    'soft': ['portrait','landscape','daily'],
+    'warm': ['portrait','landscape','daily','food'],
+    'cool': ['landscape','city','night'],
+    'vivid': ['landscape','city','food'],
+    'airy': ['portrait','landscape','daily','food'],
+    'mono': ['landscape','city','night'],
+    'film': ['portrait','landscape','daily'],
+    'portra': ['portrait','daily'],
+    'cinema': ['city','landscape','night','portrait'],
+    'nightfilm': ['night','city'],
+    'neon': ['night','city'],
+    'rich': ['landscape','food','city'],
+    'clearpositive': ['landscape','city','portrait'],
+    'japan': ['portrait','daily','landscape','food'],
+    'cream': ['portrait','daily','food'],
+    'summer': ['landscape','food','daily'],
+    'golden': ['landscape','portrait','daily'],
+    'autumn': ['landscape'],
+    'bluehour': ['landscape','city','night'],
+    'desert': ['landscape'],
+    'moody': ['night','city','landscape'],
+    'editorial': ['portrait','city','daily'],
+    'bleach': ['city','landscape','portrait'],
+    'matte': ['portrait','daily','landscape'],
+    'vintage': ['daily','portrait','landscape'],
+    'polaroid': ['daily','portrait','food'],
+    'ccd': ['daily','portrait','city'],
+    'sepia': ['landscape','daily'],
+    'silver': ['landscape','city','night'],
+    'noir': ['landscape','city','night'],
+}
+
 
 def describe(analysis):
     luma=analysis.lab[...,0]

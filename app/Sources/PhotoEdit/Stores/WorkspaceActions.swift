@@ -1,17 +1,94 @@
 import AppKit
 
 extension WorkspaceStore {
+    /// 一批算几张：首屏正好 6 格，后台补齐和「展开全部」也按这个粒度分批。
+    static let styleTileBatch = 6
+
+    /// 首屏只算看得见的 6 款：先问推荐，再按推荐顺序出图；剩下的过一会儿补。
+    /// 之前一次算 34 款要 2 秒多，而首屏只显示 6 格，剩下的时间都是白等。
     func loadStyleTiles() {
         guard let photo=current, photo.ready else{return}
+        // 这一组首屏已经有了就不重复算；换照片时 tiles 会被清空，自然会重来。
+        let headline = styleHeadline(for: styleFamily)
+        if styleGuideAssetID == photo.assetID, headline.allSatisfy({ styleTiles[$0] != nil }) { return }
         styleTileTask?.cancel()
+        styleFillTask?.cancel()
         styleTileTask=Task {
-            do {
-                struct Tiles:Decodable{var tiles:[String:String]}
-                let result:Tiles=try await engine.request("style-tiles",body:["id":photo.assetID])
-                guard !Task.isCancelled,current?.assetID==photo.assetID else{return}
-                styleTiles=result.tiles
-            } catch {if !Task.isCancelled {status="风格缩略图未就绪，可直接点击试用"}}
+            await fetchStyleGuide(photo)
+            guard !Task.isCancelled else { return }
+            await fetchStyleTiles(photo, ids: styleHeadline(for: styleFamily))
+            guard !Task.isCancelled else { return }
+            // 用户多半还会点「展开全部」；等预览和滑块先跑完，再悄悄把下一批备好。
+            try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled, current?.assetID == photo.assetID else { return }
+            let next = styleOrder(for: styleFamily).map(\.id).filter { styleTiles[$0] == nil }
+            await fetchStyleTiles(photo, ids: Array(next.prefix(Self.styleTileBatch)))
         }
+    }
+
+    /// 切换分组或展开全部时，把这一组还没算出来的补齐；每批 6 张，边算边显示。
+    func ensureStyleTiles(for family: String) {
+        guard let photo = current, photo.ready else { return }
+        let missing = styleOrder(for: family).map(\.id).filter { styleTiles[$0] == nil }
+        guard !missing.isEmpty else { return }
+        styleFillTask?.cancel()
+        styleFillTask = Task {
+            var index = 0
+            while index < missing.count {
+                if Task.isCancelled { return }
+                let batch = Array(missing[index..<min(index + Self.styleTileBatch, missing.count)])
+                await fetchStyleTiles(photo, ids: batch)
+                index += batch.count
+            }
+        }
+    }
+
+    private func fetchStyleGuide(_ photo: PhotoRecord) async {
+        guard styleGuideAssetID != photo.assetID else { return }
+        do {
+            let guide: StyleGuide = try await engine.request("style-recommend", body: ["id": photo.assetID])
+            guard !Task.isCancelled, current?.assetID == photo.assetID else { return }
+            styleGuide = guide; styleGuideAssetID = photo.assetID
+        } catch {
+            // 推荐只是锦上添花；失败就按默认顺序，不打扰用户。
+        }
+    }
+
+    private func fetchStyleTiles(_ photo: PhotoRecord, ids: [String]) async {
+        let missing = ids.filter { styleTiles[$0] == nil }
+        guard !missing.isEmpty else { return }
+        do {
+            struct Tiles: Decodable { var tiles: [String: String] }
+            let result: Tiles = try await engine.request("style-tiles", body: ["id": photo.assetID, "ids": missing])
+            guard !Task.isCancelled, current?.assetID == photo.assetID else { return }
+            styleTiles.merge(result.tiles) { _, new in new }
+        } catch {
+            if !Task.isCancelled { status = "风格缩略图未就绪，可直接点击试用" }
+        }
+    }
+
+    /// 展示顺序：推荐的 6 款在前，其余沿用引擎原顺序，一款都不少。
+    func styleOrder(for family: String) -> [StylePreset] {
+        let group = styles.filter { $0.creative == (family == "creative") }
+        guard let guide = currentStyleGuide else { return group }
+        let byID = Dictionary(uniqueKeysWithValues: group.map { ($0.id, $0) })
+        let head = guide.ids(family).compactMap { byID[$0] }
+        guard !head.isEmpty else { return group }
+        let picked = Set(head.map(\.id))
+        return head + group.filter { !picked.contains($0.id) }
+    }
+
+    /// 首屏那几款，缩略图也先只算这些。
+    func styleHeadline(for family: String) -> [String] {
+        styleOrder(for: family).prefix(Self.styleTileBatch).map(\.id)
+    }
+
+    func isRecommendedStyle(_ id: String, family: String) -> Bool {
+        currentStyleGuide?.ids(family).contains(id) ?? false
+    }
+
+    var currentStyleGuide: StyleGuide? {
+        styleGuideAssetID == current?.assetID ? styleGuide : nil
     }
 
     func applyStyle(_ style: String) {

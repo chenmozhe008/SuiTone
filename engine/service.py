@@ -452,7 +452,8 @@ class Engine:
         result['preview']=self.preview(key,result['params'],quality)['preview']
         return result
 
-    def style_tiles(self,key):
+    def style_tiles(self,key,ids=None):
+        """只渲染要显示的几款；不传 ids 时仍然全算（旧客户端兼容）。"""
         from smart import STYLES,suggest
         from grade import rgb2lab
         import cv2
@@ -463,12 +464,20 @@ class Engine:
         context.lab=rgb2lab(context.rgb);context.dehazed=None
         for name in ['water','sky','land','person','skin']:
             setattr(context,name,cv2.resize(getattr(source,name),image.size,interpolation=cv2.INTER_AREA))
+        wanted=set(ids) if ids else None
         tiles={}
         for style in STYLES:
+            if wanted is not None and style['id'] not in wanted: continue
             path=self.folder/(key+'-style-'+style['id']+'.png')
             if not path.exists():save_new(grade(image,analysis=context,**suggest(context,style['id'])['params']),path)
             tiles[style['id']]=str(path)
         return dict(tiles=tiles)
+
+    def style_recommend(self,key):
+        """按照片内容给首屏排序；只是顺序和一句理由，不删风格。"""
+        from style_guide import recommend
+        source,_=self.analysis(key)
+        return recommend(source)
 
     def remove(self, key, box, classes=None, keep=None, strokes=None, radius=None, polygon=None, point=None, parts=None):
         repair_input(box,classes,keep);shape_input(strokes,radius,polygon,point);parts_input(parts)
@@ -731,7 +740,8 @@ def serve(root, token, watch_stdin=True):
                     elif self.path=='/recommendation-cancel':result=engine.ai_recommendations.cancel(data['id'])
                     elif self.path=='/match': result=engine.match(data['id'],data['references'],data.get('params',{}),data.get('only'),data.get('reference_scopes'))
                     elif self.path=='/smart':result=engine.smart(data['id'],data.get('style','smart'),data.get('quality'))
-                    elif self.path=='/style-tiles':result=engine.style_tiles(data['id'])
+                    elif self.path=='/style-tiles':result=engine.style_tiles(data['id'],data.get('ids'))
+                    elif self.path=='/style-recommend':result=engine.style_recommend(data['id'])
                     elif self.path=='/assistant':result=engine.assistant.start(data)
                     elif self.path=='/assistant-cancel':result=engine.assistant.cancel(data['id'])
                     elif self.path=='/remove': result=engine.remove(data['id'],data['box'],data.get('classes'),data.get('keep'),

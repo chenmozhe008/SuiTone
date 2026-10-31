@@ -112,6 +112,10 @@ final class WorkspaceStore {
     }
     var styleTiles: [String:String] = [:]
     var styleTileTask: Task<Void,Never>?
+    var styleFillTask: Task<Void,Never>?
+    /// 按照片内容排的风格顺序；只影响首屏顺序和推荐标记，不删任何风格。
+    var styleGuide: StyleGuide?
+    var styleGuideAssetID: String?
     var status = "正在检查本地引擎…"
     var error: String?
     var matchNotes: [String] = []

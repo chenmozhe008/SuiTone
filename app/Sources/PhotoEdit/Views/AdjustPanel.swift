@@ -7,7 +7,7 @@ struct AdjustPanel: View {
     @State private var expanded: Set<String> = []
 
     private var styles: [StylePreset] {
-        store.styles.filter { $0.creative == (store.styleFamily == "creative") }
+        store.styleOrder(for: store.styleFamily)
     }
     private var availableRegions: [String] {
         RegionNames.all.filter { store.analysis?.regions[$0]?.available == true }
@@ -69,19 +69,38 @@ struct AdjustPanel: View {
                 Text("风格化调整").tag("creative")
                 Text("我的风格").tag("mine")
             }.pickerStyle(.segmented).labelsHidden()
-                .onChange(of: store.styleFamily) { _, _ in expandedStyles = false }
+                .onChange(of: store.styleFamily) { _, family in
+                    expandedStyles = false
+                    // 这一组首屏还没算过就先算，别等展开才发现是空的。
+                    store.loadStyleTiles()
+                    store.ensureStyleTiles(for: family)
+                }
             if store.styleFamily == "mine" { myStyles } else {
+                if let guide = store.currentStyleGuide {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles").font(.system(size: 10, weight: .semibold))
+                        Text("给这张照片 · \(guide.reason)")
+                            .font(.caption).lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }.foregroundStyle(Color(white: 0.62)).padding(.horizontal, 2)
+                }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 8), count: 3), spacing: 8) {
                     ForEach(expandedStyles ? styles : Array(styles.prefix(6))) { style in
                         Button { store.applyStyle(style.id) } label: {
                             styleTile(title: style.title, tile: store.styleTiles[style.id], icon: "camera.filters",
-                                      selected: store.current?.lookName == style.title)
+                                      selected: store.current?.lookName == style.title,
+                                      recommended: store.isRecommendedStyle(style.id, family: store.styleFamily),
+                                      loading: store.styleTiles[style.id] == nil)
                         }.buttonStyle(.plain).help(style.detail + "，应用到" + store.scopeLabel)
                     }
                 }
                 // 放在缩略图正下方：看完前几款，眼睛自然落到这里。
                 if styles.count > 6 {
-                    Button { withAnimation(.easeOut(duration: 0.2)) { expandedStyles.toggle() } } label: {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) { expandedStyles.toggle() }
+                        if expandedStyles { store.ensureStyleTiles(for: store.styleFamily) }
+                    } label: {
                         HStack(spacing: 6) {
                             Text(expandedStyles ? "收起" : "展开全部 \(styles.count) 款")
                             Image(systemName: expandedStyles ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
@@ -114,13 +133,27 @@ struct AdjustPanel: View {
         }
     }
 
-    private func styleTile(title: String, tile: String?, icon: String, selected: Bool) -> some View {
+    private func styleTile(title: String, tile: String?, icon: String, selected: Bool,
+                           recommended: Bool = false, loading: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Group {
                 if let tile { LocalPhoto(path: tile, fill: true) }
+                else if loading {
+                    // 还在算：给个明确的占位，而不是一张会突然被替换的图标。
+                    ZStack {
+                        Rectangle().fill(Color(white: 0.13))
+                        ProgressView().controlSize(.mini).scaleEffect(0.72)
+                    }
+                }
                 else { Image(systemName: icon).font(.title3).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
             }.frame(height: 58).frame(maxWidth: .infinity).background(Color(white: 0.11))
-            Text(title).font(.callout).lineLimit(1).padding(.horizontal, 8).padding(.vertical, 6)
+            HStack(spacing: 4) {
+                Text(title).font(.callout).lineLimit(1)
+                if recommended {
+                    Image(systemName: "sparkles").font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.62, green: 0.86, blue: 1))
+                }
+            }.padding(.horizontal, 8).padding(.vertical, 6)
         }.background(Color(white: 0.2), in: RoundedRectangle(cornerRadius: 8))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Color(white: 0.9) : .clear, lineWidth: 2))

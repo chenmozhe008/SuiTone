@@ -47,6 +47,16 @@ struct StylePreset: Decodable, Identifiable {
     var creative: Bool { family == "creative" }
 }
 
+/// 引擎按照片内容给出的首屏顺序（engine/style_guide.py）；只是排序和一句理由。
+struct StyleGuide: Decodable {
+    let scene: String
+    let sceneTitle: String
+    let reason: String
+    let natural: [String]
+    let creative: [String]
+    func ids(_ family: String) -> [String] { family == "creative" ? creative : natural }
+}
+
 struct AssistantProvider:Decodable,Identifiable {
     var id:String
     var title:String
