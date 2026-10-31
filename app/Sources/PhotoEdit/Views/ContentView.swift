@@ -124,10 +124,10 @@ private struct CanvasHeader: View {
     @Bindable var store: WorkspaceStore
     @ViewBuilder private func toolButtons(spacing: CGFloat) -> some View {
         HStack(spacing: spacing) {
-            chip("原图", "circle.lefthalf.filled", store.showOriginal, help: "按 \\ 切换整张原图") { store.showOriginal.toggle() }
+            chip("原图", "circle.lefthalf.filled", store.showOriginal, help: "按 \\ 切换整张原图") { store.toggleOriginal() }
             chip("对比", "rectangle.split.2x1", store.splitCompare && !store.grid,
-                 help: "拖动画面上的分隔线比较原图和调整后") { store.splitCompare.toggle() }
-                .disabled(store.grid)
+                 help: store.compareAvailable ? "拖动画面上的分隔线比较原图和调整后" : "请先完成当前工具，再查看对比") { store.toggleCompare() }
+                .disabled(!store.compareAvailable)
             Divider().frame(height: 18)
             chip("画质", "wand.and.stars", store.inspectorTab == "quality", help: "降噪与放大") { pick("quality") }
                 .disabled(store.current == nil || store.controlsBlocked)

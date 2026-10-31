@@ -57,7 +57,7 @@ struct PhotoEditApp: App {
                 Button("重做") { store.redo() }.keyboardShortcut("z",modifiers:[.command,.shift]).disabled(!store.canRedo || store.controlsBlocked)
             }
             CommandMenu("照片") {
-                Button("显示／隐藏原图") { store.showOriginal.toggle() }.keyboardShortcut("\\",modifiers:[])
+                Button("显示／隐藏原图") { store.toggleOriginal() }.keyboardShortcut("\\",modifiers:[])
                 Button("保存快照") { store.snapshot() }.keyboardShortcut("k").disabled(store.current == nil)
                 Button("移除杂物") { store.inspectorTab = "repair" }.keyboardShortcut("r").disabled(store.current == nil || store.controlsBlocked)
                 Button("选择全部照片") { store.selectedIDs = Set(store.photos.map(\.id)) }.keyboardShortcut("a")

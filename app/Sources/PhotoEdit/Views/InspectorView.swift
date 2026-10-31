@@ -43,6 +43,7 @@ struct InspectorView: View {
                 store.finishRepairTransition(to: tab)
                 if old == "cutout" { store.clearRepairSelection() }
                 store.repairEnabled = ["repair", "cutout", "selection"].contains(tab)
+                if !store.compareAvailable { store.splitCompare = false }
                 store.cutoutPreview = nil; store.cutoutSnapshot = nil
                 if tab == "cutout" { store.repairTool = "object" }
                 store.overlay = ""; store.showOriginal = false; store.localRegion = nil

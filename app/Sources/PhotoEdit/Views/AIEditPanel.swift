@@ -29,7 +29,7 @@ struct AIEditPanel: View {
     var body: some View {
         VStack(spacing: 0) {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 10) {
                 section("编辑范围") {
                     Picker("范围", selection: $onlySelection) {
                         Text("整张照片").tag(false)
@@ -171,8 +171,6 @@ struct AIEditPanel: View {
                                     .background(aspectRatio == ratio ? Color.accentColor : Color(white: 0.23), in: RoundedRectangle(cornerRadius: 6))
                             }
                         }
-                        Text("指定比例可能改变画面构图，实际输出以服务商结果为准。")
-                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Button {
@@ -184,26 +182,22 @@ struct AIEditPanel: View {
                               || editor.isEmpty || (onlySelection && !hasSelection))
                 if store.imageServiceReady && onlySelection && !hasSelection { Text("请先选择编辑区域。") .font(.callout).foregroundStyle(.secondary) }
                 else if store.imageServiceReady && editor.isEmpty { Text("请输入编辑要求。") .font(.callout).foregroundStyle(.secondary) }
-                DisclosureGroup {
-                    Button("服务设置…") { store.settingsTab = "image" }.buttonStyle(.link)
-                    if let service, store.imageServiceReady {
-                        info("服务", service.title)
-                        info("模型", store.imageModelName.isEmpty ? service.defaultModel : store.imageModelName)
-                        info("发送内容", (chosenRatio != nil ? "不带调色的照片（含已应用的裁切和旋转）" : "不带调色的原片") + "，长边最多 2048 像素" + (referencePaths.isEmpty ? "" : "＋\(referencePaths.count) 张参考图（按缩略图顺序跟在后面）"))
-                        info("费用", service.paid ? "按\(service.title)的标准计费" : "不收费")
-                        info("结果", onlySelection && hasSelection ? "只替换选区里的部分，作为新版本，可撤销" : "整张新图，作为新版本，调色照常套用，可撤销")
-                    } else {
-                        HStack(spacing: 10) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
-                            Text("还没设置 AI 改图 API").font(.callout.weight(.semibold)).foregroundStyle(.yellow)
-                            Spacer()
-                            Button("去设置") { store.settingsTab = "image" }.buttonStyle(.borderedProminent)
-                        }.padding(12).background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                Divider().padding(.top, 2)
+                HStack(alignment: .center, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("生成服务").font(.caption).foregroundStyle(.secondary)
+                        if let service, store.imageServiceReady {
+                            Text(service.title).font(.callout)
+                            Text(store.imageModelName.isEmpty ? service.defaultModel : store.imageModelName)
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        } else {
+                            Text("尚未设置").font(.callout).foregroundStyle(.secondary)
+                        }
                     }
-                } label: {
-                    Text(service.map { "生成服务：\($0.title)" } ?? "生成服务：未设置")
-                        .font(.callout).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Button("设置…") { store.settingsTab = "image" }.buttonStyle(.bordered)
                 }
+
         }.padding(12).background(Color(white: 0.13))
         }
         .onAppear {
@@ -277,7 +271,7 @@ struct AIEditPanel: View {
                           placeholder: "例如：把背景换成雪山，保留人物和构图",
                           onMention: { if !figures.isEmpty { showMention = true } },
                           onTyping: { if showMention { showMention = false } })
-                .frame(height: showMention ? 54 : 74)
+                .frame(height: showMention ? 88 : 112)
             if showMention { mentionList }
         }
         .padding(10)

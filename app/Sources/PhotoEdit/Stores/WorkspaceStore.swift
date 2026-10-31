@@ -24,6 +24,24 @@ final class WorkspaceStore {
     /// 左右滑动对比：左侧原图、右侧调整后；splitPosition 为分隔线位置（0–1）。
     var splitCompare = false
     var splitPosition = 0.5
+    var compareAvailable: Bool {
+        current != nil && !grid && inspectorTab != "crop" && !repairEnabled && repairDraft == nil
+            && !(inspectorTab == "aiedit" && !selectionParts.isEmpty)
+    }
+    func toggleOriginal() {
+        showOriginal.toggle()
+        if showOriginal { splitCompare = false }
+    }
+    func toggleCompare() {
+        guard compareAvailable else { return }
+        if showOriginal || !overlay.isEmpty {
+            showOriginal = false
+            overlay = ""
+            splitCompare = true
+        } else {
+            splitCompare.toggle()
+        }
+    }
     var grid = false
     var busy = false
     var importing = false
