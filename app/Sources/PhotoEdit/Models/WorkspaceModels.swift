@@ -114,6 +114,7 @@ struct GenerationCard {
     var selection: RemovalOperation? = nil
     /// 附加参考图的本地路径（姿势、风格、物品等；张数按所选模型的官方上限）
     var references: [String] = []
+    var aspectRatio: String? = nil
 }
 
 struct GenerationProposal: Decodable { var prompt: String }

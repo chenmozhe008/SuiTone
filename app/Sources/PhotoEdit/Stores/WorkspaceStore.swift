@@ -58,6 +58,7 @@ final class WorkspaceStore {
         didSet { UserDefaults.standard.set(visionChecks, forKey: "visionChecks") }
     }
     var generationTask: Task<Void, Never>?
+    var topazTask: Task<Void, Never>?
     /// AI 改图面板最近一次生成对应的对话消息（面板显示它的进度和结果）
     var aiEditMessageID: UUID?
     /// 在画布上临时查看某个版本（不改照片，点「回到当前」或离开面板即恢复）

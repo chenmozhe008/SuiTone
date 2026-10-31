@@ -472,6 +472,27 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(plain['inference_count'],repeated['inference_count'])
             self.assertFalse(np.array_equal(np.asarray(Image.open(plain['preview'])),np.asarray(Image.open(improved['preview']))))
 
+    def test_rotation_reuses_color_render_and_matches_direct_output(self):
+        from unittest.mock import patch
+        from smart import neutral
+        from geometry import apply
+        image=Image.fromarray(np.random.default_rng(8).integers(40,220,(96,128,3),dtype=np.uint8))
+        with TemporaryDirectory() as folder:
+            engine=Engine(folder); source=Path(folder)/'source.png'; save_new(image,source)
+            asset=engine.import_one(source); context=self.context(image)
+            engine.analysis=lambda key:(context,True)
+            import service
+            real_grade=service.grade
+            with patch('service.grade', wraps=real_grade) as grade_call:
+                engine.preview(asset.id,neutral())
+                rotated=engine.preview(asset.id,dict(neutral(),angle=12))
+                engine.preview(asset.id,dict(neutral(),angle=20))
+                self.assertEqual(grade_call.call_count,1)
+                engine.preview(asset.id,dict(neutral(),angle=20,exposure=.2))
+                self.assertEqual(grade_call.call_count,2)
+            expected=apply(real_grade(image,analysis=context,**neutral()),dict(angle=12))
+            self.assertTrue(np.array_equal(np.asarray(Image.open(rotated['preview'])),np.asarray(expected)))
+
     def test_export_uses_each_photos_quality_and_preserves_recipe(self):
         from unittest.mock import patch
         from smart import neutral

@@ -17,12 +17,11 @@ from api_providers import _open, _send, clean_key
 ENDPOINT = 'https://ark.cn-beijing.volces.com/api/v3/images/generations'
 
 
-def output_size(width, height, long=2048):
+def output_size(width, height, long=2048, low=921_600, high=4_624_220):
     """按输入比例给出具体像素，长边约 2048，宽高取 8 的倍数，避免服务按默认比例改构图。
     Seedream 5.0 要求总像素在 921,600–4,624,220 之间（官方文档），细长图会低于下限，按比例放大到范围内。"""
     scale = long / max(width, height)
     w, h = width * scale, height * scale
-    low, high = 921_600, 4_624_220
     if w * h < low: w, h = w * (low / (w * h)) ** .5, h * (low / (w * h)) ** .5
     if w * h > high: w, h = w * (high / (w * h)) ** .5, h * (high / (w * h)) ** .5
     w, h = max(64, int(w // 8) * 8), max(64, int(h // 8) * 8)
@@ -52,7 +51,7 @@ def _encode(image_bytes, label='输入图片'):
     return 'data:image/'+mime+';base64,'+base64.b64encode(image_bytes).decode('ascii')
 
 
-def jimeng_edit(key, model, image, prompt, *, references=(), opener=_open):
+def jimeng_edit(key, model, image, prompt, *, references=(), aspect_ratio=None, opener=_open):
     """image 是要改的图；references 是额外参考图（姿势、风格、物品等），
     Seedream 的 image 参数支持数组（官方文档：最多 10 张），两张及以上时整体传列表。"""
     key = clean_key(key) if isinstance(key, str) else ''
@@ -62,7 +61,7 @@ def jimeng_edit(key, model, image, prompt, *, references=(), opener=_open):
     if not isinstance(image, bytes): raise ValueError('输入图片大小无效')
     references = list(references)
     # 张数照火山方舟官方文档：5.0 pro / flash 最多 10 张图，5.0 lite / 4.5 / 4.0 最多 14 张（原图算在里面）。
-    from image_edit import image_limit
+    from image_edit import image_limit, IMAGE_RATIOS
     limit = image_limit('jimeng', model)
     if 1 + len(references) > limit:
         raise ValueError('%s 一次最多带 %d 张图（含原图），现在是 %d 张' % (model, limit, 1 + len(references)))
@@ -70,14 +69,21 @@ def jimeng_edit(key, model, image, prompt, *, references=(), opener=_open):
     try:
         with Image.open(BytesIO(image)) as source: size = source.size
     except Exception: raise ValueError('输入图片仅支持有效的 JPEG 或 PNG') from None
+    if aspect_ratio:
+        if aspect_ratio not in IMAGE_RATIOS: raise ValueError('不支持的生成比例')
+        size = tuple(map(int, aspect_ratio.split(':')))
     encoded = _encode(image)
     refs = [_encode(ref, '参考图') for ref in references]
     images = [encoded] + refs
     # 组图参数 sequential_image_generation 文档里默认就是 disabled，而且只有部分模型认这个字段，
     # 传上去会直接 400（"the parameter is not supported by the current model"），所以不传。
+    low = 3_686_400 if ('seedream-4-5' in model or 'seedream-5-0-260128' in model) else 921_600
+    high = 16_777_216 if ('seedream-4-5' in model or 'seedream-5-0-260128' in model or 'seedream-4-0' in model) else 4_624_220
+    dimensions = output_size(*size, low=low, high=high)
     body = dict(model=model, prompt=prompt, image=images if len(images) > 1 else encoded,
-                size=output_size(*size), response_format='b64_json', watermark=False)
+                size=dimensions, response_format='b64_json', watermark=False)
     minimal = dict(model=model, prompt=prompt, image=images if len(images) > 1 else encoded)
+    if aspect_ratio: minimal['size'] = dimensions
     try:
         payload = _post(key, body, opener)
     except ValueError as exc:

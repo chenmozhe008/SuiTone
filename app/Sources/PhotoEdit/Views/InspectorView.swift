@@ -99,6 +99,7 @@ struct ValueSlider: View {
 
 struct QualityPanel: View {
     @Bindable var store: WorkspaceStore
+    @State private var showTopaz = false
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("作用于\(store.scopeLabel)").font(.callout).foregroundStyle(.secondary)
@@ -118,15 +119,26 @@ struct QualityPanel: View {
                 .font(.callout).foregroundStyle(.secondary)
             if store.topazPhotoURL != nil {
                 Divider().padding(.vertical, 4)
-                Text("Topaz Photo").font(.headline)
-                Text("将当前照片的编辑结果送到 Topaz Photo；在 Topaz 中处理并导出后，再导入处理好的图片。")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Button("在 Topaz Photo 中打开…") { store.openInTopazPhoto() }
-                    .buttonStyle(.borderedProminent)
-                Button("导入 Topaz 处理结果…") { store.chooseImport() }
-                    .buttonStyle(.bordered)
-                Text("结果作为新照片导入，原图不变。")
-                    .font(.caption).foregroundStyle(.secondary)
+                DisclosureGroup("外部工具 · Topaz Photo", isExpanded: $showTopaz) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("在 Topaz 中处理并导出后，需手动导入结果。发送时不叠加本机降噪和放大。")
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        if store.topazTask != nil {
+                            HStack {
+                                ProgressView().controlSize(.small)
+                                Text("正在准备照片…").font(.callout)
+                                Button("取消") { store.topazTask?.cancel() }
+                            }
+                        } else {
+                            Button("在 Topaz Photo 中打开…") { store.openInTopazPhoto() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        Button("导入 Topaz 处理结果…") { store.chooseImport() }
+                            .buttonStyle(.bordered)
+                        Text("结果作为新照片导入，原图不变。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.padding(.top, 8)
+                }
             }
             Spacer()
         }.padding(16).disabled(store.controlsBlocked)

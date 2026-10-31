@@ -491,6 +491,7 @@ extension WorkspaceStore {
                 if !key.isEmpty { body["api_key"] = key }
                 if let selection = card.selection { body["selection"] = try EngineClient.object(selection) }
                 if !card.references.isEmpty { body["reference_paths"] = card.references }
+                if let ratio = card.aspectRatio { body["aspect_ratio"] = ratio }
                 let started: Started = try await engine.request("image-edit-start", body: body)
                 updateGeneration(messageID) { $0.jobID = started.id }
                 var job = Job(state: "running")
@@ -502,7 +503,7 @@ extension WorkspaceStore {
                 guard job.state == "done", let path = job.paths?.first else { throw EngineError(message: job.error ?? "生成未完成，原照片未改变") }
                 guard let current = photos.first(where: { $0.id == photo.id }) else { return }
                 let before = current.snapshot
-                let prepared = try await prepareOperation(.generated(path: path), on: current)
+                let prepared = try await prepareOperation(.generated(path: path, resetGeometry: card.aspectRatio != nil), on: current)
                 guard commitPrepared(prepared, expected: before) else {
                     throw EngineError(message: "生成期间照片被修改过，已保留你的修改，这次生成结果没有采用")
                 }
@@ -561,14 +562,14 @@ extension WorkspaceStore {
 
 extension WorkspaceStore {
     /// AI 改图面板点「生成」：在对话里记一条（可在对话里看到和撤销），用同一套确认卡流程立即生成。
-    func startAIEdit(prompt: String, onlySelection: Bool, references: [String] = []) {
+    func startAIEdit(prompt: String, onlySelection: Bool, references: [String] = [], aspectRatio: String? = nil) {
         guard let photo = current, !controlsBlocked, generationTask == nil else { return }
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let selection = onlySelection && !selectionParts.isEmpty ? removalOperation(selectionBox ?? [0, 0, 1, 1]) : nil
         chatMessages.append(ChatMessage(role: "user", text: "AI 改图：" + text))
         let message = ChatMessage(role: "assistant", text: selection == nil ? "按你的要求生成整张新图。" : "只改选区里的部分，其余保持原样。",
-                                  generation: GenerationCard(photoID: photo.id, prompt: text, selection: selection, references: references))
+                                  generation: GenerationCard(photoID: photo.id, prompt: text, selection: selection, references: references, aspectRatio: selection == nil ? aspectRatio : nil))
         chatMessages.append(message)
         aiEditMessageID = message.id
         startGeneration(message.id)

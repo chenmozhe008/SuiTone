@@ -12,7 +12,7 @@ from api_providers import _open, _send, clean_key
 GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 
 
-def gemini_edit(key, model, image, prompt, *, references=(), opener=_open):
+def gemini_edit(key, model, image, prompt, *, references=(), aspect_ratio=None, opener=_open):
     """返回图片字节；调用方负责用户授权、持久化、费用和数量控制。
     references 为额外参考图，Gemini 支持一张消息里多张输入图。"""
     key=clean_key(key) if isinstance(key,str) else ''
@@ -33,6 +33,9 @@ def gemini_edit(key, model, image, prompt, *, references=(), opener=_open):
         parts.append({'inline_data':{'mime_type':mime,'data':base64.b64encode(data).decode('ascii')}})
     body={'contents':[{'role':'user','parts':parts}],
           'generationConfig':{'responseModalities':['TEXT','IMAGE']}}
+    if aspect_ratio:
+        if aspect_ratio not in IMAGE_RATIOS: raise ValueError('不支持的生成比例')
+        body['generationConfig']['imageConfig'] = {'aspectRatio': aspect_ratio}
     request=Request(GEMINI_BASE+'/models/'+model+':generateContent',
         data=json.dumps(body,ensure_ascii=False).encode(),method='POST',
         headers={'Content-Type':'application/json','x-goog-api-key':key})
@@ -72,6 +75,8 @@ IMAGE_SERVICES = {
     'ideogram': dict(title='Ideogram', default_model='ideogram-4-5', paid=True, models=['ideogram-4-5']),
     'mock': dict(title='模拟出图（测试用）', default_model='mock', paid=False, models=['mock']),
 }
+
+IMAGE_RATIOS = ('1:1', '3:2', '2:3', '4:3', '3:4', '5:4', '4:5', '16:9', '9:16', '21:9')
 
 
 # 一次请求能带几张图（含"要改的那张原图"），数字全部照服务商官方文档，不自行放宽：
@@ -133,16 +138,27 @@ def mock_edit(image_bytes, prompt):
     return [dict(mime='image/png', data=out.getvalue())]
 
 
-def call_service(service, key, model, image_bytes, prompt, *, references=(), opener=_open):
+def call_service(service, key, model, image_bytes, prompt, *, references=(), aspect_ratio=None, opener=_open):
     if service not in IMAGE_SERVICES: raise ValueError('未知的出图服务')
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
-    if service == 'mock': return mock_edit(image_bytes, prompt)
+    if aspect_ratio and (aspect_ratio not in IMAGE_RATIOS or service == 'ideogram'):
+        raise ValueError('当前服务不支持这个生成比例')
+    if service == 'mock':
+        results = mock_edit(image_bytes, prompt)
+        if aspect_ratio:
+            from PIL import ImageOps
+            w, h = map(int, aspect_ratio.split(':'))
+            with Image.open(BytesIO(results[0]['data'])) as source:
+                out = ImageOps.fit(source, (w * 64, h * 64))
+                buf = BytesIO(); out.save(buf, 'PNG')
+            results[0]['data'] = buf.getvalue()
+        return results
     if service == 'ideogram':
         from ideogram_edit import ideogram_edit
         return ideogram_edit(key, model or IMAGE_SERVICES['ideogram']['default_model'], image_bytes, prompt, references=references, opener=opener)
-    if service == 'gemini': return gemini_edit(key, model or IMAGE_SERVICES['gemini']['default_model'], image_bytes, prompt, references=references, opener=opener)
+    if service == 'gemini': return gemini_edit(key, model or IMAGE_SERVICES['gemini']['default_model'], image_bytes, prompt, references=references, aspect_ratio=aspect_ratio, opener=opener)
     from jimeng_edit import jimeng_edit
-    return jimeng_edit(key, model or IMAGE_SERVICES['jimeng']['default_model'], image_bytes, prompt, references=references, opener=opener)
+    return jimeng_edit(key, model or IMAGE_SERVICES['jimeng']['default_model'], image_bytes, prompt, references=references, aspect_ratio=aspect_ratio, opener=opener)
 
 
 def composite_selection(original, generated, selection):
@@ -178,6 +194,12 @@ class ImageEditBridge:
         prompt = data.get('prompt')
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
         selection = data.get('selection')
+        aspect_ratio = data.get('aspect_ratio') or None
+        if aspect_ratio and (aspect_ratio not in IMAGE_RATIOS or service == 'ideogram'):
+            raise ValueError('当前服务不支持这个生成比例')
+        if aspect_ratio and selection is not None: raise ValueError('只改选区时必须保持原图比例')
+        if aspect_ratio and (data.get('params') or {}).get('manual_masks'):
+            raise ValueError('照片有手动局部遮罩，改比例前请先清除遮罩')
         if selection is not None:
             from service import shape_input, parts_input, repair_input
             if not isinstance(selection, dict) or set(selection) - {'box', 'strokes', 'radius', 'polygon', 'point', 'parts'}:
@@ -233,12 +255,16 @@ class ImageEditBridge:
             with self.engine.lock:
                 full, _ = replay_operations(self.engine.asset(data['id']))
             full = full.convert('RGB')
+            if data.get('aspect_ratio'):
+                from service import parameters
+                from geometry import apply as apply_geometry
+                full = apply_geometry(full, parameters(data.get('params', {})))
             sent = full.copy(); sent.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
             buffer = BytesIO(); sent.save(buffer, 'JPEG', quality=92)
             references = self._load_references(data.get('reference_paths') or [])
             if event.is_set(): raise InterruptedError()
             results = call_service(data['service'], data.get('api_key'), data.get('model'), buffer.getvalue(), data['prompt'],
-                                   references=references)
+                                   references=references, aspect_ratio=data.get('aspect_ratio') or None)
             if event.is_set(): raise InterruptedError()
             paths = []
             for item in results[:4]:

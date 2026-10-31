@@ -124,11 +124,13 @@ private struct CanvasHeader: View {
     @Bindable var store: WorkspaceStore
     @ViewBuilder private func toolButtons(spacing: CGFloat) -> some View {
         HStack(spacing: spacing) {
+            chip("原图", "circle.lefthalf.filled", store.showOriginal, help: "按 \\ 切换整张原图") { store.showOriginal.toggle() }
             chip("对比", "rectangle.split.2x1", store.splitCompare && !store.grid,
                  help: "拖动画面上的分隔线比较原图和调整后") { store.splitCompare.toggle() }
                 .disabled(store.grid)
-            chip("原图", "circle.lefthalf.filled", store.showOriginal, help: "按 \\ 切换整张原图") { store.showOriginal.toggle() }
             Divider().frame(height: 18)
+            chip("画质", "wand.and.stars", store.inspectorTab == "quality", help: "降噪与放大") { pick("quality") }
+                .disabled(store.current == nil || store.controlsBlocked)
             chip("选区", "lasso", store.inspectorTab == "selection", help: "画选区，可以多笔加减") { pick("selection") }
                 .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "selection")
             chip("移除", "bandage", store.inspectorTab == "repair", help: "移除杂物") { pick("repair") }
@@ -136,8 +138,6 @@ private struct CanvasHeader: View {
             chip("裁切", "crop.rotate", store.inspectorTab == "crop", help: "裁切、旋转、翻转和自由旋转") { pick("crop") }
                 .disabled(store.current == nil || store.controlsBlocked && store.inspectorTab != "crop")
             chip("抠图", "scissors", store.inspectorTab == "cutout", help: "抠出照片中的主体，另存透明 PNG") { pick("cutout") }
-                .disabled(store.current == nil || store.controlsBlocked)
-            chip("画质", "wand.and.stars", store.inspectorTab == "quality", help: "降噪与放大") { pick("quality") }
                 .disabled(store.current == nil || store.controlsBlocked)
         }.fixedSize()
     }

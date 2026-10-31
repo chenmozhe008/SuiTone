@@ -249,6 +249,7 @@ class Engine:
         self.assets = {}
         self.analyses = OrderedDict()
         self.previews = OrderedDict()
+        self.color_previews = OrderedDict()
         self.suggestion_cache = OrderedDict()
         self.quality_analyses = OrderedDict()
         self.progress = dict(done=0,total=0,name='')
@@ -416,7 +417,15 @@ class Engine:
             return dict(preview=self.previews[cache_key],render_ms=(perf_counter()-start)*1000,
                         cache_hit=True,inference_count=segmentation.inference_count,dehaze_amt=p['dehaze_amt'])
         import geometry as geometry_module
-        image=grade(a.image,analysis=a,**geometry_module.color_params(p))
+        colors = geometry_module.color_params(p)
+        color_key = (key, json.dumps(colors, sort_keys=True), quality['denoise'], quality['scale'])
+        if color_key in self.color_previews:
+            image = self.color_previews[color_key]
+            self.color_previews.move_to_end(color_key)
+        else:
+            image = grade(a.image, analysis=a, **colors)
+            self.color_previews[color_key] = image
+            while len(self.color_previews) > 4: self.color_previews.popitem(last=False)
         image=geometry_module.apply(image,p)
         path=self.folder/(uuid4().hex+'.png'); save_new(image,path)
         self.previews[cache_key]=str(path)

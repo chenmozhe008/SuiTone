@@ -62,3 +62,40 @@ class IdeogramTests(unittest.TestCase):
         with self.assertRaises(ValueError): ideogram_edit('key', 'ideogram-4-5', png(), '修图', opener=opener)
         self.assertEqual(len(calls), 1)
         with self.assertRaises(ValueError): ideogram_edit('key', 'ideogram-4-5', png(), '修图', references=[png()]*5, opener=opener)
+
+class AspectRatioTests(unittest.TestCase):
+    def test_gemini_ratio_is_sent_in_image_config(self):
+        calls=[]
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self,*args): pass
+            def read(self,limit): return json.dumps({'candidates':[{'content':{'parts':[{'inlineData':{'mimeType':'image/png','data':base64.b64encode(png()).decode()}}]}}]}).encode()
+        def opener(request,timeout): calls.append(request); return Response()
+        gemini_edit('key','gemini-image',png(),'change',aspect_ratio='16:9',opener=opener)
+        self.assertEqual(json.loads(calls[0].data)['generationConfig']['imageConfig']['aspectRatio'],'16:9')
+
+    def test_jimeng_ratio_respects_each_model_pixel_limits(self):
+        from jimeng_edit import jimeng_edit
+        calls=[]
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self,*args): pass
+            def read(self,limit): return json.dumps({'data':[{'b64_json':base64.b64encode(png()).decode()}]}).encode()
+        def opener(request,timeout): calls.append(request); return Response()
+        for model,low,high in [('doubao-seedream-5-0-pro-260628',921600,4624220),('doubao-seedream-4-5-251128',3686400,16777216),('doubao-seedream-5-0-260128',3686400,16777216)]:
+            for ratio in ('1:1','16:9','9:16','21:9'):
+                jimeng_edit('key',model,png(),'change',aspect_ratio=ratio,opener=opener)
+                w,h=map(int,json.loads(calls[-1].data)['size'].split('x'))
+                rw,rh=map(int,ratio.split(':'))
+                self.assertTrue(low <= w*h <= high, (model,ratio,w,h))
+                self.assertAlmostEqual(w/h,rw/rh,delta=.03)
+
+    def test_ideogram_and_selection_reject_unsupported_ratios(self):
+        from image_edit import ImageEditBridge
+        class Engine:
+            def asset(self,key): return object()
+        bridge=ImageEditBridge(Engine())
+        base=dict(id='a',image_consent=True,service='mock',prompt='change',aspect_ratio='1:1')
+        with self.assertRaisesRegex(ValueError,'选区'): bridge.start(dict(base,selection={'box':[.1,.1,.5,.5]}))
+        with self.assertRaisesRegex(ValueError,'比例'): bridge.start(dict(base,service='ideogram',api_key='key'))
+        with self.assertRaisesRegex(ValueError,'比例'): call_service('ideogram','key','ideogram-4-5',png(),'change',aspect_ratio='1:1')

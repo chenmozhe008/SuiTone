@@ -13,8 +13,11 @@ VERSION="$(cat "$ROOT/VERSION")"
 ARCH="$(uname -m)"
 VENV="${HOME}/.cache/photo-edit/venv"
 ASSETS="${HOME}/.cache/photo-edit"
-STAGE="${ROOT}/tmp/release-stage"
 OUT="${ROOT}/tmp/release"
+mkdir -p "${ROOT}/tmp"
+BUILD_DIR="$(mktemp -d "${ROOT}/tmp/release-build-${VERSION}-XXXXXX")"
+STAGE="${BUILD_DIR}/stage"
+PYI="${BUILD_DIR}/pyi"
 APP_NAME="随心 AI 修图"
 UPLOAD=0
 [[ "${1:-}" == "--upload" ]] && UPLOAD=1
@@ -32,17 +35,16 @@ done
 
 # ── 1. 引擎打成独立可执行文件 ────────────────────────────────
 bold "编译引擎（PyInstaller，约 1–2 分钟）"
-rm -rf "${ROOT}/tmp/pyi"
 # 用 onedir：onefile 每次启动都要解压 100 MB 以上，冷启动要十几秒，界面会先于引擎就绪。
 ( cd "${ROOT}/engine" && "${VENV}/bin/pyinstaller" --noconfirm --onedir --name suitone-engine \
-    --distpath "${ROOT}/tmp/pyi/dist" --workpath "${ROOT}/tmp/pyi/build" --specpath "${ROOT}/tmp/pyi" \
+    --distpath "${PYI}/dist" --workpath "${PYI}/build" --specpath "${PYI}" \
     --hidden-import assistant --hidden-import ai_recommendation --hidden-import image_edit \
     --hidden-import api_providers --hidden-import anthropic_provider --hidden-import jimeng_edit --hidden-import ideogram_edit \
     --hidden-import suggestions --hidden-import smart --hidden-import recommendations \
     --hidden-import enhance --hidden-import geometry --hidden-import inpaint --hidden-import match \
     --hidden-import render --hidden-import info_bar --hidden-import lut --hidden-import vision \
     service.py >/dev/null 2>&1 ) || die "引擎编译失败，去掉 >/dev/null 看报错。"
-ENGINE_DIR="${ROOT}/tmp/pyi/dist/suitone-engine"
+ENGINE_DIR="${PYI}/dist/suitone-engine"
 [[ -x "${ENGINE_DIR}/suitone-engine" ]] || die "没有产出引擎可执行文件。"
 info "引擎：$(du -sh "${ENGINE_DIR}" | cut -f1)"
 
@@ -52,7 +54,7 @@ bash "${ROOT}/script/build_and_run.sh" --build-only >/dev/null || die "App 编�
 
 # ── 3. 组装包 ───────────────────────────────────────────────
 bold "组装应用包"
-rm -rf "${STAGE}" && mkdir -p "${STAGE}"
+mkdir -p "${STAGE}"
 ditto "${ROOT}/dist/SuiTone.app" "${STAGE}/${APP_NAME}.app"
 BUNDLE="${STAGE}/${APP_NAME}.app"
 RES="${BUNDLE}/Contents/Resources"
@@ -92,7 +94,7 @@ codesign --verify --strict "${BUNDLE}" || die "签名校验失败。"
 bold "压缩"
 mkdir -p "${OUT}"
 ZIP="${OUT}/SuiTone-${VERSION}-${ARCH}.zip"
-rm -f "${ZIP}"
+[[ ! -e "${ZIP}" ]] || die "安装包已存在，未覆盖：${ZIP}"
 ditto -c -k --sequesterRsrc --keepParent "${BUNDLE}" "${ZIP}"
 info "产物：${ZIP}（$(du -h "${ZIP}" | cut -f1)）"
 

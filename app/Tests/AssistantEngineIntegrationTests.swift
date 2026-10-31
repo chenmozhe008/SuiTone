@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import Testing
 @testable import PhotoEdit
 
@@ -353,5 +354,17 @@ import Testing
         #expect(store.photoVersions.count == 2)
         store.undo(); store.previewTask?.cancel()
         #expect(store.photos[0].operations.isEmpty && store.photoVersions.count == 1)
+        store.photos[0].parameters.crop = [0.1, 0.1, 0.7, 0.7]
+        store.startAIEdit(prompt: "换背景", onlySelection: false, aspectRatio: "16:9")
+        await store.generationTask?.value
+        let resized = try #require(store.chatMessages.last?.generation)
+        #expect(resized.state == "done", Comment(rawValue: resized.error ?? ""))
+        #expect(resized.aspectRatio == "16:9" && store.photos[0].parameters.crop == nil)
+        let path = try #require(store.photos[0].operations.last?.generated)
+        let source = try #require(CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil))
+        let output = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        #expect(abs(Double(output.width) / Double(output.height) - 16.0 / 9.0) < 0.01)
+        store.undo(); store.previewTask?.cancel()
+        #expect(store.photos[0].parameters.crop == [0.1, 0.1, 0.7, 0.7])
     }
 }

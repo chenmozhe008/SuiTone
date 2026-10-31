@@ -9,16 +9,25 @@ struct AIEditPanel: View {
     @State private var onlySelection = true
     @State private var referencePaths: [String] = []
     @State private var showMention = false
+    @State private var aspectRatio = "auto"
+    private let ratios = ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"]
     private let examples = ["换成雪山背景", "去掉人物并补出背景", "加一群海鸥", "天空换成晚霞"]
     private var service: ImageService? { store.imageServices.first { $0.id == store.imageService } }
     /// 这个模型能加几张参考图（含原图在内的官方上限；0 表示不给加）
     private var limit: Int { store.imageReferenceLimit }
     private var hasSelection: Bool { !store.selectionParts.isEmpty }
+    private var chosenRatio: String? {
+        guard aspectRatio != "auto", !onlySelection,
+              ["jimeng", "gemini", "mock"].contains(service?.id ?? ""),
+              store.current?.parameters.manualMasks.isEmpty ?? true else { return nil }
+        return aspectRatio
+    }
     private var card: GenerationCard? {
         store.aiEditMessageID.flatMap { id in store.chatMessages.first { $0.id == id }?.generation }
     }
 
     var body: some View {
+        VStack(spacing: 0) {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 section("编辑范围") {
@@ -112,31 +121,6 @@ struct AIEditPanel: View {
                         }
                     }
                 }
-                section("生成服务", trailing: AnyView(Button("设置…") { store.settingsTab = "image" }.buttonStyle(.link))) {
-                    if let service, store.imageServiceReady {
-                        info("服务", service.title)
-                        info("模型", store.imageModelName.isEmpty ? service.defaultModel : store.imageModelName)
-                        info("发送内容", "不带调色的原片，长边 2048 像素" + (referencePaths.isEmpty ? "" : "＋\(referencePaths.count) 张参考图（按缩略图顺序跟在后面）"))
-                        info("费用", service.paid ? "按\(service.title)的标准计费" : "不收费")
-                        info("结果", onlySelection && hasSelection ? "只替换选区里的部分，作为新版本，可撤销" : "整张新图，作为新版本，调色照常套用，可撤销")
-                    } else {
-                        HStack(spacing: 10) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
-                            Text("还没设置 AI 改图 API").font(.callout.weight(.semibold)).foregroundStyle(.yellow)
-                            Spacer()
-                            Button("去设置") { store.settingsTab = "image" }.buttonStyle(.borderedProminent)
-                        }.padding(12).background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-                Button {
-                    store.startAIEdit(prompt: editor.text, onlySelection: onlySelection, references: referencePaths)
-                } label: {
-                    Text(store.generationTask != nil ? "正在生成…" : "生成").font(.body.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 6)
-                }.buttonStyle(.borderedProminent).controlSize(.large)
-                    .disabled(!store.imageServiceReady || store.generationTask != nil || store.controlsBlocked
-                              || editor.isEmpty || (onlySelection && !hasSelection))
-                if store.imageServiceReady && onlySelection && !hasSelection { Text("请先选择编辑区域。") .font(.callout).foregroundStyle(.secondary) }
-                else if store.imageServiceReady && editor.isEmpty { Text("请输入编辑要求。") .font(.callout).foregroundStyle(.secondary) }
                 if let card, let id = store.aiEditMessageID { GenerationCardView(store: store, messageID: id, card: card) }
                 if store.photoVersions.count > 1 {
                     section("这张照片的版本") {
@@ -161,6 +145,66 @@ struct AIEditPanel: View {
                     }
                 }
             }.padding(16)
+        }
+        Divider()
+        VStack(alignment: .leading, spacing: 8) {
+                section("生成比例") {
+                    if onlySelection && hasSelection {
+                        Text("只改选区时保持原图比例。")
+                            .font(.callout).foregroundStyle(.secondary)
+                    } else if service?.id == "ideogram" {
+                        Text("Ideogram 精确编辑沿用输入照片的比例。")
+                            .font(.callout).foregroundStyle(.secondary)
+                    } else if !["jimeng", "gemini", "mock"].contains(service?.id ?? "") {
+                        Text("选择生成服务后可设置比例。")
+                            .font(.callout).foregroundStyle(.secondary)
+                    } else if !(store.current?.parameters.manualMasks.isEmpty ?? true) {
+                        Text("当前照片有手动局部遮罩；为避免遮罩错位，生成比例保持自动。")
+                            .font(.callout).foregroundStyle(.secondary)
+                    } else {
+                        FlowLayout(spacing: 6) {
+                            ForEach(["auto"] + ratios, id: \.self) { ratio in
+                                Button(ratio == "auto" ? "自动" : ratio) { aspectRatio = ratio }
+                                    .buttonStyle(.plain)
+                                    .font(.callout.weight(aspectRatio == ratio ? .semibold : .regular))
+                                    .padding(.horizontal, 9).padding(.vertical, 5)
+                                    .background(aspectRatio == ratio ? Color.accentColor : Color(white: 0.23), in: RoundedRectangle(cornerRadius: 6))
+                            }
+                        }
+                        Text("指定比例可能改变画面构图，实际输出以服务商结果为准。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Button {
+                    store.startAIEdit(prompt: editor.text, onlySelection: onlySelection, references: referencePaths, aspectRatio: chosenRatio)
+                } label: {
+                    Text(store.generationTask != nil ? "正在生成…" : "生成").font(.body.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 6)
+                }.buttonStyle(.borderedProminent).controlSize(.large)
+                    .disabled(!store.imageServiceReady || store.generationTask != nil || store.controlsBlocked
+                              || editor.isEmpty || (onlySelection && !hasSelection))
+                if store.imageServiceReady && onlySelection && !hasSelection { Text("请先选择编辑区域。") .font(.callout).foregroundStyle(.secondary) }
+                else if store.imageServiceReady && editor.isEmpty { Text("请输入编辑要求。") .font(.callout).foregroundStyle(.secondary) }
+                DisclosureGroup {
+                    Button("服务设置…") { store.settingsTab = "image" }.buttonStyle(.link)
+                    if let service, store.imageServiceReady {
+                        info("服务", service.title)
+                        info("模型", store.imageModelName.isEmpty ? service.defaultModel : store.imageModelName)
+                        info("发送内容", (chosenRatio != nil ? "不带调色的照片（含已应用的裁切和旋转）" : "不带调色的原片") + "，长边最多 2048 像素" + (referencePaths.isEmpty ? "" : "＋\(referencePaths.count) 张参考图（按缩略图顺序跟在后面）"))
+                        info("费用", service.paid ? "按\(service.title)的标准计费" : "不收费")
+                        info("结果", onlySelection && hasSelection ? "只替换选区里的部分，作为新版本，可撤销" : "整张新图，作为新版本，调色照常套用，可撤销")
+                    } else {
+                        HStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                            Text("还没设置 AI 改图 API").font(.callout.weight(.semibold)).foregroundStyle(.yellow)
+                            Spacer()
+                            Button("去设置") { store.settingsTab = "image" }.buttonStyle(.borderedProminent)
+                        }.padding(12).background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                } label: {
+                    Text(service.map { "生成服务：\($0.title)" } ?? "生成服务：未设置")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+        }.padding(12).background(Color(white: 0.13))
         }
         .onAppear {
             onlySelection = hasSelection
@@ -195,6 +239,7 @@ struct AIEditPanel: View {
         }
         // 在这一页画出选区就默认只改选区；选区清空则改回整张
         .onChange(of: store.selectionParts.isEmpty) { _, empty in onlySelection = !empty }
+        .onChange(of: store.imageService) { _, _ in aspectRatio = "auto" }
         .onDisappear { store.versionPreview = nil }
     }
 

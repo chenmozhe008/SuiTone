@@ -19,7 +19,8 @@ struct GenerationCardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     row("发送到", service?.title ?? "尚未设置出图服务")
                     if let service { row("模型", store.imageModels[service.id] ?? service.defaultModel) }
-                    row("发送内容", "这张照片不带调色的原片，长边 2048 像素")
+                    row("比例", card.aspectRatio ?? "自动（参考原图）")
+                    row("发送内容", card.aspectRatio == nil ? "不带调色的原片，长边最多 2048 像素" : "不带调色的照片（含已应用的裁切和旋转），长边最多 2048 像素")
                     row("费用", service.map { $0.paid ? "按\($0.title)的标准计费" : "不收费" } ?? "—")
                     row("结果", card.selection == nil ? "一张新图片，你的调色照常套在上面；原图保留，可撤销" : "只替换选区里的部分，原尺寸保留；可撤销")
                 }
