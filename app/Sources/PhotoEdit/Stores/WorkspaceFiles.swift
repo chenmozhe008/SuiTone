@@ -23,6 +23,9 @@ extension WorkspaceStore {
                 let scan: Scanned = try await engine.request("scan", body: ["paths": urls.map(\.path)])
                 progressTotal = scan.paths.count
                 var failures = scan.errors
+                // 这一轮新加进来的照片。往已有图集里补照片时，光标应该落在新照片上，
+                // 而不是还停在上一张——否则刚导入的照片看上去像没进来。
+                var addedIDs: [String] = []
                 for path in scan.paths {
                     if Task.isCancelled { status = "已停止导入，已经读入的照片保留"; break }
                     status = "\(reference ? "读取参考" : "导入照片") \(progressDone + 1)/\(progressTotal)"
@@ -34,15 +37,23 @@ extension WorkspaceStore {
                         } else if !photos.contains(where: { $0.id == item.id }) {
                             var record = PhotoRecord(imported: item, assetID: item.id)
                             record.ready = true; photos.append(record)
-                            if currentID == nil { currentID = item.id; selectedIDs = [item.id] }
+                            addedIDs.append(item.id)
                         }
                     }
                     progressDone += 1
                 }
                 if !Task.isCancelled { status = reference ? "参考图已就绪" : "照片已导入 · \(included.count) 张" }
                 if !failures.isEmpty { error = failures.joined(separator: "\n") }
-                if !reference, photos.count > 1, inspectorTab != "repair" { grid = true }
                 if !reference {
+                    // 选中并切到刚导入的那张；一次导入多张时才进整批预览。
+                    // 裁切框还有未应用的改动时 activate 会先问一句，这时光标没动，选中也别动。
+                    if let newest = addedIDs.first {
+                        activate(newest)
+                        if currentID == newest {
+                            selectedIDs = [newest]
+                            grid = addedIDs.count > 1 && inspectorTab != "repair"
+                        }
+                    }
                     if !Task.isCancelled {
                         adoptImportedPhotos(intoNewAlbum: startsNewAlbum, title: albumTitle(for: urls),
                                             source: urls.first.map { $0.hasDirectoryPath ? $0.path : $0.deletingLastPathComponent().path } ?? "")

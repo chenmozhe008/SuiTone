@@ -71,6 +71,29 @@ import Testing
         second.previewTask?.cancel()
     }
 
+    @Test @MainActor func testAddingPhotoToAlbumSelectsTheNewOne() async throws {
+        let (folder, paths) = try fixture(["first", "second"])
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let store = makeStore(folder)
+        store.importURLs([paths[0]])
+        await store.importTask?.value
+        let olderID = try #require(store.currentID)
+        #expect(store.photos.count == 1)
+
+        // 往已经打开的照片里再补一张：光标要跟到新照片上，不能还停在老的那张。
+        store.importURLs([paths[1]])
+        await store.importTask?.value
+        #expect(store.photos.count == 2)
+        let newest = try #require(store.photos.last)
+        #expect(newest.id != olderID)
+        #expect(store.currentID == newest.id)
+        #expect(store.selectedIDs == [newest.id])
+        #expect(!store.grid)
+        #expect(store.albums.first?.photos.count == 2)
+        store.previewTask?.cancel()
+    }
+
     @Test @MainActor func testDeletingAlbumLeavesPhotoFilesAlone() async throws {
         let (folder, paths) = try fixture(["only"])
         defer { try? FileManager.default.removeItem(at: folder) }
