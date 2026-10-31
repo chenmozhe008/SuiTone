@@ -22,7 +22,7 @@
 **对话式修图有三种用法，从轻到重：**
 
 1. **说一句话**：比如「画面暖一点，人脸亮一点」，AI 先看照片，再给出调色方案；参数可以接着拖、可以对比、可以撤销。需要配置支持看图的 AI 服务。
-2. **套一档预设**：常规与风格化两组共 34 款，一键套上，再用强度、光线、颜色、质感微调；也能只调某一块区域。这些在本机算，不需要 AI 账号。
+2. **套一档预设**：常规与风格化两组共 34 款，一键套上，再用强度、光线、颜色、质感微调；也能只调某一块区域。首屏先摆这张照片用得上的几款，展开能看到全部。这些在本机算，不需要 AI 账号。
 3. **让 AI 重画**：换背景、加物体、只改选区，写清要求（可加参考图），调用已配置的出图服务生成新版本；原图不会被覆盖。
 
 应用本身及本地工具免费；AI 对话和 AI 改图使用你自己的账号或 API，可能消耗已有订阅额度或产生服务商费用，详情见下方说明。
@@ -39,7 +39,7 @@
 
 | 调整 | 夜景 | 裁切 |
 | --- | --- | --- |
-| ![人像调整界面](docs/images/adjust-043.png) | ![夜景调整界面](docs/images/night-043.png) | ![裁切与旋转界面](docs/images/crop-043.png) |
+| ![人像调整界面：首屏六款按照片内容挑](docs/images/adjust-037.jpg) | ![夜景调整界面](docs/images/night-043.png) | ![裁切与旋转界面](docs/images/crop-043.png) |
 
 样片来源：[Outdoor portrait](https://commons.wikimedia.org/wiki/File:Outdoor_portrait_(Unsplash).jpg)、[Shinjuku](https://commons.wikimedia.org/wiki/File:Shinjuku_-_Shinjuku255.jpg) 和 Alf van Beem 的 [Interior of old Cafe](https://commons.wikimedia.org/wiki/File:Interior_of_old_Cafe.JPG) 均标注 CC0；Mark Sherman 的 [Portrait of a woman](https://commons.wikimedia.org/wiki/File:Portrait-of-a-woman.jpg) 使用 [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) 授权。
 
