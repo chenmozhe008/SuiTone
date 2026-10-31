@@ -4,6 +4,49 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct AssistantEngineIntegrationTests {
+    @Test @MainActor func testStylePreviewRendersWithExistingCropAndLocalSettings() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = root.appendingPathComponent("tmp/style-geometry-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let engineDir = fixture.appendingPathComponent("engine")
+        try FileManager.default.createDirectory(at: engineDir, withIntermediateDirectories: true)
+        let encoder = JSONEncoder(); encoder.outputFormatting = .withoutEscapingSlashes
+        let pythonPath = String(data: try encoder.encode(root.appendingPathComponent("engine").path), encoding: .utf8)!
+        let capturedPath = String(data: try encoder.encode(fixture.appendingPathComponent("rendered.json").path), encoding: .utf8)!
+        let script = """
+        import os,sys,json
+        sys.path.insert(0, \(pythonPath))
+        import service
+        def smart(self,key,style='smart',quality=None):
+            p=service.parameters({}); p['temperature']=.5
+            return dict(params=p,title='风格',notes=[],preview=str(self.asset(key).image_path))
+        def preview(self,key,raw,quality=None):
+            with open(\(capturedPath),'w') as f: json.dump(raw,f)
+            return dict(preview=str(self.asset(key).image_path),render_ms=1,cache_hit=False,inference_count=0,dehaze_amt=0)
+        service.Engine.smart=smart; service.Engine.preview=preview
+        service.serve(sys.argv[sys.argv.index('--root')+1],os.environ['PHOTO_EDIT_SESSION_TOKEN'])
+        """
+        try script.write(to: engineDir.appendingPathComponent("service.py"), atomically: true, encoding: .utf8)
+        let image = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGO0qdjCgA0wYRUdtBIAHQ8BeIKmlrAAAAAASUVORK5CYII="))
+        let path = fixture.appendingPathComponent("photo.png"); try image.write(to: path)
+        let store = WorkspaceStore(engine: EngineClient(root: fixture))
+        let imported: ImportResponse = try await store.engine.request("import", body: ["paths": [path.path]])
+        let photo = try #require(imported.photos.first)
+        var record = PhotoRecord(imported: photo, assetID: photo.id); record.ready = true
+        record.parameters.crop = [0.1, 0.1, 0.7, 0.7]; record.parameters.angle = 8; record.parameters.rotationExpanded = true
+        let styled = try await store.prepareOperation(.style("smart"), on: record)
+        #expect(styled.parameters.crop == record.parameters.crop && styled.parameters.angle == 8)
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let sent = try decoder.decode(AdjustmentParameters.self, from: Data(contentsOf: fixture.appendingPathComponent("rendered.json")))
+        #expect(sent.crop == record.parameters.crop && sent.rotationExpanded && sent.temperature == 0.5)
+        var personal = AdjustmentParameters(); personal.crop = [0.2, 0.2, 0.5, 0.5]; personal.temperature = -0.3
+        let custom = try await store.prepareOperation(.personalStyle(personal, name: "自存"), on: record)
+        #expect(custom.parameters.crop == record.parameters.crop && custom.parameters.angle == 8)
+        var other = record; other.parameters.crop = [0.2, 0.3, 0.5, 0.4]; other.parameters.angle = -3
+        let second = try await store.prepareOperation(.style("smart"), on: other)
+        #expect(second.parameters.crop == other.parameters.crop && second.parameters.angle == -3)
+    }
+
     @Test @MainActor func testImportKeepsOriginalWithoutAutomaticAdjustment() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let fixture = root.appendingPathComponent("tmp/import-original-\(UUID().uuidString).png")
@@ -340,6 +383,7 @@ import Testing
         let imported: ImportResponse = try await store.engine.request("import", body: ["paths": [sample.path]])
         let image = try #require(imported.photos.first)
         var photo = PhotoRecord(imported: image, assetID: image.id); photo.ready = true
+        photo.parameters.exposure = 0.5
         store.photos = [photo]; store.currentID = photo.id; store.selectedIDs = [photo.id]
         store.imageServices = [ImageService(id: "mock", title: "模拟出图（测试用）", defaultModel: "mock", paid: false)]
         store.imageService = "mock"
@@ -350,11 +394,23 @@ import Testing
         let card = try #require(store.chatMessages.last?.generation)
         #expect(card.state == "done", Comment(rawValue: card.error ?? ""))
         #expect(card.selection?.parts?.count == 1)
+        #expect(card.beforePreview.map { FileManager.default.fileExists(atPath: $0) } == true)
+        #expect(card.modelPreview.map { FileManager.default.fileExists(atPath: $0) } == true)
         #expect(store.photos[0].operations.last?.generated != nil)
+        #expect(store.photos[0].parameters.exposure == 0)
         #expect(store.photoVersions.count == 2)
         store.undo(); store.previewTask?.cancel()
         #expect(store.photos[0].operations.isEmpty && store.photoVersions.count == 1)
+        #expect(store.photos[0].parameters.exposure == 0.5)
         store.photos[0].parameters.crop = [0.1, 0.1, 0.7, 0.7]
+        store.selectionParts = [SelectionPart(box: [0.5, 0, 1, 1])]
+        store.startAIEdit(prompt: "只改右边", onlySelection: true)
+        await store.generationTask?.value
+        let selectionAfterCrop = try #require(store.chatMessages.last?.generation)
+        #expect(selectionAfterCrop.state == "done", Comment(rawValue: selectionAfterCrop.error ?? ""))
+        #expect(store.photos[0].parameters.crop == nil)
+        store.undo(); store.previewTask?.cancel()
+        #expect(store.photos[0].parameters.crop == [0.1, 0.1, 0.7, 0.7])
         store.startAIEdit(prompt: "换背景", onlySelection: false, aspectRatio: "16:9")
         await store.generationTask?.value
         let resized = try #require(store.chatMessages.last?.generation)

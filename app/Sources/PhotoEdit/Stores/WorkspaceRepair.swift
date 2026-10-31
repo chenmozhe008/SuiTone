@@ -135,6 +135,7 @@ extension WorkspaceStore {
 
     /// 打开已保存的手动选区继续加减；旧的单笔选区转成一笔。
     func editSavedSelection(_ key: String) {
+        selectionForAI = false
         guard let saved = current?.parameters.manualMasks[key] else { return }
         let parts = saved.parts ?? [SelectionPart(box: saved.strokes == nil && saved.polygon == nil && saved.point == nil ? saved.box : nil,
                                                   strokes: saved.strokes, radius: saved.radius, polygon: saved.polygon, point: saved.point)]

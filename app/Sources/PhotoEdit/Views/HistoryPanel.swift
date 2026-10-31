@@ -16,7 +16,17 @@ struct HistoryPanel: View {
                 }
             }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 4)
 
-            Text("当前图集的操作记录").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.bottom, 4)
+            HStack(spacing: 10) {
+                Button { store.undo() } label: { Label("撤销", systemImage: "arrow.uturn.backward") }
+                    .help("撤销上一步（⌘Z）").disabled(!store.canUndo || store.controlsBlocked)
+                Button { store.redo() } label: { Label("重做", systemImage: "arrow.uturn.forward") }
+                    .help("重做（⇧⌘Z）").disabled(!store.canRedo || store.controlsBlocked)
+                Spacer(minLength: 0)
+            }.buttonStyle(.borderless).font(.callout)
+                .padding(.horizontal, 12).padding(.bottom, 6)
+
+            Text("点击任意一步可跳回，⌘Z / ⇧⌘Z 前后移动").font(.caption).foregroundStyle(.secondary)
+                .padding(.horizontal, 12).padding(.bottom, 4)
             if store.albumSteps.isEmpty {
                 Text(store.currentAlbumID == nil ? "打开图集后，调整记录显示在这里。" : "暂无调整记录。")
                     .font(.callout).foregroundStyle(.secondary)
@@ -32,13 +42,18 @@ struct HistoryPanel: View {
     }
 
     private func stepRow(_ step: LibraryStep) -> some View {
-        HStack(spacing: 6) {
+        let isActive = store.albumSteps.contains { $0.id == store.activeStepID } && store.activeStepID == step.id
+        return HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(step.label).font(.callout).lineLimit(1)
                 Text("\(step.states.count) 张 · \(step.date.formatted(date: .omitted, time: .shortened))")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
+            if isActive {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 11))
+                    .foregroundStyle(.tint).help("当前停在这一步")
+            }
             if hoveredStep == step.id {
                 Button { store.deleteStep(step) } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
@@ -46,9 +61,11 @@ struct HistoryPanel: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(isActive ? Color.accentColor.opacity(0.22) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onTapGesture { store.revertToStep(step) }
         .onHover { inside in hoveredStep = inside ? step.id : (hoveredStep == step.id ? nil : hoveredStep) }
-        .help("回到这一步的调整")
+        .help("回到这一步的调整（可撤销返回）")
     }
 }

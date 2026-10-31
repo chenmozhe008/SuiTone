@@ -14,12 +14,14 @@ struct AIEditPanel: View {
     private let examples = ["换成雪山背景", "去掉人物并补出背景", "加一群海鸥", "天空换成晚霞"]
     private var service: ImageService? { store.imageServices.first { $0.id == store.imageService } }
     /// 这个模型能加几张参考图（含原图在内的官方上限；0 表示不给加）
-    private var limit: Int { store.imageReferenceLimit }
+    private var limit: Int {
+        service?.id == "ideogram" && onlySelection && hasSelection ? min(3, store.imageReferenceLimit) : store.imageReferenceLimit
+    }
+    private var referenceOverLimit: Bool { referencePaths.count > limit }
     private var hasSelection: Bool { !store.selectionParts.isEmpty }
     private var chosenRatio: String? {
         guard aspectRatio != "auto", !onlySelection,
-              ["jimeng", "gemini", "mock"].contains(service?.id ?? ""),
-              store.current?.parameters.manualMasks.isEmpty ?? true else { return nil }
+              ["jimeng", "gemini", "mock"].contains(service?.id ?? "") else { return nil }
         return aspectRatio
     }
     private var card: GenerationCard? {
@@ -33,8 +35,12 @@ struct AIEditPanel: View {
                 section("编辑范围") {
                     Picker("范围", selection: $onlySelection) {
                         Text("整张照片").tag(false)
-                        Text("只改选区").tag(true)
+                        Text("参考选区").tag(true)
                     }.pickerStyle(.segmented).labelsHidden()
+                    if onlySelection && hasSelection && service?.id == "ideogram" {
+                        Text("选区将发送给 Ideogram，模型会按选区编辑。")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
                     if !onlySelection && hasSelection {
                         HStack {
                             Text("当前改整张照片，已有选区不会用于本次生成。")
@@ -43,14 +49,15 @@ struct AIEditPanel: View {
                         }
                     }
                     if onlySelection && !hasSelection {
-                        HStack {
-                            Text("还没有选区。").font(.callout).foregroundStyle(.secondary)
-                            Button("画选区") { store.inspectorTab = "selection" }.buttonStyle(.link)
-                        }
+                        Button { store.openAISelection() } label: {
+                            Label("画选区", systemImage: "lasso")
+                                .font(.callout.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 5)
+                        }.buttonStyle(.borderedProminent)
+                            .tint(Color(red: 0.46, green: 0.31, blue: 0.77))
                     } else if onlySelection {
                         HStack {
-                            Text("已选 \(store.selectionParts.count) 笔，只替换这块，其余像素不动。").font(.callout).foregroundStyle(.secondary)
-                            Button("编辑选区") { store.inspectorTab = "selection" }.buttonStyle(.link)
+                            Text("已画 \(store.selectionParts.count) 笔选区。").font(.callout).foregroundStyle(.secondary)
+                            Button("编辑选区") { store.openAISelection() }.buttonStyle(.link)
                             Button("清除选区") { store.clearRepairSelection() }.buttonStyle(.link)
                         }
                     }
@@ -96,6 +103,10 @@ struct AIEditPanel: View {
                             }
                         }
                         }.scrollIndicators(.visible)
+                        if referenceOverLimit {
+                            Text("当前模式最多支持 \(limit) 张参考图，请移除多余的图片。")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
                         Text("参考图将与照片一起发送给 AI。已添加 \(referencePaths.count)／\(limit) 张。")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         if editor.hasReferenceMentions {
@@ -150,16 +161,13 @@ struct AIEditPanel: View {
         VStack(alignment: .leading, spacing: 8) {
                 section("生成比例") {
                     if onlySelection && hasSelection {
-                        Text("只改选区时保持原图比例。")
+                        Text("参考选区时保持原图比例。")
                             .font(.callout).foregroundStyle(.secondary)
                     } else if service?.id == "ideogram" {
                         Text("Ideogram 精确编辑沿用输入照片的比例。")
                             .font(.callout).foregroundStyle(.secondary)
                     } else if !["jimeng", "gemini", "mock"].contains(service?.id ?? "") {
                         Text("选择生成服务后可设置比例。")
-                            .font(.callout).foregroundStyle(.secondary)
-                    } else if !(store.current?.parameters.manualMasks.isEmpty ?? true) {
-                        Text("当前照片有手动局部遮罩；为避免遮罩错位，生成比例保持自动。")
                             .font(.callout).foregroundStyle(.secondary)
                     } else {
                         FlowLayout(spacing: 6) {
@@ -176,12 +184,15 @@ struct AIEditPanel: View {
                     }
                 }
                 Button {
-                    store.startAIEdit(prompt: editor.text, onlySelection: onlySelection, references: referencePaths, aspectRatio: chosenRatio)
+                    store.startAIEdit(prompt: editor.text, onlySelection: onlySelection, references: referencePaths, aspectRatio: chosenRatio,
+                                      selectionGuidance: store.supportsJimengSelection ? store.aiSelectionGuidance : "coordinates")
                 } label: {
                     Text(store.generationTask != nil ? "正在生成…" : "生成").font(.body.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 6)
                 }.buttonStyle(.borderedProminent).controlSize(.large)
                     .disabled(!store.imageServiceReady || store.generationTask != nil || store.controlsBlocked
-                              || editor.isEmpty || (onlySelection && !hasSelection))
+                              || editor.isEmpty || (onlySelection && !hasSelection) || referenceOverLimit)
+                Text("生成后会保留当前画面效果，调整滑块重新归零；撤销可恢复之前的参数。")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if store.imageServiceReady && onlySelection && !hasSelection { Text("请先选择编辑区域。") .font(.callout).foregroundStyle(.secondary) }
                 else if store.imageServiceReady && editor.isEmpty { Text("请输入编辑要求。") .font(.callout).foregroundStyle(.secondary) }
                 Divider().padding(.top, 2)

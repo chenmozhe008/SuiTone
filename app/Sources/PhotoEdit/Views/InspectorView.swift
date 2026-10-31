@@ -8,7 +8,12 @@ struct InspectorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                mainTab("调整", icon: "slider.horizontal.3", id: "adjust")
+                mainTab("对话", icon: "bubble.left.and.bubble.right", id: "chat")
+            }.padding(.horizontal, 16).frame(height: 64)
             if toolMode {
+                Divider()
                 HStack {
                     Text(Self.titles[store.inspectorTab] ?? "").font(.headline)
                     Spacer()
@@ -16,16 +21,14 @@ struct InspectorView: View {
                     // 想换页直接点上面的页签（离开时自动应用），这里只提示一下回车。
                     if store.inspectorTab == "crop" {
                         Text("回车应用，换页点上方页签").font(.caption).foregroundStyle(.secondary)
+                    } else if store.inspectorTab == "selection" && store.selectionForAI {
+                        Button("返回 AI 改图") { store.inspectorTab = "aiedit" }
+                            .buttonStyle(.borderedProminent).disabled(store.busy)
                     } else {
                         Button(store.inspectorTab == "cutout" ? "退出抠图" : "完成") { store.inspectorTab = store.lastMainTab }
                             .buttonStyle(.borderedProminent).disabled(store.busy)
                     }
                 }.padding(.horizontal, 16).frame(height: 56)
-            } else {
-                HStack(spacing: 8) {
-                    mainTab("调整", icon: "slider.horizontal.3", id: "adjust")
-                    mainTab("对话", icon: "bubble.left.and.bubble.right", id: "chat")
-                }.padding(.horizontal, 16).frame(height: 64)
             }
             Divider()
             switch store.inspectorTab {
@@ -73,7 +76,8 @@ struct InspectorView: View {
                 .foregroundStyle(selected ? Color.white : Color(white: 0.82))
                 .background(selected ? Color(red: 0.18, green: 0.42, blue: 0.57) : Color(white: 0.24), in: RoundedRectangle(cornerRadius: 9))
                 .overlay(RoundedRectangle(cornerRadius: 9).stroke(selected ? Color.cyan.opacity(0.6) : Color.white.opacity(0.10)))
-        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).disabled(store.controlsBlocked).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

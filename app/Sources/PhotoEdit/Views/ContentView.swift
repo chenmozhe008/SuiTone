@@ -157,12 +157,14 @@ private struct CanvasHeader: View {
             .foregroundStyle(isOn ? Color(white: 0.12) : Color.white.opacity(0.82))
             .padding(.horizontal, 10).frame(height: 26)
             .background(isOn ? Color.white.opacity(0.92) : Color.clear, in: Capsule())
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)
     }
 
     private func pick(_ name: String) {
+        if name == "selection" { store.selectionForAI = false }
         store.inspectorTab = store.inspectorTab == name ? store.lastMainTab : name
     }
 
@@ -197,6 +199,7 @@ private struct CanvasHeader: View {
             .clipShape(Capsule())
             .overlay(Capsule().stroke(Color(red: 0.72, green: 0.58, blue: 1.0).opacity(on ? 0 : 0.55),
                                       lineWidth: 0.8))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .opacity(aiOff ? 0.4 : 1)
@@ -286,37 +289,77 @@ private struct WorkspaceStatus: View {
 
 private struct WelcomeView: View {
     @Bindable var store: WorkspaceStore
+
+    /// 首页只讲一件事：这是一款「对话式修图」软件。三块内容是它的三条路，
+    /// 不是三个并列的功能——所以标题给对话式修图，预设和 AI 改图跟在下面当说明。
+    private struct Path: Identifiable {
+        let id: String, icon: String, tint: Color, title: String, text: String, tag: String
+    }
+
+    private let paths = [
+        Path(id: "chat", icon: "text.bubble.fill", tint: Color(red: 0.46, green: 0.70, blue: 1.0),
+             title: "对话式修图",
+             text: "说一句「画面暖一点，人脸亮一点」，AI 看完照片给出调色方案。参数能接着改，能对比，也能一键撤销。",
+             tag: "需要配置支持看图的 AI 服务"),
+        Path(id: "preset", icon: "circle.lefthalf.filled", tint: Color(red: 0.96, green: 0.77, blue: 0.45),
+             title: "预设调色",
+             text: "常规与风格化两组共 34 款，一键套上，再拉强度、光线和颜色。这些在本机算，不用 AI 账号。",
+             tag: "常规 · 风格化"),
+        Path(id: "ai", icon: "sparkles", tint: Color(red: 0.75, green: 0.62, blue: 1.0),
+             title: "AI 改图",
+             text: "换背景、加东西、只改一块选区，按你的要求重新画一版。结果存成新版本，原图不动。",
+             tag: "需要配置出图服务"),
+    ]
+
     var body: some View {
-        VStack(spacing: 26) {
-            Spacer()
-            Image(systemName: "photo.stack").font(.system(size: 48, weight: .ultraLight)).foregroundStyle(Color(white: 0.6))
-            VStack(spacing: 10) {
-                Text("照片调色").font(.system(size: 28, weight: .medium))
-                Text("导入照片后，用对话或手动工具开始调整。")
-                    .font(.callout).foregroundStyle(.secondary)
-                if !store.albums.isEmpty {
-                    Text("左侧可以打开之前导入的图集。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+        VStack(spacing: 0) {
+            Spacer(minLength: 20)
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable().interpolation(.high).frame(width: 78, height: 78)
+                .shadow(color: .black.opacity(0.35), radius: 16, y: 5)
+            VStack(spacing: 8) {
+                Text(AppIdentity.name).font(.system(size: 36, weight: .semibold)).padding(.top, 20)
+                Text("对话式修图").font(.system(size: 17)).foregroundStyle(Color.white.opacity(0.6))
             }
-            Button("导入照片或文件夹…") { store.chooseImport() }
-                .buttonStyle(.borderedProminent).controlSize(.large).disabled(store.importing)
-            HStack(alignment: .top, spacing: 40) {
-                feature("slider.horizontal.3", "手动调整", "随心调整光影")
-                feature("square.stack", "风格与参考", "统一整组色彩")
-                feature("text.bubble", "对话调整", "描述需要的变化")
-            }.padding(.top, 16)
-            Spacer()
+            Button("导入照片或文件夹") { store.chooseImport() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .font(.system(size: 15, weight: .medium))
+                .padding(.horizontal, 10).padding(.vertical, 3)
+                .disabled(store.importing)
+                .padding(.top, 30)
+            HStack(alignment: .top, spacing: 18) {
+                ForEach(paths) { card($0) }
+            }.padding(.top, 46)
+            Spacer(minLength: 20)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(alignment: .top) {
+                RadialGradient(colors: [Color(red: 0.42, green: 0.38, blue: 0.72).opacity(0.22), .clear],
+                               center: .init(x: 0.5, y: -0.15), startRadius: 20, endRadius: 520)
+            }
             .contentShape(Rectangle())
             .dropDestination(for: URL.self) { urls, _ in store.importURLs(urls); return true }
     }
-    private func feature(_ icon: String, _ title: String, _ subtitle: String) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon).font(.title3).foregroundStyle(.secondary)
-            Text(title).font(.callout.weight(.medium))
-            Text(subtitle).font(.caption).foregroundStyle(.secondary)
+
+    private func card(_ path: Path) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: path.icon).font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(path.tint).frame(width: 30, height: 30)
+                    .background(path.tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+                Text(path.title).font(.system(size: 15, weight: .semibold))
+                Spacer(minLength: 0)
+            }
+            Text(path.text).font(.system(size: 13)).foregroundStyle(Color.white.opacity(0.7))
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Text(path.tag).font(.system(size: 11.5)).foregroundStyle(Color.white.opacity(0.42)).lineLimit(1)
         }
+        .padding(17)
+        .frame(width: 262, height: 176, alignment: .topLeading)
+        .background(Color(white: 0.215), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.07), lineWidth: 1))
     }
 }
 

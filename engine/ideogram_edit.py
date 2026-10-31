@@ -11,13 +11,14 @@ from api_providers import _open, _send, clean_key
 ENDPOINT = 'https://api.ideogram.ai/v2/image/precise-edit/ideogram-4-5'
 
 
-def ideogram_edit(key, model, image, prompt, *, references=(), opener=_open):
+def ideogram_edit(key, model, image, prompt, *, references=(), mask=None, opener=_open):
     key = clean_key(key) if isinstance(key, str) else ''
     if not key: raise ValueError('请先配置 Ideogram API 密钥')
     if model != 'ideogram-4-5': raise ValueError('Ideogram 暂只支持 ideogram-4-5')
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('请描述需要的图片编辑')
     references = list(references)
-    if len(references) > 4: raise ValueError('Ideogram 4.5 最多支持 4 张参考图')
+    limit = 3 if mask is not None else 4
+    if len(references) > limit: raise ValueError(f'Ideogram 4.5 当前最多支持 {limit} 张参考图')
     boundary = 'suitone-' + uuid4().hex
     pieces = []
     def field(name, data, filename=None, mime=None):
@@ -35,6 +36,18 @@ def ideogram_edit(key, model, image, prompt, *, references=(), opener=_open):
             if not mime: raise ValueError()
         except Exception: raise ValueError(label + '仅支持有效的 JPEG、PNG 或 WebP') from None
         field('image' if index == 0 else 'reference_images', data, f'image{index}', mime)
+    if mask is not None:
+        if not isinstance(mask, bytes) or not 0 < len(mask) <= 50 * 1024 * 1024:
+            raise ValueError('选区蒙版大小无效')
+        try:
+            with Image.open(BytesIO(image)) as source, Image.open(BytesIO(mask)) as stencil:
+                stencil.load()
+                if stencil.format != 'PNG' or stencil.size != source.size: raise ValueError()
+                lo, hi = stencil.convert('L').getextrema()
+                if lo != 0 or hi != 255: raise ValueError()
+        except (ValueError, OSError):
+            raise ValueError('选区无效，请重新选择部分画面') from None
+        field('mask', mask, 'selection.png', 'image/png')
     pieces.append(f'--{boundary}--\r\n'.encode())
     request = Request(ENDPOINT, data=b''.join(pieces), method='POST',
                       headers={'Api-Key': key, 'Content-Type': 'multipart/form-data; boundary=' + boundary})

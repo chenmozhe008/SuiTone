@@ -7,12 +7,22 @@ import SwiftUI
 struct SelectionToolsCard: View {
     @Bindable var store: WorkspaceStore
 
-    private let tools: [(id: String, title: String, icon: String, hint: String)] = [
+    private var tools: [(id: String, title: String, icon: String, hint: String)] {
+        if store.selectionForAI && store.supportsJimengSelection {
+            return [
+                ("box", "框选定位", "rectangle.dashed", "框出位置，将方框坐标发给即梦。"),
+                ("object", "点选主体", "hand.point.up.left.fill", "点选后先在本地识别轮廓，再将点的位置发给即梦。"),
+                ("brush", "画笔标记", "paintbrush.pointed.fill", "涂画位置，将轮廓标在发给即梦的照片副本上。"),
+                ("lasso", "圈选标记", "lasso", "圈出位置，将轮廓标在发给即梦的照片副本上。")
+            ]
+        }
+        return [
         ("brush", "画笔", "paintbrush.pointed.fill", "在要处理的地方涂抹，可以分几笔涂。"),
         ("lasso", "套索", "lasso", "沿外沿圈一圈，松手自动闭合。"),
-        ("object", "点选", "hand.point.up.left.fill", "点一下要去掉的东西，自动找出它的轮廓。"),
+        ("object", "点选", "hand.point.up.left.fill", "点一下要选中的人或物，自动找出轮廓。"),
         ("box", "方框", "rectangle.dashed", "拖出一个方框，只处理框里的内容。")
-    ]
+        ]
+    }
 
     private var hint: String {
         tools.first { $0.id == store.repairTool }?.hint ?? ""
@@ -21,7 +31,7 @@ struct SelectionToolsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Text("选法").font(.callout.weight(.semibold))
+                Text(store.selectionForAI && store.supportsJimengSelection ? "即梦选区定位" : "选法").font(.callout.weight(.semibold))
                 Spacer()
                 if !store.selectionParts.isEmpty {
                     Text("已画 \(store.selectionParts.count) 笔")
@@ -35,6 +45,10 @@ struct SelectionToolsCard: View {
             }
             Text(hint).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if store.selectionForAI && store.supportsJimengSelection && !store.selectionParts.isEmpty {
+                Text(store.aiSelectionGuidance == "marked" ? "即梦将看到青色选区轮廓；模型可能残留标记。" : "即梦将收到点或方框坐标；多笔选区按外接框定位。")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
 
             // 添加／减去是同一个开关的两个方向，做成一个分段控件：
             // 两块独立按钮并排会看着像两个不同的高亮块，分段就很清楚是「二选一」。
@@ -161,6 +175,10 @@ struct SelectionPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 SelectionToolsCard(store: store)
+                if store.selectionForAI && !store.supportsJimengSelection {
+                    Text("当前模型使用软件选区；即梦的坐标与画线定位仅在支持的即梦型号中显示。")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
                 if !store.selectionParts.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(store.selectionParts.enumerated()), id: \.offset) { index, part in
@@ -178,7 +196,7 @@ struct SelectionPanel: View {
                         HStack(spacing: 8) {
                             action("局部调色", "slider.horizontal.3") { store.useSelectionForLocal() }
                             action("移除", "bandage") { store.inspectorTab = "repair" }
-                            action("AI 改图", "sparkles") { store.inspectorTab = "aiedit" }
+                            action("AI 局部改图", "sparkles", highlighted: true) { store.inspectorTab = "aiedit" }
                         }
                         if store.editingSelectionKey != nil {
                             Text("正在编辑已保存的选区，点「局部调色」会更新它。").font(.caption).foregroundStyle(.secondary)
@@ -204,11 +222,13 @@ struct SelectionPanel: View {
         }
     }
 
-    private func action(_ title: String, _ icon: String, _ run: @escaping () -> Void) -> some View {
+    private func action(_ title: String, _ icon: String, highlighted: Bool = false, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
-            VStack(spacing: 4) { Image(systemName: icon); Text(title).font(.callout) }
+            VStack(spacing: 4) { Image(systemName: icon); Text(title).font(.callout).lineLimit(1).minimumScaleFactor(0.8) }
                 .frame(maxWidth: .infinity).padding(.vertical, 10)
-                .background(Color(white: 0.22), in: RoundedRectangle(cornerRadius: 9))
+                .foregroundStyle(highlighted ? Color.white : Color.primary)
+                .background(highlighted ? Color(red: 0.40, green: 0.27, blue: 0.66) : Color(white: 0.22), in: RoundedRectangle(cornerRadius: 9))
+                .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 }

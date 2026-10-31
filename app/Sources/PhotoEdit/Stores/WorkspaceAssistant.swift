@@ -484,12 +484,15 @@ extension WorkspaceStore {
             defer { generationTask = nil }
             do {
                 struct Started: Decodable { var id: String }
-                struct Job: Decodable { var state: String; var paths: [String]?; var error: String? }
+                struct Job: Decodable { var state: String; var paths: [String]?; var error: String?; var rawPaths: [String]? = nil; var beforePath: String? = nil }
                 var body: [String: Any] = ["id": photo.assetID, "params": try EngineClient.object(photo.parameters),
                     "quality": try EngineClient.object(photo.quality), "service": service.id, "model": model,
                     "prompt": card.prompt, "image_consent": true]
                 if !key.isEmpty { body["api_key"] = key }
-                if let selection = card.selection { body["selection"] = try EngineClient.object(selection) }
+                if let selection = card.selection {
+                    body["selection"] = try EngineClient.object(selection)
+                    body["selection_guidance"] = card.selectionGuidance
+                }
                 if !card.references.isEmpty { body["reference_paths"] = card.references }
                 if let ratio = card.aspectRatio { body["aspect_ratio"] = ratio }
                 let started: Started = try await engine.request("image-edit-start", body: body)
@@ -501,9 +504,11 @@ extension WorkspaceStore {
                 }
                 if job.state == "cancelled" { updateGeneration(messageID) { $0.state = "cancelled" }; status = "已取消生成"; return }
                 guard job.state == "done", let path = job.paths?.first else { throw EngineError(message: job.error ?? "生成未完成，原照片未改变") }
-                guard let current = photos.first(where: { $0.id == photo.id }) else { return }
-                let before = current.snapshot
-                let prepared = try await prepareOperation(.generated(path: path, resetGeometry: card.aspectRatio != nil), on: current)
+                guard let current = photos.first(where: { $0.id == photo.id }), current.snapshot == photo.snapshot else {
+                    throw EngineError(message: "生成期间照片被修改过，已保留你的修改，这次生成结果没有采用")
+                }
+                let before = photo.snapshot
+                let prepared = try await prepareOperation(.generated(path: path), on: current)
                 guard commitPrepared(prepared, expected: before) else {
                     throw EngineError(message: "生成期间照片被修改过，已保留你的修改，这次生成结果没有采用")
                 }
@@ -511,7 +516,10 @@ extension WorkspaceStore {
                 if let i = chatMessages.firstIndex(where: { $0.id == messageID }) {
                     chatMessages[i].changeID = changeID; chatMessages[i].affectedPhotos = [photo.imported.name]
                 }
-                updateGeneration(messageID) { $0.state = "done"; $0.preview = prepared.previewPath }
+                updateGeneration(messageID) {
+                    $0.state = "done"; $0.preview = prepared.previewPath
+                    $0.beforePreview = job.beforePath; $0.modelPreview = job.rawPaths?.first
+                }
                 // 生成已采用为照片新版本，画布上的选区标注使命完成，自动清掉；
                 // 卡片里保存了本次用的选区和参考图，重试时仍会用同样的内容。
                 clearRepairSelection()
@@ -562,14 +570,14 @@ extension WorkspaceStore {
 
 extension WorkspaceStore {
     /// AI 改图面板点「生成」：在对话里记一条（可在对话里看到和撤销），用同一套确认卡流程立即生成。
-    func startAIEdit(prompt: String, onlySelection: Bool, references: [String] = [], aspectRatio: String? = nil) {
+    func startAIEdit(prompt: String, onlySelection: Bool, references: [String] = [], aspectRatio: String? = nil, selectionGuidance: String = "coordinates") {
         guard let photo = current, !controlsBlocked, generationTask == nil else { return }
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let selection = onlySelection && !selectionParts.isEmpty ? removalOperation(selectionBox ?? [0, 0, 1, 1]) : nil
         chatMessages.append(ChatMessage(role: "user", text: "AI 改图：" + text))
-        let message = ChatMessage(role: "assistant", text: selection == nil ? "按你的要求生成整张新图。" : "只改选区里的部分，其余保持原样。",
-                                  generation: GenerationCard(photoID: photo.id, prompt: text, selection: selection, references: references, aspectRatio: selection == nil ? aspectRatio : nil))
+        let message = ChatMessage(role: "assistant", text: selection == nil ? "按你的要求生成整张新图。" : "参考选区和编辑要求生成新图。",
+                                  generation: GenerationCard(photoID: photo.id, prompt: text, selection: selection, selectionGuidance: selectionGuidance, references: references, aspectRatio: selection == nil ? aspectRatio : nil))
         chatMessages.append(message)
         aiEditMessageID = message.id
         startGeneration(message.id)

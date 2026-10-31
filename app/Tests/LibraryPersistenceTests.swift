@@ -101,8 +101,48 @@ import Testing
 
         store.revertToStep(firstStep)
         #expect(try #require(store.photos.first).parameters.exposure == 0.3)
-        // 回到这一步之后，后面那步不再留着
-        #expect(store.albumSteps.count == 1)
+        // 跳转不截断历史：后面的步骤都保留，随时能跳回去
+        #expect(store.albumSteps.count == 2)
+        // 跳转本身是一步可撤销操作，⌘Z 能退回跳转前（第二步 0.9）
+        #expect(store.undoChanges.count == 3)
+        store.undo()
+        #expect(try #require(store.photos.first).parameters.exposure == 0.9)
+        #expect(store.albumSteps.count == 2)
+        store.previewTask?.cancel()
+    }
+
+    @Test @MainActor func testHistoryTimelineJumpUndoRedoAndFork() async throws {
+        let (folder, paths) = try fixture(["timeline"])
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let store = makeStore(folder)
+        store.importURLs(paths)
+        await store.importTask?.value
+        store.change("第一步") { $0.exposure = 0.2 }
+        store.change("第二步") { $0.exposure = 0.5 }
+        store.change("第三步") { $0.exposure = 0.8 }
+        #expect(store.albumSteps.count == 3)
+
+        // 跳到第一步，后面的步骤保留
+        let first = try #require(store.albumSteps.first)
+        store.revertToStep(first)
+        #expect(try #require(store.photos.first).parameters.exposure == 0.2)
+        #expect(store.albumSteps.count == 3)
+
+        // 撤销跳转 → 回到第三步
+        store.undo()
+        #expect(try #require(store.photos.first).parameters.exposure == 0.8)
+        #expect(store.albumSteps.count == 3)
+
+        // 重做跳转 → 再回到第一步，且不新增重复历史
+        store.redo()
+        #expect(try #require(store.photos.first).parameters.exposure == 0.2)
+        #expect(store.albumSteps.count == 3)
+
+        // 停在第一步又改：分叉，砍掉后面那两步，历史保持一条线
+        store.change("改头换面") { $0.exposure = 0.6 }
+        #expect(try #require(store.photos.first).parameters.exposure == 0.6)
+        #expect(store.albumSteps.count == 2)
         store.previewTask?.cancel()
     }
 }

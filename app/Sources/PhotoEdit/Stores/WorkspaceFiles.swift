@@ -88,7 +88,7 @@ extension WorkspaceStore {
     }
 
     func saveProject() {
-        let panel = NSSavePanel(); panel.nameFieldStringValue = "照片调整-\(Int(Date().timeIntervalSince1970)).photoedit"
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "照片调整-\(Int(Date().timeIntervalSince1970)).suitone"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let project = ProjectRecipe(photos: photos.map { ProjectPhoto(path: $0.imported.path, params: $0.parameters, operations: $0.operations, quality: $0.quality) }, options: exportOptions)
@@ -126,7 +126,7 @@ extension WorkspaceStore {
                     record.lookName = "已保存的调整"; record.ready = true; records.append(record)
                 }
                 photos = records; exportOptions = project.options; undoChanges = []; redoChanges = []
-                currentAlbumID = nil; albumSteps = []
+                currentAlbumID = nil; albumSteps = []; activeStepID = nil
                 adoptImportedPhotos(intoNewAlbum: true, title: url.deletingPathExtension().lastPathComponent,
                                     source: url.deletingLastPathComponent().path)
                 selectedIDs = Set(records.prefix(1).map(\.id)); activate(records.first?.id); grid = records.count > 1; refreshGrid()

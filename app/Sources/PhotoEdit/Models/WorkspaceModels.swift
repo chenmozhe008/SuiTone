@@ -14,6 +14,11 @@ struct WorkspaceChange {
     var after:[String:EditSnapshot]
     /// 对应图集里那一条历史记录（撤销时一起抹掉）
     var stepID:String? = nil
+    /// 「回到历史某一步」的跳转操作：存目标步骤 id。跳转不新增历史条目，
+    /// 重做跳转时也只在历史里高亮目标步骤，不追加重复记录。
+    var jumpStepID:String? = nil
+    /// 跳转前所在的历史步骤（撤销跳转时回到这里）；普通改动不用。
+    var fromStepID:String? = nil
 }
 
 struct RepairDraft {
@@ -109,9 +114,13 @@ struct GenerationCard {
     var state = "proposed"
     var error: String? = nil
     var preview: String? = nil
+    /// 对照图片只在当前会话保留，不改变已采用的版本。
+    var beforePreview: String? = nil
+    var modelPreview: String? = nil
     var jobID: String? = nil
     /// 只改选区时的选区（原尺寸上只替换这一块）；nil 为整张
     var selection: RemovalOperation? = nil
+    var selectionGuidance = "coordinates"
     /// 附加参考图的本地路径（姿势、风格、物品等；张数按所选模型的官方上限）
     var references: [String] = []
     var aspectRatio: String? = nil

@@ -4,12 +4,13 @@ import Foundation
 enum PhotoOperation {
     case parameters(AdjustmentParameters, name: String, notes: [String])
     case style(String)
+    case personalStyle(AdjustmentParameters, name: String)
     case suggestion(String)
     case quality(denoise: Bool?, scale: Int?)
     case match(references: [String], scopes: [String: String], only: String)
     case repair(RemovalOperation)
     /// 把 AI 生成的图片作为照片的新版本（之后照样能调色、撤销、导出）
-    case generated(path: String, resetGeometry: Bool = false)
+    case generated(path: String)
 }
 
 extension WorkspaceStore {
@@ -17,6 +18,15 @@ extension WorkspaceStore {
         var prepared = photo
         prepared.parameters = params; prepared.lookName = name; prepared.notes = notes; prepared.previewPath = nil
         return prepared
+    }
+
+    /// 风格只替换调色参数，已完成的取景和手动局部调整继续作用于当前照片。
+    func styleParameters(_ style: AdjustmentParameters, preserving existing: AdjustmentParameters) -> AdjustmentParameters {
+        var result = style
+        result.rotation = existing.rotation; result.angle = existing.angle
+        result.rotationExpanded = existing.rotationExpanded; result.flip = existing.flip; result.crop = existing.crop
+        result.manualMasks = existing.manualMasks; result.local = existing.local
+        return result
     }
 
     func prepareOperation(_ operation: PhotoOperation, on photo: PhotoRecord) async throws -> PhotoRecord {
@@ -27,8 +37,17 @@ extension WorkspaceStore {
         case let .style(style):
             let result: SmartResponse = try await engine.request("smart", body: ["id": photo.assetID,
                 "style": style, "quality": try EngineClient.object(photo.quality)])
-            prepared.parameters = result.params; prepared.lookName = result.title
-            prepared.notes = result.notes; prepared.previewPath = result.preview; prepared.ready = true
+            prepared.parameters = styleParameters(result.params, preserving: photo.parameters)
+            prepared.lookName = result.title; prepared.notes = result.notes; prepared.ready = true
+            let rendered: PreviewResponse = try await engine.request("preview", body: ["id": photo.assetID,
+                "params": try EngineClient.object(prepared.parameters), "quality": try EngineClient.object(photo.quality)])
+            prepared.previewPath = rendered.preview
+        case let .personalStyle(params, name):
+            prepared.parameters = styleParameters(params, preserving: photo.parameters)
+            prepared.lookName = name; prepared.notes = ["套用" + name]
+            let rendered: PreviewResponse = try await engine.request("preview", body: ["id": photo.assetID,
+                "params": try EngineClient.object(prepared.parameters), "quality": try EngineClient.object(photo.quality)])
+            prepared.previewPath = rendered.preview
         case let .suggestion(cardID):
             let result: SmartResponse = try await engine.request("suggestion-apply", body: ["id": photo.assetID,
                 "card_id": cardID, "params": try EngineClient.object(photo.parameters),
@@ -65,19 +84,17 @@ extension WorkspaceStore {
             let rendered: PreviewResponse = try await engine.request("preview", body: ["id": result.id,
                 "params": try EngineClient.object(photo.parameters), "quality": try EngineClient.object(photo.quality)])
             prepared.assetID = result.id; prepared.operations.append(removal); prepared.previewPath = rendered.preview
-        case let .generated(path, resetGeometry):
+        case let .generated(path):
             struct Adopted: Decodable { var id: String; var stored: String }
             let result: Adopted = try await engine.request("adopt-generated", body: ["id": photo.assetID, "path": path])
-            if resetGeometry {
-                prepared.parameters.rotation = 0; prepared.parameters.angle = 0; prepared.parameters.rotationExpanded = false
-                prepared.parameters.flip = ""; prepared.parameters.crop = nil
-            }
+            prepared.parameters = AdjustmentParameters()
+            prepared.quality = QualitySettings()
             let rendered: PreviewResponse = try await engine.request("preview", body: ["id": result.id,
-                "params": try EngineClient.object(prepared.parameters), "quality": try EngineClient.object(photo.quality)])
+                "params": try EngineClient.object(prepared.parameters), "quality": try EngineClient.object(prepared.quality)])
             prepared.assetID = result.id
             prepared.operations.append(RemovalOperation(box: [0, 0, 1, 1], generated: result.stored))
             prepared.previewPath = rendered.preview
-            prepared.notes = ["已换成 AI 生成版本，调色参数继续作用于新图"]
+            prepared.notes = ["已采用 AI 生成版本，之前的调整已保留在生成前的历史记录中"]
         }
         try Task.checkCancellation()
         return prepared

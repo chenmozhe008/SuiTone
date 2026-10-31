@@ -120,6 +120,24 @@ final class WorkspaceStore {
     var selectionBox: [Double]?
     /// 修复选法：brush 画笔 / lasso 套索 / object 点选物体 / box 方框
     var repairTool = "brush"
+    /// 从 AI 改图进入选区时，使用当前模型对应的选法。
+    var selectionForAI = false
+    var aiSelectionGuidance: String {
+        selectionParts.contains { $0.strokes != nil || $0.polygon != nil || $0.subtract } ? "marked" : "coordinates"
+    }
+    var supportsJimengSelection: Bool {
+        let model = imageModelName.lowercased()
+        return imageService == "jimeng" && (model.hasPrefix("doubao-seedream-5-0-pro") || model.hasPrefix("doubao-seedream-5-0-flash"))
+    }
+
+    func openAISelection() {
+        selectionForAI = true
+        if selectionParts.isEmpty && supportsJimengSelection {
+            repairTool = "box"
+            selectionSubtract = false
+        }
+        inspectorTab = "selection"
+    }
     var repairStrokes: [[[Double]]] = []
     var repairPolygon: [[Double]] = []
     var repairPoint: [Double]?
@@ -151,11 +169,16 @@ final class WorkspaceStore {
     var lastExport: String?
     var undoChanges: [WorkspaceChange] = []
     var redoChanges: [WorkspaceChange] = []
+    /// 历史面板里高亮「当前停在哪一步」；nil 表示还在原始导入状态（没做过任何改动）。
+    var activeStepID: String? = nil
     /// 图集（导入批次）记录：关掉应用再打开还在，跟 Lightroom 的目录一样。
     var albums: [LibraryAlbum] = []
     var currentAlbumID: String?
     var albumSteps: [LibraryStep] = []
-    var showLibrary = true
+    /// 图集栏默认收起：首页是门面，全宽更干净；打开过一次就记住用户的选择。
+    var showLibrary = UserDefaults.standard.object(forKey: "showLibrary") as? Bool ?? false {
+        didSet { UserDefaults.standard.set(showLibrary, forKey: "showLibrary") }
+    }
     var libraryTask: Task<Void, Never>?
     /// 只在单元测试里设置：把图集写到指定目录，几个测试并行时不互相踩。
     var libraryDirectory: URL?
@@ -291,6 +314,7 @@ final class WorkspaceStore {
             // 用命令行指定了要导入的图时（验收截图）不自动打开，免得把刚导入的顶掉。
             loadLibrary()
             if UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)["importOnLaunch"] == nil,
+               UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)["debugWelcome"] == nil,
                let recent = albums.first { openAlbum(recent) }
         } catch { self.error = error.localizedDescription; status = "引擎未就绪" }
     }
@@ -299,6 +323,27 @@ final class WorkspaceStore {
     /// 参数只来自本次启动命令行（NSArgumentDomain），不写入偏好设置。
     func applyLaunchOptions() {
         let options = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        // 验收截图用：不展开图集栏。`-hideLibrary 1`
+        if options["hideLibrary"] != nil { showLibrary = false }
+        // 验收截图用：停在首页。`-debugWelcome 1 -windowSize 1180x780`
+        if options["debugWelcome"] != nil {
+            // 窗口尺寸要设两次：SwiftUI 建窗时还会按自己的默认尺寸铺一次，晚一步再设才落得住。
+            func sizeWindow() {
+                guard let size = (options["windowSize"] as? String)?.split(separator: "x").compactMap({ Double($0) }), size.count == 2,
+                      let window = NSApp.windows.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+                else { return }
+                window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: size[0], height: size[1] + 28)), display: true)
+            }
+            sizeWindow()
+            // 铺窗和恢复窗口状态都在前两秒里，多按几次才稳。
+            Task {
+                for delay in [600, 1600, 3000] {
+                    try? await Task.sleep(for: .milliseconds(delay))
+                    sizeWindow()
+                }
+            }
+            return
+        }
         guard let paths = options["importOnLaunch"] as? String else { return }
         importURLs(paths.split(separator: "|").map { URL(fileURLWithPath: String($0)) })
         Task {
@@ -322,11 +367,23 @@ final class WorkspaceStore {
             if options["aiMention"] != nil { aiMentionDemo = true }
             if options["aiGenerate"] != nil { aiAutoPrompt = true }
             if let tab = options["openTab"] as? String { inspectorTab = tab }
+            // 验收截图用：套一款风格再截。`-applyStyle nightfilm`
+            if let styleID = options["applyStyle"] as? String, styles.contains { $0.id == styleID } {
+                try? await Task.sleep(for: .milliseconds(600))
+                if let preset = styles.first(where: { $0.id == styleID }) {
+                    styleFamily = preset.creative ? "creative" : "natural"
+                }
+                applyStyle(styleID)
+            }
+            // 验收截图用：右栏风格区先停在哪个分组。`-styleFamily creative`
+            if let family = options["styleFamily"] as? String, ["natural", "creative", "mine"].contains(family) {
+                styleFamily = family
+            }
             // 验收用：假装这家服务已经存过密钥，检查「删除密钥」按钮和主界面的模型显示。`-debugImageKey jimeng`
             if let id = options["debugImageKey"] as? String {
                 UserDefaults.standard.set(true, forKey: "imageKeySaved." + id)
                 imageService = id
-                imageModels[id] = "doubao-seedream-5-0-pro-260628"
+                if let service = imageServices.first(where: { $0.id == id }) { imageModels[id] = service.defaultModel }
                 imageKeyRevision &+= 1
             }
             if let settings = options["openSettings"] as? String { settingsTab = settings }
@@ -473,7 +530,7 @@ final class WorkspaceStore {
                     let cropMode = cropPreviewing
                     if cropMode { previewParams.crop = nil; previewParams.rotationExpanded = cropExpanded }
                     let response: PreviewResponse = try await engine.request("preview", body: ["id": photo.assetID, "params": try EngineClient.object(previewParams), "quality": try EngineClient.object(photo.quality)])
-                    if currentID == photo.id, current?.assetID == photo.assetID, cropPreviewing == cropMode,
+                    if version == previewVersion, currentID == photo.id, current?.assetID == photo.assetID, cropPreviewing == cropMode,
                        let i = currentIndex, photos[i].quality == photo.quality {
                         photos[i].previewPath = response.preview
                         if photos[i].parameters.autoDehaze == true { photos[i].parameters.dehazeAmt = response.dehazeAmt }
@@ -499,12 +556,20 @@ final class WorkspaceStore {
             if previous != now { old[id] = previous; new[id] = now }
         }
         guard !old.isEmpty else { return nil }
+        // 停在历史中途又改：从这里分叉，砍掉之后那条旧分支，历史保持一条线（Lightroom 同款）。
+        if let active = activeStepID, let idx = albumSteps.firstIndex(where: { $0.id == active }) {
+            if idx < albumSteps.count - 1 { albumSteps.removeSubrange((idx + 1)...) }
+        } else if !albumSteps.isEmpty {
+            // 停在原始状态（还没任何历史落点）再改：旧历史都作废，从头记。
+            albumSteps = []
+        }
         var change = WorkspaceChange(label: label, before: old, after: new)
         // 撤销栈只在本次运行有效；改动同时记进图集，重启后左侧「历史」里还能看到、能点回去。
         change.stepID = noteStep(label, after: new)
         undoChanges.append(change)
         if undoChanges.count > 100 { undoChanges.removeFirst() }
         redoChanges = []
+        activeStepID = change.stepID
         return change.id
     }
 
@@ -545,10 +610,11 @@ final class WorkspaceStore {
             guard let snapshot = states[photos[i].id] else { continue }
             photos[i].assetID = snapshot.assetID; photos[i].parameters = snapshot.parameters
             photos[i].operations = snapshot.operations; photos[i].lookName = snapshot.lookName
-            photos[i].notes = snapshot.notes; photos[i].previewPath = nil
+            // 先保留当前画面，等目标状态的预览完成后一次切换，避免闪回导入原图。
+            photos[i].notes = snapshot.notes
             photos[i].quality = snapshot.quality
         }
-        overlay = ""; showOriginal = false; analysis = nil
+        overlay = ""; showOriginal = false; versionPreview = nil; analysis = nil
         schedulePreview()
         if grid { refreshGrid() }
     }
@@ -559,7 +625,7 @@ final class WorkspaceStore {
         for i in chatMessages.indices where chatMessages[i].changeID == last.id { chatMessages[i].wasUndone = true }
         redoChanges.append(last); applyStates(last.before)
         if let stepID = last.stepID { albumSteps.removeAll { $0.id == stepID } }
-        syncAlbum()
+        activeStepID = stepID(afterUndoing: last)
         syncAlbum()
         status = "已撤销：\(last.label) · \(last.before.count) 张"
     }
@@ -568,9 +634,24 @@ final class WorkspaceStore {
         guard var next = redoChanges.popLast() else { return }
         for i in chatMessages.indices where chatMessages[i].changeID == next.id { chatMessages[i].wasUndone = false }
         applyStates(next.after)
-        next.stepID = noteStep(next.label, after: next.after)
+        if let jumpID = next.jumpStepID {
+            // 重做「回到历史某一步」的跳转：不新增历史条目，只在历史里高亮目标那一步。
+            activeStepID = jumpID
+        } else {
+            next.stepID = noteStep(next.label, after: next.after)
+            activeStepID = next.stepID
+        }
         undoChanges.append(next)
         status = "已重做：\(next.label) · \(next.after.count) 张"
+    }
+
+    /// 撤销某一步之后，当前画面停在历史里的哪一步（用于高亮）。
+    private func stepID(afterUndoing last: WorkspaceChange) -> String? {
+        // 撤销「跳转」：回到跳转前所在那一步
+        if last.jumpStepID != nil { return last.fromStepID }
+        // 撤销普通改动：回到栈顶那一步的落点（普通改动的 stepID，或跳转的目标步骤）
+        if let prev = undoChanges.last { return prev.jumpStepID ?? prev.stepID }
+        return nil
     }
 
     func snapshot() {

@@ -20,9 +20,10 @@ struct GenerationCardView: View {
                     row("发送到", service?.title ?? "尚未设置出图服务")
                     if let service { row("模型", store.imageModels[service.id] ?? service.defaultModel) }
                     row("比例", card.aspectRatio ?? "自动（参考原图）")
-                    row("发送内容", card.aspectRatio == nil ? "不带调色的原片，长边最多 2048 像素" : "不带调色的照片（含已应用的裁切和旋转），长边最多 2048 像素")
+                    row("发送内容", "当前照片效果（含调色、裁切及画质调整），长边最多 2048 像素")
+                    if card.selection != nil, service?.id == "ideogram" { row("选区", "发送蒙版，供模型限定编辑范围") }
                     row("费用", service.map { $0.paid ? "按\($0.title)的标准计费" : "不收费" } ?? "—")
-                    row("结果", card.selection == nil ? "一张新图片，你的调色照常套在上面；原图保留，可撤销" : "只替换选区里的部分，原尺寸保留；可撤销")
+                    row("结果", "生成新版本，当前调整固化到画面；可撤销恢复原有参数")
                 }
                 HStack {
                     if store.imageServiceReady {
@@ -43,6 +44,15 @@ struct GenerationCardView: View {
                     LocalPhoto(path: preview).frame(maxHeight: 160).clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 Text("已换成生成版本，可以继续调色；点下面的撤销换回原来的照片。").font(.callout).foregroundStyle(.secondary)
+                if let before = card.beforePreview, let raw = card.modelPreview,
+                   store.currentID == card.photoID {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack { Button("生成前") { showComparison(before) }; Button("模型原图") { showComparison(raw) } }
+                        HStack { Button("融合结果") { showComparison(card.preview) }; Button("返回当前") { showComparison(nil) } }
+                    }.controlSize(.small)
+                    Text("临时查看对照，不会替换照片；关闭软件后不保留模型原图。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             case "failed":
                 Text(card.error ?? "生成未完成").font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 14) {
@@ -61,6 +71,13 @@ struct GenerationCardView: View {
             }
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(white: 0.21), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func showComparison(_ path: String?) {
+        store.inspectorTab = "aiedit"
+        store.showOriginal = false
+        store.splitCompare = false
+        store.versionPreview = path
     }
 
     /// 错误文本里附带的控制台地址（例如火山方舟开通管理页），取出来做成可点的入口。

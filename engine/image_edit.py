@@ -1,4 +1,4 @@
-"""生成式图片编辑适配器；当前仅供集成与模拟测试，尚未接入应用界面。"""
+"""生成式图片编辑适配器。"""
 import base64
 import binascii
 from io import BytesIO
@@ -138,7 +138,7 @@ def mock_edit(image_bytes, prompt):
     return [dict(mime='image/png', data=out.getvalue())]
 
 
-def call_service(service, key, model, image_bytes, prompt, *, references=(), aspect_ratio=None, opener=_open):
+def call_service(service, key, model, image_bytes, prompt, *, references=(), aspect_ratio=None, mask=None, opener=_open):
     if service not in IMAGE_SERVICES: raise ValueError('未知的出图服务')
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
     if aspect_ratio and (aspect_ratio not in IMAGE_RATIOS or service == 'ideogram'):
@@ -155,24 +155,190 @@ def call_service(service, key, model, image_bytes, prompt, *, references=(), asp
         return results
     if service == 'ideogram':
         from ideogram_edit import ideogram_edit
-        return ideogram_edit(key, model or IMAGE_SERVICES['ideogram']['default_model'], image_bytes, prompt, references=references, opener=opener)
+        return ideogram_edit(key, model or IMAGE_SERVICES['ideogram']['default_model'], image_bytes, prompt, references=references, mask=mask, opener=opener)
     if service == 'gemini': return gemini_edit(key, model or IMAGE_SERVICES['gemini']['default_model'], image_bytes, prompt, references=references, aspect_ratio=aspect_ratio, opener=opener)
     from jimeng_edit import jimeng_edit
     return jimeng_edit(key, model or IMAGE_SERVICES['jimeng']['default_model'], image_bytes, prompt, references=references, aspect_ratio=aspect_ratio, opener=opener)
 
 
-def composite_selection(original, generated, selection):
-    """只改选区：在原图原尺寸上，把选区里的部分换成生成内容，边缘羽化过渡；选区外的像素保持原样。"""
+def selection_mask(image, selection):
+    """把多笔选择合成与输入照片对齐的二值蒙版。"""
     import numpy as np
-    from PIL import ImageFilter
     from inpaint import shape_mask
-    generated = generated.resize(original.size, Image.Resampling.LANCZOS)
-    mask = shape_mask(original, selection.get('strokes'), selection.get('radius'), selection.get('polygon'),
+    mask = shape_mask(image, selection.get('strokes'), selection.get('radius'), selection.get('polygon'),
                       selection.get('point'), selection.get('parts'), box=None if any(selection.get(k) is not None for k in
                       ('strokes', 'polygon', 'point', 'parts')) else selection.get('box'), allow_large=True)
-    if mask.max() <= 0: raise ValueError('选区是空的，请重新画选区')
-    soft = Image.fromarray(np.uint8(np.clip(mask, 0, 1) * 255)).filter(ImageFilter.GaussianBlur(max(2, original.width / 400)))
-    return Image.composite(generated, original, soft)
+    hard = np.asarray(mask) > .5
+    if not hard.any(): raise ValueError('选区是空的，请重新画选区')
+    return hard
+
+
+def prompt_for_selection(prompt, hard):
+    """为没有原生蒙版参数的服务提供大致位置，让模型结合整张图完成编辑。"""
+    import numpy as np
+    ys = np.flatnonzero(np.any(hard, axis=1))
+    xs = np.flatnonzero(np.any(hard, axis=0))
+    h, w = hard.shape
+    x0, x1 = round(100 * xs[0] / w), round(100 * (xs[-1] + 1) / w)
+    y0, y1 = round(100 * ys[0] / h), round(100 * (ys[-1] + 1) / h)
+    hint = (f"\n用户选定的位置约在画面左起 {x0}%–{x1}%、上起 {y0}%–{y1}%。"
+            "请结合整张照片理解并完成编辑，生成的物体及其阴影、倒影可以自然延伸到选区外，"
+            "保持物体完整；其余画面尽量不变，并与原有光线、色彩、透视和纹理协调。")
+    return prompt + hint if len(prompt) + len(hint) <= 4000 else prompt
+
+
+def jimeng_supports_interactive(model):
+    model = (model or IMAGE_SERVICES['jimeng']['default_model']).lower()
+    return model.startswith(('doubao-seedream-5-0-pro', 'doubao-seedream-5-0-flash'))
+
+
+def jimeng_interactive_prompt(prompt, hard, selection, model, guidance='coordinates'):
+    """5.0 Pro / Flash 接受归一化坐标标签；其他型号沿用自然语言定位。"""
+    import numpy as np
+    if not jimeng_supports_interactive(model):
+        return prompt_for_selection(prompt, hard)
+    if guidance == 'marked':
+        hint = ('\n以图1中青色轮廓标记的区域作为编辑位置，结合整张照片完成要求；'
+                '删除所有青色标记，保持原有构图、光线、色彩和背景，其余内容尽量不变。')
+        if len(prompt) + len(hint) > 4000: raise ValueError('编辑要求过长，请缩短后再使用选区改图')
+        return prompt + hint
+    parts = selection.get('parts')
+    point = None
+    if parts is not None:
+        if len(parts) == 1 and not parts[0].get('subtract'):
+            point = parts[0].get('point')
+    else:
+        point = selection.get('point')
+    normalized = lambda value: max(0, min(999, round(value * 1000)))
+    if point is not None:
+        location = f'<point>{normalized(point[0])} {normalized(point[1])}</point>'
+    else:
+        ys = np.flatnonzero(np.any(hard, axis=1))
+        xs = np.flatnonzero(np.any(hard, axis=0))
+        h, w = hard.shape
+        x0, y0 = normalized(xs[0] / w), normalized(ys[0] / h)
+        x1, y1 = normalized((xs[-1] + 1) / w), normalized((ys[-1] + 1) / h)
+        location = f'<bbox>{x0} {y0} {x1} {y1}</bbox>'
+    hint = (f'\n以图1 {location} 为编辑位置，结合整张照片完成要求；'
+            '保持其余画面和原有光线、色彩、透视协调，物体和必要的阴影、倒影保持完整。')
+    if len(prompt) + len(hint) > 4000:
+        raise ValueError('编辑要求过长，请缩短后再使用选区改图')
+    return prompt + hint
+
+
+def marked_selection_image(image, hard):
+    """只在发给服务的副本上描出选区，原图及本地合成底图不带标记。"""
+    import cv2
+    import numpy as np
+    w, h = image.size
+    stencil = cv2.resize(hard.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+    contours, _ = cv2.findContours(stencil, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    marked = np.asarray(image.convert('RGB')).copy()
+    cv2.drawContours(marked, contours, -1, (0, 230, 255), max(2, round(min(w, h) / 350)))
+    return Image.fromarray(marked, 'RGB')
+
+
+def composite_selection(original, generated, selection, *, hard=None):
+    """将生成结果限制在选区内，按边界附近的色差做渐变衔接。"""
+    import cv2
+    import numpy as np
+    original = original.convert('RGB')
+    generated = generated.convert('RGB').resize(original.size, Image.Resampling.LANCZOS)
+    if hard is None: hard = selection_mask(original, selection)
+    if not hard.any(): raise ValueError('选区是空的，请重新画选区')
+
+    # 在缩略图上估计局部色差，避免大照片产生数倍内存；最终仅在选区内混合。
+    w, h = original.size
+    scale = min(1., 1536 / max(w, h))
+    sw, sh = max(1, round(w * scale)), max(1, round(h * scale))
+    original_small = np.asarray(original.resize((sw, sh), Image.Resampling.LANCZOS), np.float32)
+    generated_small = np.asarray(generated.resize((sw, sh), Image.Resampling.LANCZOS), np.float32)
+    mask_small = (cv2.resize(hard.astype(np.float32), (sw, sh), interpolation=cv2.INTER_AREA) > 0).astype(np.uint8)
+    # 图片边缘不是拼接边界；只对选区与原图交界的内侧做羽化。
+    padded = np.pad(mask_small, 1, constant_values=1)
+    distance = cv2.distanceTransform(padded, cv2.DIST_L2, 3)[1:-1, 1:-1]
+    feather = max(4., min(32., min(sw, sh) * .018))
+    t = np.clip(distance / feather, 0, 1)
+    alpha = (t * t * (3 - 2 * t)) * mask_small
+    edge_weight = ((distance > 0) & (distance <= 2 * feather)).astype(np.float32)
+    sigma = max(3., feather * 1.5)
+    weight = cv2.GaussianBlur(edge_weight, (0, 0), sigma)
+    correction = np.zeros_like(generated_small)
+    for channel in range(3):
+        delta = (original_small[:, :, channel] - generated_small[:, :, channel]) * edge_weight
+        smooth = cv2.GaussianBlur(delta, (0, 0), sigma)
+        correction[:, :, channel] = np.clip(smooth / np.maximum(weight, 1e-5), -24, 24)
+    fade = np.clip(1 - distance / (3 * feather), 0, 1) * mask_small
+    correction *= fade[:, :, None]
+    alpha_full = cv2.resize(alpha, (w, h), interpolation=cv2.INTER_LINEAR)
+    alpha_full *= hard
+    result = np.asarray(original).copy()
+    # 分块插值和混合，避免原图尺寸较大时产生多个全幅浮点 RGB 副本。
+    correction = cv2.resize(np.uint8(np.clip(correction + 128, 0, 255)), (w, h), interpolation=cv2.INTER_LINEAR)
+    source = np.asarray(generated)
+    for top in range(0, h, 512):
+        bottom = min(h, top + 512)
+        blend = alpha_full[top:bottom, :, None]
+        edited = np.clip(source[top:bottom].astype(np.float32) + correction[top:bottom].astype(np.float32) - 128, 0, 255)
+        result[top:bottom] = np.uint8(np.clip(result[top:bottom] * (1 - blend) + edited * blend + .5, 0, 255))
+    return Image.fromarray(result, 'RGB')
+
+
+def composite_guided_selection(original, generated, hard):
+    """选区及附近保留生成内容，远处保留当前画面；边缘渐变过渡。"""
+    import cv2
+    import numpy as np
+    original = original.convert('RGB')
+    generated = generated.convert('RGB').resize(original.size, Image.Resampling.LANCZOS)
+    h, w = hard.shape
+    ys, xs = np.nonzero(hard)
+    if not len(xs): raise ValueError('选区是空的，请重新画选区')
+    # 留出适度的构图和羽化余量；距离远的区域严格保留原像素。
+    radius = max(8., min(.18 * min(w, h), float(max(xs.max()-xs.min()+1, ys.max()-ys.min()+1))))
+    outside = cv2.distanceTransform((~hard).astype(np.uint8), cv2.DIST_L2, 5)
+    feather = max(3., radius * .25)
+    alpha = np.clip((radius - outside) / feather, 0, 1)
+    alpha = alpha * alpha * (3 - 2 * alpha)
+    result = np.asarray(original).copy()
+    source = np.asarray(generated)
+    # 找与选区相连、明显超出选区的变化，避免帆、杆等被固定羽化范围截断。
+    # 仅采用面积受限的高对比连通块；无法可靠识别语义，远处依旧以原图为准。
+    sw = min(800, w); sh = max(1, round(h * sw / w))
+    before = cv2.resize(result, (sw, sh), interpolation=cv2.INTER_AREA)
+    after = cv2.resize(source, (sw, sh), interpolation=cv2.INTER_AREA)
+    selected = cv2.resize(hard.astype(np.uint8), (sw, sh), interpolation=cv2.INTER_NEAREST)
+    changes = (np.max(np.abs(before.astype(np.int16) - after.astype(np.int16)), axis=2) > 60).astype(np.uint8)
+    changes = cv2.morphologyEx(changes, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(changes)
+    extensions = np.zeros_like(selected)
+    for label in np.unique(labels[(selected > 0) & (labels > 0)]):
+        area = int(stats[label, cv2.CC_STAT_AREA])
+        if area < 100 or area > .12 * sw * sh: continue
+        component = labels == label
+        outside_area = np.count_nonzero(component & (selected == 0))
+        if outside_area and outside_area <= .08 * sw * sh:
+            extensions[component] = 1
+    if extensions.any():
+        extension = cv2.resize(extensions, (w, h), interpolation=cv2.INTER_NEAREST)
+        distance = cv2.distanceTransform(1 - extension, cv2.DIST_L2, 5)
+        margin = max(3., min(32., min(w, h) * .012))
+        extra = np.clip((margin - distance) / max(2., margin * .6), 0, 1)
+        alpha = np.maximum(alpha, extra * extra * (3 - 2 * extra))
+    # 以选区外的周边作为参照，估计生成图整体色偏；中位数降低新物体和纹理的干扰。
+    # 只作小幅修正，避免把生成主体的固有颜色强行变成背景色。
+    ring = (outside >= radius * .45) & (outside <= radius * .95)
+    rows, cols = np.nonzero(ring)
+    correction = np.zeros(3, dtype=np.float32)
+    if len(rows) >= 64:
+        step = max(1, len(rows) // 50000)
+        delta = result[rows[::step], cols[::step]].astype(np.float32) - source[rows[::step], cols[::step]].astype(np.float32)
+        correction = np.clip(np.median(delta, axis=0), -18, 18)
+    for top in range(0, h, 512):
+        bottom = min(h, top + 512)
+        blend = alpha[top:bottom, :, None]
+        adjusted = np.clip(source[top:bottom].astype(np.float32) + correction, 0, 255)
+        result[top:bottom] = np.uint8(np.clip(result[top:bottom] * (1-blend) + adjusted * blend + .5, 0, 255))
+    return Image.fromarray(result, 'RGB')
 
 
 class ImageEditBridge:
@@ -190,16 +356,18 @@ class ImageEditBridge:
         if service not in IMAGE_SERVICES: raise ValueError('请先选择出图服务')
         if data.get('image_consent') is not True: raise ValueError('生成新图需要先确认发送照片')
         if service != 'mock' and not clean_key(data.get('api_key') or ''): raise ValueError('请先填写出图服务的密钥')
-        self.engine.asset(data['id']); parameters(data.get('params', {})); quality_settings(data.get('quality'))
+        self.engine.asset(data['id']); params = parameters(data.get('params', {})); quality_settings(data.get('quality'))
         prompt = data.get('prompt')
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000: raise ValueError('缺少生成要求')
         selection = data.get('selection')
+        guidance = data.get('selection_guidance', 'coordinates')
+        if guidance not in ('coordinates', 'marked'): raise ValueError('选区定位方式无效')
+        if guidance == 'marked' and (selection is None or service != 'jimeng' or not jimeng_supports_interactive(data.get('model'))):
+            raise ValueError('当前模型不支持画线标记定位')
         aspect_ratio = data.get('aspect_ratio') or None
         if aspect_ratio and (aspect_ratio not in IMAGE_RATIOS or service == 'ideogram'):
             raise ValueError('当前服务不支持这个生成比例')
-        if aspect_ratio and selection is not None: raise ValueError('只改选区时必须保持原图比例')
-        if aspect_ratio and (data.get('params') or {}).get('manual_masks'):
-            raise ValueError('照片有手动局部遮罩，改比例前请先清除遮罩')
+        if aspect_ratio and selection is not None: raise ValueError('参考选区时必须保持原图比例')
         if selection is not None:
             from service import shape_input, parts_input, repair_input
             if not isinstance(selection, dict) or set(selection) - {'box', 'strokes', 'radius', 'polygon', 'point', 'parts'}:
@@ -209,6 +377,7 @@ class ImageEditBridge:
             parts_input(selection.get('parts'))
         reference_paths = data.get('reference_paths') or []
         limit = reference_limit(service, data.get('model'))
+        if service == 'ideogram' and selection is not None: limit = min(limit, 3)
         if not isinstance(reference_paths, list) or \
            any(not isinstance(p, str) or not p or len(p) > 4096 for p in reference_paths):
             raise ValueError('参考图必须是本地文件路径')
@@ -248,32 +417,56 @@ class ImageEditBridge:
 
     def _run(self, key, data):
         from uuid import uuid4
-        from service import replay_operations
         event = self.events[key]
         try:
-            # 发不带调色的原片（保留移除杂物等修改）：生成图作为新版本后，用户的调色照常套在上面，不会叠两次。
+            # 完整渲染当前画面，生成版本采用时重置参数，避免重复应用。
             with self.engine.lock:
-                full, _ = replay_operations(self.engine.asset(data['id']))
-            full = full.convert('RGB')
-            if data.get('aspect_ratio'):
-                from service import parameters
-                from geometry import apply as apply_geometry
-                full = apply_geometry(full, parameters(data.get('params', {})))
+                rendered = self.engine.render_full_png(data['id'], data.get('params', {}), data.get('quality'))
+            with Image.open(rendered['path']) as image:
+                full = image.convert('RGB')
+            selection = data.get('selection')
+            hard = selection_mask(full, selection) if selection else None
             sent = full.copy(); sent.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+            if hard is not None and data.get('selection_guidance') == 'marked':
+                sent = marked_selection_image(sent, hard)
             buffer = BytesIO(); sent.save(buffer, 'JPEG', quality=92)
             references = self._load_references(data.get('reference_paths') or [])
+            native_mask = None
+            if hard is not None and data['service'] == 'ideogram':
+                import numpy as np
+                selected = Image.fromarray(np.uint8(hard) * 255, 'L').resize(sent.size, Image.Resampling.NEAREST)
+                # Ideogram: 黑色修改，白色保留。
+                native = Image.fromarray(255 - np.asarray(selected), 'L')
+                if native.getextrema() != (0, 255):
+                    raise ValueError('选区过小或覆盖整张照片，请调整选区后重试')
+                out = BytesIO(); native.save(out, 'PNG'); native_mask = out.getvalue()
             if event.is_set(): raise InterruptedError()
-            results = call_service(data['service'], data.get('api_key'), data.get('model'), buffer.getvalue(), data['prompt'],
-                                   references=references, aspect_ratio=data.get('aspect_ratio') or None)
+            prompt = data['prompt']
+            if hard is not None and data['service'] == 'jimeng':
+                prompt = jimeng_interactive_prompt(prompt, hard, selection, data.get('model'), data.get('selection_guidance', 'coordinates'))
+            elif hard is not None and data['service'] == 'gemini':
+                prompt = prompt_for_selection(prompt, hard)
+            results = call_service(data['service'], data.get('api_key'), data.get('model'), buffer.getvalue(), prompt,
+                                   references=references, aspect_ratio=data.get('aspect_ratio') or None, mask=native_mask)
             if event.is_set(): raise InterruptedError()
             paths = []
+            raw_paths = []
             for item in results[:4]:
                 with Image.open(BytesIO(item['data'])) as out: generated = out.convert('RGB')
-                if data.get('selection'): generated = composite_selection(full, generated, data['selection'])
+                if selection:
+                    raw_path = self.engine.folder / (uuid4().hex + '-model-raw.png')
+                    generated.save(raw_path, 'PNG')
+                    raw_paths.append(str(raw_path))
+                if selection:
+                    if data['service'] in ('jimeng', 'gemini'):
+                        generated = composite_guided_selection(full, generated, hard)
+                    else:
+                        generated = composite_selection(full, generated, selection, hard=hard)
                 path = self.engine.folder / (uuid4().hex + '-generated.png')
                 generated.save(path, 'PNG')
                 paths.append(str(path))
-            with self.lock: self.jobs[key] = dict(state='done', paths=paths)
+            with self.lock: self.jobs[key] = dict(state='done', paths=paths, raw_paths=raw_paths,
+                                                   before_path=rendered['path'] if selection else None)
         except InterruptedError:
             with self.lock: self.jobs[key] = dict(state='cancelled')
         except Exception as exc:

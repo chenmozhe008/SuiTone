@@ -660,14 +660,6 @@ class Engine:
             result.append(str(path))
             self.progress=dict(done=len(result),total=len(items),name=asset.path.name)
             del rendered,image,pixels
-        # 单张时调整记录跟着照片命名，放在同一层，避免和别的导出互相覆盖。
-        stem='调整记录' if not single else Path(result[0]).stem
-        recipe=batch/(stem+'.photoedit'); n=2
-        while recipe.exists() and single: recipe=batch/(stem+'-'+str(n)+'.photoedit'); n+=1
-        with recipe.open('x') as f:
-            json.dump(dict(version=1,photos=[dict(path=str(self.asset(i['id']).path),params=parameters(i.get('params',{})),
-                           operations=self.asset(i['id']).operations,quality=q) for i,q in zip(items,qualities)],
-                           options={k:v for k,v in options.items() if k not in ['denoise','scale']}),f,ensure_ascii=False,indent=2)
         return dict(directory=str(batch),files=result,
                     lut_note='LUT 只包含全局曝光、对比与饱和；分区、自动黑白点、去雾、修补和人像不包含在内。')
 

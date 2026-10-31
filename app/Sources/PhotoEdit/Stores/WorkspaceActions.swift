@@ -44,6 +44,7 @@ extension WorkspaceStore {
         finishEditing()
         guard let photo = current else { return }
         var params = photo.parameters
+        params.rotation = 0; params.angle = 0; params.rotationExpanded = false; params.flip = ""; params.crop = nil
         params.regions = [:]  // 参考图反推的区域目标色属于原照片，不随风格带走
         params.manualMasks = [:]
         params.local = params.local.filter { !$0.key.hasPrefix("selection-") }
@@ -53,7 +54,7 @@ extension WorkspaceStore {
     }
 
     func applyMyStyle(_ style: MyStyle) {
-        runPhotoOperation(.parameters(style.parameters, name: style.name, notes: ["套用" + style.name]),
+        runPhotoOperation(.personalStyle(style.parameters, name: style.name),
                           items: targets, label: "应用" + style.name)
     }
 

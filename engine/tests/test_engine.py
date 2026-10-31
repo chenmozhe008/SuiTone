@@ -507,7 +507,7 @@ class EngineTests(unittest.TestCase):
             replayed, _ = replay_operations(engine.asset(baked['id']))
             np.testing.assert_array_equal(np.asarray(replayed), np.asarray(apply(image, raw)))
 
-    def test_export_uses_each_photos_quality_and_preserves_recipe(self):
+    def test_export_uses_each_photos_quality_without_recipe_sidecar(self):
         from unittest.mock import patch
         from smart import neutral
         image=Image.new('RGB',(64,48),(90,120,150))
@@ -528,12 +528,9 @@ class EngineTests(unittest.TestCase):
             for path in result['files']:
                 with Image.open(path) as rendered:sizes.append(rendered.size)
             self.assertEqual(sizes,[(128,96),(64,48)])
-            import json
-            recipe=json.loads((Path(result['directory'])/'调整记录.photoedit').read_text())
-            self.assertEqual([p['quality'] for p in recipe['photos']],qualities)
-            self.assertNotIn('scale',recipe['options'])
-            self.assertNotIn('denoise',recipe['options'])
             self.assertEqual(source.read_bytes(),original)
+            # 导出只产图片，不再在旁边留 .photoedit 调整记录（用户反馈「保存后多了一个文件」）。
+            self.assertEqual([p.name for p in Path(result['directory']).glob('*.photoedit')],[])
             before=set(destination.iterdir())
             with self.assertRaises(ValueError):engine.export([dict(id=asset.id,quality=dict(scale=3))],destination,{})
             self.assertEqual(set(destination.iterdir()),before)
@@ -773,6 +770,7 @@ class EngineTests(unittest.TestCase):
         root=Path(tempfile.mkdtemp());engine=Engine(root);engine.generated_dir=root/'generated'
         source=root/'photo.jpg';Image.new('RGB',(1600,1000),(30,60,200)).save(source,quality=95)
         key=engine.import_one(source).id
+        graded=np.asarray(Image.open(engine.render_full_png(key, {'exposure':2})['path']),int)
         job=engine.image_edit.start(dict(id=key,params={'exposure':2},service='mock',prompt='把右边换掉',image_consent=True,
                                          selection=dict(box=[0,0,1,1],parts=[dict(box=[.6,0,1,1])])))['id']
         for _ in range(200):
@@ -782,7 +780,8 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(status['state'],'done',status)
         out=np.asarray(Image.open(status['paths'][0]),int)
         self.assertEqual(out.shape[:2],(1000,1600))                     # 原尺寸，不是 2048 缩图
-        self.assertLess(abs(out[500,200]-[30,60,200]).max(),6)          # 选区外保持原样，且没有套用曝光（发的是原片）
+        self.assertGreater(graded[500,200,1], 65)                       # 曝光已体现在送出的画面
+        np.testing.assert_array_equal(out[500,200],graded[500,200])     # 选区外保持当前画面
         self.assertGreater(out[-5,1500,0],150)                          # 选区内换成模拟图（底部色带）
         with self.assertRaises(ValueError):engine.image_edit.start(dict(id=key,service='mock',prompt='x',image_consent=True,selection=dict(glow=1)))
 

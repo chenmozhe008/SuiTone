@@ -26,7 +26,8 @@ struct PhotoEditApp: App {
                 .preferredColorScheme(.dark)
                 .task { updates.checkIfDue(); await store.start() }
                 .onOpenURL { url in
-                    if url.pathExtension=="photoedit" {store.openProject(url)}
+                    // 调整记录用自己的 .suitone；旧版存的 .photoedit 也照旧能打开。
+                    if ["suitone","photoedit"].contains(url.pathExtension) {store.openProject(url)}
                     else {store.importURLs([url])}
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in

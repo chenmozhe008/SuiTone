@@ -33,14 +33,12 @@ struct AboutView: View {
     private var mergedReleases: [ReleasedVersion] {
         var byVersion: [String: ReleasedVersion] = [:]
         for row in history { byVersion[row.version] = row }
-        for (title, items) in localChangelog where !title.contains("开发版") {
+        for (title, items) in localChangelog {
             let parts = title.components(separatedBy: " · ")
             let version = (parts.first ?? title).trimmingCharacters(in: .whitespaces)
             let date = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : nil
             if let online = byVersion[version] {
-                if online.date == nil {
-                    byVersion[version] = ReleasedVersion(version: version, date: date, notes: online.notes, page: online.page)
-                }
+                byVersion[version] = ReleasedVersion(version: version, date: online.date ?? date, notes: items.isEmpty ? online.notes : items, page: online.page)
             } else {
                 byVersion[version] = ReleasedVersion(version: version, date: date, notes: items, page: nil)
             }
@@ -194,9 +192,8 @@ struct AboutView: View {
                             Text(release.version).font(.body.weight(.bold)).foregroundStyle(.cyan)
                             if let date = release.date { Text(date).font(.caption).foregroundStyle(.secondary) }
                             Spacer()
-                            Link(destination: release.page ?? releasesPage) {
-                                Label(release.page == nil ? "查看" : "发布页", systemImage: "arrow.up.right.square")
-                                    .font(.caption)
+                            if let page = release.page {
+                                Link(destination: page) { Label("发布页", systemImage: "arrow.up.right.square").font(.caption) }
                             }
                         }
                         ForEach(Array(release.notes.enumerated()), id: \.offset) { _, item in bullet(item) }

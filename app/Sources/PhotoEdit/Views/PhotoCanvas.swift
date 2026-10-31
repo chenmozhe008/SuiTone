@@ -177,7 +177,7 @@ struct PhotoCanvas: View {
                     else if store.showOriginal {canvasLabel("原图").padding(10)}
                     else if store.repairDraft != nil {canvasLabel(store.repairShowingBefore ? "修复前" : "修复预览").padding(10)}
                     else if store.inspectorTab == "aiedit" && store.selectionOverlay != nil && !store.selectionParts.isEmpty {
-                        canvasLabel("选区：只改这块", color: .cyan).padding(10)
+                        canvasLabel("参考选区", color: .cyan).padding(10)
                     }
                     else if !store.overlay.isEmpty && !splitActive {
                         canvasLabel(store.overlay.hasPrefix("selection-") ? "选区" : RegionNames.title(store.overlay)+"选区").padding(10)
@@ -203,6 +203,8 @@ struct PhotoCanvas: View {
 
     /// 画面显示比例：按裁切和旋转后实际要出的形状算，裁切页里仍显示完整画面以便重新框。
     private func displayRatio(_ photo: PhotoRecord) -> CGFloat {
+        if store.inspectorTab == "aiedit", !store.showOriginal,
+           let path = store.versionPreview, let ratio = PhotoSize.ratio(path) { return ratio }
         // 以渲染出来的预览为准：旋转、自由旋转、裁切都已经算进这张图里了，
         // 自己再按原图比例推一遍，转到 90° 时裁切框就会跑到画面外面（框和照片对不上）。
         if let path = photo.previewPath, let ratio = PhotoSize.ratio(path) { return ratio }

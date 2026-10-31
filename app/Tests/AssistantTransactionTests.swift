@@ -3,6 +3,58 @@ import Testing
 @testable import PhotoEdit
 
 @MainActor @Suite struct AssistantTransactionTests {
+    @Test @MainActor func aiSelectionUsesCurrentModelAndKeepsExistingStrokes() {
+        let store = fixture()
+        let oldService = store.imageService, oldModels = store.imageModels
+        defer { store.imageService = oldService; store.imageModels = oldModels }
+        store.imageServices = [ImageService(id: "jimeng", title: "即梦", defaultModel: "doubao-seedream-5-0-flash-260915", paid: true),
+                               ImageService(id: "gemini", title: "Gemini", defaultModel: "gemini-2.5-flash-image", paid: true)]
+        store.imageService = "jimeng"
+        store.imageModels["jimeng"] = "doubao-seedream-5-0-flash-260915"
+        store.openAISelection()
+        #expect(store.selectionForAI && store.supportsJimengSelection && store.repairTool == "box")
+        store.selectionParts = [SelectionPart(box: [0.1, 0.1, 0.4, 0.4])]
+        #expect(store.aiSelectionGuidance == "coordinates")
+        store.selectionParts.append(SelectionPart(strokes: [[[0.2,0.2], [0.3,0.3]]], radius: 0.02))
+        #expect(store.aiSelectionGuidance == "marked")
+        store.imageService = "gemini"
+        store.openAISelection()
+        #expect(!store.supportsJimengSelection && store.selectionParts.count == 2)
+        store.imageService = "jimeng"
+        store.openAISelection()
+        #expect(store.supportsJimengSelection && store.aiSelectionGuidance == "marked" && store.selectionParts.count == 2)
+    }
+    @Test @MainActor func undoKeepsCurrentPreviewUntilRestoredPreviewIsReady() {
+        let store = fixture()
+        store.photos[0].previewPath = "/previous-preview.png"
+        store.change("调整曝光") { $0.exposure = 0.5 }
+        store.photos[0].previewPath = "/edited-preview.png"
+        store.versionPreview = "/old-version.png"
+        store.undo()
+        #expect(store.current?.parameters.exposure == 0)
+        #expect(store.current?.previewPath == "/edited-preview.png")
+        #expect(store.versionPreview == nil)
+        store.redo()
+        #expect(store.current?.parameters.exposure == 0.5)
+        #expect(store.current?.previewPath == "/edited-preview.png")
+        store.previewTask?.cancel()
+    }
+    @Test @MainActor func testApplyingStylePreservesExistingCropRotationAndLocalAdjustment() {
+        let store = fixture()
+        var existing = store.photos[0].parameters
+        existing.rotation = 90; existing.angle = 7; existing.rotationExpanded = true
+        existing.crop = [0.1, 0.2, 0.6, 0.5]; existing.flip = "h"
+        existing.manualMasks["selection-0123456789abcdef"] = RemovalOperation(box: [0.1, 0.1, 0.4, 0.4])
+        existing.local["selection-0123456789abcdef"] = LocalAdjustment()
+        var style = AdjustmentParameters(); style.temperature = 0.6
+        style.crop = [0.2, 0.2, 0.3, 0.3]; style.rotation = 180
+        let result = store.styleParameters(style, preserving: existing)
+        #expect(result.temperature == 0.6)
+        #expect(result.crop == existing.crop && result.rotation == 90 && result.angle == 7)
+        #expect(result.rotationExpanded && result.flip == "h")
+        #expect(result.manualMasks == existing.manualMasks && result.local == existing.local)
+    }
+
     @Test @MainActor func testVariantSwitchingAndStaleProtection() {
         let store = fixture(), source = store.photos[0], group = UUID()
         var warm = source.parameters, cool = source.parameters

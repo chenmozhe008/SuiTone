@@ -160,6 +160,7 @@ extension WorkspaceStore {
         if let existing = albums.first(where: { Set($0.photos.map(\.path)) == paths }) {
             currentAlbumID = existing.id
             albumSteps = existing.steps
+            activeStepID = existing.steps.last?.id
             albums.removeAll { $0.id == existing.id }
             albums.insert(existing, at: 0)
             syncAlbum()
@@ -177,6 +178,7 @@ extension WorkspaceStore {
             albums.insert(album, at: 0)
             currentAlbumID = album.id
             albumSteps = []
+            activeStepID = nil
         }
         syncAlbum()
     }
@@ -221,6 +223,7 @@ extension WorkspaceStore {
                 guard !records.isEmpty else { throw EngineError(message: "这个图集里的照片都读不出来了") }
                 photos = records; undoChanges = []; redoChanges = []
                 currentAlbumID = album.id; albumSteps = album.steps
+                activeStepID = album.steps.last?.id
                 selectedIDs = Set(records.prefix(1).map(\.id))
                 grid = records.count > 1
                 activate(records.first?.id); refreshGrid()
@@ -238,7 +241,7 @@ extension WorkspaceStore {
         if currentAlbumID == id {
             currentAlbumID = nil; albumSteps = []
             photos = []; references = []; selectedIDs = []; currentID = nil
-            analysis = nil; overlay = ""; undoChanges = []; redoChanges = []
+            analysis = nil; overlay = ""; undoChanges = []; redoChanges = []; activeStepID = nil
             status = "已移除图集「\(album.title)」，照片文件未删除"
         }
     }
@@ -259,31 +262,43 @@ extension WorkspaceStore {
         syncAlbum()
         photos = []; references = []; selectedIDs = []; currentID = nil
         currentAlbumID = nil; albumSteps = []
-        analysis = nil; overlay = ""; undoChanges = []; redoChanges = []; grid = false
+        analysis = nil; overlay = ""; undoChanges = []; redoChanges = []; grid = false; activeStepID = nil
         status = "已新建图集，请选择照片"
         chooseImport()
     }
 
     // MARK: - 历史
 
-    /// 回到某一步之后的样子（撤销栈不是必须的，这里直接按存下的状态摆回去）。
+    /// 回到某一步之后的样子。这是「跳转」不是「删除」：后面的步骤都保留在历史里，
+    /// 跳转本身记成一步可撤销操作，随时能用 ⌘Z 退回跳转前、或再点后面的步骤跳回去。
     func revertToStep(_ step: LibraryStep) {
         guard !controlsBlocked else { return }
         finishEditing()
-        var states: [String: EditSnapshot] = [:]
+        var after: [String: EditSnapshot] = [:]
         for (id, saved) in step.states {
-            states[id] = EditSnapshot(assetID: saved.assetID, parameters: saved.parameters, operations: saved.operations,
+            after[id] = EditSnapshot(assetID: saved.assetID, parameters: saved.parameters, operations: saved.operations,
                                       label: step.label, lookName: saved.lookName, notes: [], quality: saved.quality)
         }
-        guard !states.isEmpty else { return }
-        applyStates(states)
-        // 截断到这步为止：后面的步骤还留在列表里也没意义，用户可能想改路线重来。
-        if let index = albumSteps.firstIndex(where: { $0.id == step.id }) {
-            albumSteps.removeSubrange((index + 1)...)
+        guard !after.isEmpty else { return }
+        // 跳转前这些照片的样子，供撤销返回
+        var before: [String: EditSnapshot] = [:]
+        for id in after.keys {
+            guard let photo = photos.first(where: { $0.id == id }) else { continue }
+            var origin = photo.snapshot; origin.label = step.label
+            before[id] = origin
         }
-        undoChanges = []; redoChanges = []
+        guard before != after else { status = "已经在这一步"; return }
+        applyStates(after)
+        // 记成一步可撤销的跳转：不带 stepID（撤销时不会误删历史），带 jumpStepID 供重做时高亮目标。
+        var change = WorkspaceChange(label: "回到「\(step.label)」", before: before, after: after)
+        change.jumpStepID = step.id
+        change.fromStepID = activeStepID
+        undoChanges.append(change)
+        if undoChanges.count > 100 { undoChanges.removeFirst() }
+        redoChanges = []
+        activeStepID = step.id
         syncAlbum()
-        status = "已回到「\(step.label)」"
+        status = "已回到「\(step.label)」，可 ⌘Z 返回"
     }
 
     func deleteStep(_ step: LibraryStep) {
