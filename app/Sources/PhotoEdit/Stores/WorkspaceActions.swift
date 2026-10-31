@@ -83,10 +83,6 @@ extension WorkspaceStore {
         styleOrder(for: family).prefix(Self.styleTileBatch).map(\.id)
     }
 
-    func isRecommendedStyle(_ id: String, family: String) -> Bool {
-        currentStyleGuide?.ids(family).contains(id) ?? false
-    }
-
     var currentStyleGuide: StyleGuide? {
         styleGuideAssetID == current?.assetID ? styleGuide : nil
     }

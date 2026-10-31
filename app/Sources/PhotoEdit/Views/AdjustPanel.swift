@@ -76,21 +76,11 @@ struct AdjustPanel: View {
                     store.ensureStyleTiles(for: family)
                 }
             if store.styleFamily == "mine" { myStyles } else {
-                if let guide = store.currentStyleGuide {
-                    HStack(spacing: 6) {
-                        Image(systemName: "sparkles").font(.system(size: 10, weight: .semibold))
-                        Text("给这张照片 · \(guide.reason)")
-                            .font(.caption).lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }.foregroundStyle(Color(white: 0.62)).padding(.horizontal, 2)
-                }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 8), count: 3), spacing: 8) {
                     ForEach(expandedStyles ? styles : Array(styles.prefix(6))) { style in
                         Button { store.applyStyle(style.id) } label: {
                             styleTile(title: style.title, tile: store.styleTiles[style.id], icon: "camera.filters",
                                       selected: store.current?.lookName == style.title,
-                                      recommended: store.isRecommendedStyle(style.id, family: store.styleFamily),
                                       loading: store.styleTiles[style.id] == nil)
                         }.buttonStyle(.plain).help(style.detail + "，应用到" + store.scopeLabel)
                     }
@@ -134,7 +124,7 @@ struct AdjustPanel: View {
     }
 
     private func styleTile(title: String, tile: String?, icon: String, selected: Bool,
-                           recommended: Bool = false, loading: Bool = false) -> some View {
+                           loading: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Group {
                 if let tile { LocalPhoto(path: tile, fill: true) }
@@ -147,13 +137,7 @@ struct AdjustPanel: View {
                 }
                 else { Image(systemName: icon).font(.title3).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
             }.frame(height: 58).frame(maxWidth: .infinity).background(Color(white: 0.11))
-            HStack(spacing: 4) {
-                Text(title).font(.callout).lineLimit(1)
-                if recommended {
-                    Image(systemName: "sparkles").font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Color(red: 0.62, green: 0.86, blue: 1))
-                }
-            }.padding(.horizontal, 8).padding(.vertical, 6)
+            Text(title).font(.callout).lineLimit(1).padding(.horizontal, 8).padding(.vertical, 6)
         }.background(Color(white: 0.2), in: RoundedRectangle(cornerRadius: 8))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Color(white: 0.9) : .clear, lineWidth: 2))
